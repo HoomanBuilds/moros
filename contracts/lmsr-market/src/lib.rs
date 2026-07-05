@@ -59,6 +59,7 @@ pub enum Error {
     Unauthorized = 5,
     AlreadyResolved = 6,
     NotResolved = 7,
+    Undersolvent = 8,
 }
 
 #[contract]
@@ -252,6 +253,23 @@ impl LmsrMarket {
         }
         if env.storage().instance().has(&DataKey::Outcome) {
             return Err(Error::AlreadyResolved);
+        }
+        // Solvency: the pool must hold enough collateral to pay every winning share
+        // (1 per share). Refuse to resolve into an insolvent state; fund first.
+        let (qy, qn, _b) = Self::state(&env)?;
+        let q_win = match outcome {
+            Side::Yes => qy,
+            Side::No => qn,
+        };
+        let liability = Self::to_atomic(&env, q_win, true);
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        let held = token::Client::new(&env, &token_addr).balance(&env.current_contract_address());
+        if held < liability {
+            return Err(Error::Undersolvent);
         }
         env.storage().instance().set(&DataKey::Outcome, &outcome);
         env.events().publish((symbol_short!("resolved"),), outcome);

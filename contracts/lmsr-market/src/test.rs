@@ -187,6 +187,16 @@ fn redeem_losing_side_pays_nothing() {
 }
 
 #[test]
+fn resolve_rejects_when_pool_cannot_cover_payouts() {
+    let env = Env::default();
+    let (client, _token, trader, admin) = setup(&env);
+    // Buy 60 YES but DON'T fund the subsidy: the pool holds only the buy proceeds
+    // (~34 units) while a YES win owes 60 -> resolution must be rejected as insolvent.
+    client.buy(&trader, &Side::Yes, &(60 * S));
+    assert!(client.try_resolve(&admin, &Side::Yes).is_err());
+}
+
+#[test]
 fn cannot_redeem_before_resolution() {
     let env = Env::default();
     let (client, _token, trader, _admin) = setup(&env);
