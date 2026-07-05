@@ -154,6 +154,17 @@ impl LmsrMarket {
         trader.require_auth();
         let cost = Self::quote_buy(env.clone(), side, shares)?;
 
+        // Effects before interaction (a reverted transfer rolls all of this back atomically).
+        let key = DataKey::Shares(trader.clone(), side);
+        let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().set(&key, &(held + shares));
+
+        let (qy, qn, _b) = Self::state(&env)?;
+        let (qy2, qn2) = Self::apply(qy, qn, side, shares);
+        env.storage().instance().set(&DataKey::QYes, &qy2);
+        env.storage().instance().set(&DataKey::QNo, &qn2);
+
+        // Interaction last: pull collateral from the trader.
         let token_addr: Address = env
             .storage()
             .instance()
@@ -164,15 +175,6 @@ impl LmsrMarket {
             &env.current_contract_address(),
             &cost,
         );
-
-        let key = DataKey::Shares(trader.clone(), side);
-        let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-        env.storage().persistent().set(&key, &(held + shares));
-
-        let (qy, qn, _b) = Self::state(&env)?;
-        let (qy2, qn2) = Self::apply(qy, qn, side, shares);
-        env.storage().instance().set(&DataKey::QYes, &qy2);
-        env.storage().instance().set(&DataKey::QNo, &qn2);
 
         env.events()
             .publish((symbol_short!("buy"), trader), (side, shares, cost, qy2, qn2));
