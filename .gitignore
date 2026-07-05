@@ -12,6 +12,7 @@ CLAUDE.md
 target/
 **/*.rs.bk
 *.wasm
+**/test_snapshots/
 
 # --- Node ---
 node_modules/
