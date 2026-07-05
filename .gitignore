@@ -27,6 +27,7 @@ yarn-error.log*
 *.wtns
 *_js/
 witness.wtns
+build/
 
 # --- Env / secrets / local deploy state ---
 .env
