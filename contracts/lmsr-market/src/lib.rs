@@ -25,6 +25,7 @@ enum DataKey {
     B,
     QYes,
     QNo,
+    Outcome,
     Shares(Address, Side),
 }
 
@@ -39,6 +40,9 @@ pub enum Error {
     AlreadyInitialized = 2,
     InvalidParams = 3,
     InsufficientShares = 4,
+    Unauthorized = 5,
+    AlreadyResolved = 6,
+    NotResolved = 7,
 }
 
 #[contract]
@@ -178,6 +182,81 @@ impl LmsrMarket {
             .persistent()
             .get(&DataKey::Shares(trader, side))
             .unwrap_or(0)
+    }
+
+    /// Settle the market on `outcome`. Admin-only (the Resolver/Reflector wiring
+    /// replaces this driver in a later phase). Cannot be resolved twice.
+    pub fn resolve(env: Env, admin: Address, outcome: Side) -> Result<(), Error> {
+        admin.require_auth();
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        if admin != stored {
+            return Err(Error::Unauthorized);
+        }
+        if env.storage().instance().has(&DataKey::Outcome) {
+            return Err(Error::AlreadyResolved);
+        }
+        env.storage().instance().set(&DataKey::Outcome, &outcome);
+        Ok(())
+    }
+
+    /// The winning outcome, or `None` if the market is still open.
+    pub fn outcome(env: Env) -> Option<Side> {
+        env.storage().instance().get(&DataKey::Outcome)
+    }
+
+    /// Add collateral subsidy/liquidity to the pool. Fund at least `b * ln 2`
+    /// (the LMSR worst-case loss) so winning redemptions are always solvent.
+    pub fn fund(env: Env, from: Address, amount: i128) -> Result<(), Error> {
+        from.require_auth();
+        if amount <= 0 {
+            return Err(Error::InvalidParams);
+        }
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        token::Client::new(&env, &token_addr).transfer(
+            &from,
+            &env.current_contract_address(),
+            &amount,
+        );
+        Ok(())
+    }
+
+    /// Redeem `trader`'s `side` shares after resolution. Winning shares pay 1
+    /// collateral each; losing shares pay 0. Shares are burned either way.
+    pub fn redeem(env: Env, trader: Address, side: Side) -> Result<i128, Error> {
+        trader.require_auth();
+        let winning: Side = env
+            .storage()
+            .instance()
+            .get(&DataKey::Outcome)
+            .ok_or(Error::NotResolved)?;
+
+        let key = DataKey::Shares(trader.clone(), side);
+        let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().set(&key, &0i128); // burn regardless of outcome
+
+        if side != winning || held == 0 {
+            return Ok(0);
+        }
+
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        token::Client::new(&env, &token_addr).transfer(
+            &env.current_contract_address(),
+            &trader,
+            &held,
+        );
+        Ok(held)
     }
 }
 
