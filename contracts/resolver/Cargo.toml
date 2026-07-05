@@ -10,7 +10,11 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-lmsr-market = { path = "../lmsr-market" }
 
+# lmsr-market is a dev-dependency only: it is a contract crate (cdylib) and linking
+# it into the resolver's own wasm would duplicate exported symbols (e.g. `init`).
+# The resolver talks to the market through a local #[contractclient] interface;
+# the real market crate is needed only to register it in tests.
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+lmsr-market = { path = "../lmsr-market" }
