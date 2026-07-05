@@ -41,6 +41,7 @@ enum DataKey {
     Asset,
     Threshold,
     Expiry,
+    Decimals,
     Shares(Address, Side),
 }
 
@@ -84,6 +85,12 @@ impl LmsrMarket {
         if b <= 0 || b > MAX_Q {
             return Err(Error::InvalidParams);
         }
+        // Collateral is settled in the token's atomic units; cache its decimals so
+        // the fixed-point (2^32) LMSR math can be converted to real token amounts.
+        let decimals = token::Client::new(&env, &collateral).decimals();
+        if decimals > 18 {
+            return Err(Error::InvalidParams);
+        }
         let s = env.storage().instance();
         s.set(&DataKey::Admin, &admin);
         s.set(&DataKey::Token, &collateral);
@@ -93,6 +100,7 @@ impl LmsrMarket {
         s.set(&DataKey::Asset, &asset);
         s.set(&DataKey::Threshold, &threshold);
         s.set(&DataKey::Expiry, &expiry);
+        s.set(&DataKey::Decimals, &decimals);
         Ok(())
     }
 
@@ -136,7 +144,7 @@ impl LmsrMarket {
             return Err(Error::InvalidParams);
         }
         let after = math::cost(qy2, qn2, b);
-        Ok(after - before + 1)
+        Ok(Self::to_atomic(&env, after - before, true)) // charge rounded up
     }
 
     /// Buy `shares` (fixed-point) of `side` for `trader`. Charges `quote_buy` collateral,
@@ -180,8 +188,12 @@ impl LmsrMarket {
         let (qy2, qn2) = Self::reduce(qy, qn, side, shares)?;
         let before = math::cost(qy, qn, b);
         let after = math::cost(qy2, qn2, b);
-        let refund = before - after - 1;
-        Ok(if refund > 0 { refund } else { 0 })
+        let refund_fixed = before - after;
+        Ok(if refund_fixed > 0 {
+            Self::to_atomic(&env, refund_fixed, false) // refund rounded down
+        } else {
+            0
+        })
     }
 
     /// Sell `shares` (fixed-point) of `side` held by `trader`. Debits the shares,
@@ -285,7 +297,12 @@ impl LmsrMarket {
         let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         env.storage().persistent().set(&key, &0i128); // burn regardless of outcome
 
-        let payout = if side == winning { held } else { 0 };
+        // 1 collateral per winning share; convert fixed-point shares -> atomic (rounded down).
+        let payout = if side == winning {
+            Self::to_atomic(&env, held, false)
+        } else {
+            0
+        };
         if payout > 0 {
             let token_addr: Address = env
                 .storage()
@@ -325,6 +342,22 @@ impl LmsrMarket {
             Side::Yes if shares <= qy => Ok((qy - shares, qn)),
             Side::No if shares <= qn => Ok((qy, qn - shares)),
             _ => Err(Error::InvalidParams),
+        }
+    }
+
+    /// Convert a fixed-point (value * 2^32) amount to the collateral token's atomic
+    /// units (value * 10^decimals). `up` rounds toward the pool (charges up, pays down).
+    fn to_atomic(env: &Env, fixed: i128, up: bool) -> i128 {
+        let decimals: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Decimals)
+            .unwrap_or(7);
+        let scaled = fixed * 10i128.pow(decimals);
+        if up {
+            (scaled + (math::SCALE - 1)) / math::SCALE
+        } else {
+            scaled / math::SCALE
         }
     }
 }

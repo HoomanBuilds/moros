@@ -65,12 +65,15 @@ fn init_stores_market_metadata() {
 }
 
 #[test]
-fn quote_buy_charges_cost_delta_rounded_up() {
+fn quote_buy_returns_atomic_charge_for_token_decimals() {
     let env = Env::default();
-    let (client, _token, _trader, _admin) = setup(&env);
-    let before = math::cost(0, 0, 100 * S);
-    let after = math::cost(60 * S, 0, 100 * S);
-    assert_eq!(client.quote_buy(&Side::Yes, &(60 * S)), after - before + 1);
+    let (client, token, _trader, _admin) = setup(&env);
+    let pow = 10i128.pow(TokenClient::new(&env, &token).decimals());
+    // internal LMSR cost is fixed-point (2^32); the quote is the token's atomic
+    // amount = ceil(cost_fixed * 10^decimals / 2^32) (charge rounded up).
+    let cost_fixed = math::cost(60 * S, 0, 100 * S) - math::cost(0, 0, 100 * S);
+    let expected = (cost_fixed * pow + (S - 1)) / S;
+    assert_eq!(client.quote_buy(&Side::Yes, &(60 * S)), expected);
 }
 
 #[test]
@@ -157,12 +160,13 @@ fn redeem_pays_winning_shares_and_burns_them() {
     client.buy(&trader, &Side::Yes, &(60 * S));
     client.resolve(&admin, &Side::Yes);
     let before = tok.balance(&trader);
+    let pow = 10i128.pow(tok.decimals());
 
     let payout = client.redeem(&trader, &Side::Yes);
 
-    assert_eq!(payout, 60 * S); // 1 collateral per winning share
+    assert_eq!(payout, 60 * pow); // 60 winning shares -> 60 tokens (atomic)
     assert_eq!(client.shares_of(&trader, &Side::Yes), 0); // burned
-    assert_eq!(tok.balance(&trader), before + 60 * S); // paid out
+    assert_eq!(tok.balance(&trader), before + 60 * pow); // paid out
 }
 
 #[test]
