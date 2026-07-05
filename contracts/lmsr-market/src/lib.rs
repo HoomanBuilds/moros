@@ -8,7 +8,7 @@
 
 mod math;
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env, Symbol};
 
 /// Which outcome a trade is on.
 #[contracttype]
@@ -16,6 +16,16 @@ use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Ad
 pub enum Side {
     Yes,
     No,
+}
+
+/// Resolution parameters: the market resolves YES iff the Reflector price of
+/// `asset` at/after `expiry` is >= `threshold` (threshold in the oracle's decimals).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketInfo {
+    pub asset: Symbol,
+    pub threshold: i128,
+    pub expiry: u64,
 }
 
 #[contracttype]
@@ -26,6 +36,9 @@ enum DataKey {
     QYes,
     QNo,
     Outcome,
+    Asset,
+    Threshold,
+    Expiry,
     Shares(Address, Side),
 }
 
@@ -50,9 +63,18 @@ pub struct LmsrMarket;
 
 #[contractimpl]
 impl LmsrMarket {
-    /// Initialize with an `admin`, a `collateral` token (SEP-41), and liquidity
-    /// parameter `b` (fixed-point, value * 2^32). Worst-case operator loss is `b * ln 2`.
-    pub fn init(env: Env, admin: Address, collateral: Address, b: i128) -> Result<(), Error> {
+    /// Initialize with an `admin`, a `collateral` token (SEP-41), liquidity
+    /// parameter `b` (fixed-point, value * 2^32), and the resolution parameters
+    /// (`asset` / `threshold` / `expiry`). Worst-case operator loss is `b * ln 2`.
+    pub fn init(
+        env: Env,
+        admin: Address,
+        collateral: Address,
+        b: i128,
+        asset: Symbol,
+        threshold: i128,
+        expiry: u64,
+    ) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::B) {
             return Err(Error::AlreadyInitialized);
         }
@@ -65,7 +87,20 @@ impl LmsrMarket {
         s.set(&DataKey::B, &b);
         s.set(&DataKey::QYes, &0i128);
         s.set(&DataKey::QNo, &0i128);
+        s.set(&DataKey::Asset, &asset);
+        s.set(&DataKey::Threshold, &threshold);
+        s.set(&DataKey::Expiry, &expiry);
         Ok(())
+    }
+
+    /// Resolution parameters (asset / threshold / expiry).
+    pub fn market_info(env: Env) -> Result<MarketInfo, Error> {
+        let s = env.storage().instance();
+        Ok(MarketInfo {
+            asset: s.get(&DataKey::Asset).ok_or(Error::NotInitialized)?,
+            threshold: s.get(&DataKey::Threshold).ok_or(Error::NotInitialized)?,
+            expiry: s.get(&DataKey::Expiry).ok_or(Error::NotInitialized)?,
+        })
     }
 
     /// Current YES price (fixed-point in (0,1), value * 2^32).

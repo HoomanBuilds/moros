@@ -4,9 +4,14 @@ extern crate std;
 use crate::{math, LmsrMarket, LmsrMarketClient, Side};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{symbol_short, Address, Env, Symbol};
 
 const S: i128 = 1 << 32; // 2^32 fixed-point scale
+
+// Sample market metadata (resolution parameters read by the Reflector Resolver).
+const ASSET: Symbol = symbol_short!("XLM");
+const THRESHOLD: i128 = 25_000_000_000_000; // 0.25 with Reflector's 14 decimals
+const EXPIRY: u64 = 2_000_000_000; // unix seconds
 
 /// Register a market with a fresh SAC collateral token, and a funded trader.
 /// Returns (market client, collateral token address, trader address, admin address).
@@ -18,7 +23,7 @@ fn setup(env: &Env) -> (LmsrMarketClient<'_>, Address, Address, Address) {
     let trader = Address::generate(env);
     StellarAssetClient::new(env, &token).mint(&trader, &(1_000_000 * S));
     let client = LmsrMarketClient::new(env, &env.register(LmsrMarket {}, ()));
-    client.init(&admin, &token, &(100 * S));
+    client.init(&admin, &token, &(100 * S), &ASSET, &THRESHOLD, &EXPIRY);
     (client, token, trader, admin)
 }
 
@@ -44,7 +49,19 @@ fn rejects_bad_liquidity_param() {
     let admin = Address::generate(&env);
     let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
     let client = LmsrMarketClient::new(&env, &env.register(LmsrMarket {}, ()));
-    assert!(client.try_init(&admin, &token, &0).is_err());
+    assert!(client
+        .try_init(&admin, &token, &0, &ASSET, &THRESHOLD, &EXPIRY)
+        .is_err());
+}
+
+#[test]
+fn init_stores_market_metadata() {
+    let env = Env::default();
+    let (client, _token, _trader, _admin) = setup(&env);
+    let info = client.market_info();
+    assert_eq!(info.asset, ASSET);
+    assert_eq!(info.threshold, THRESHOLD);
+    assert_eq!(info.expiry, EXPIRY);
 }
 
 #[test]
