@@ -73,3 +73,29 @@ fn buy_debits_collateral_credits_shares_and_moves_price() {
     assert_eq!(tok.balance(&client.address), quote); // pool holds the collateral
     assert!(client.price_yes() > S / 2); // price moved toward YES
 }
+
+#[test]
+fn sell_refunds_collateral_debits_shares_and_restores_price() {
+    let env = Env::default();
+    let (client, token, trader) = setup(&env);
+    let tok = TokenClient::new(&env, &token);
+    client.buy(&trader, &Side::Yes, &(60 * S));
+    let after_buy = tok.balance(&trader);
+    let quote = client.quote_sell(&Side::Yes, &(60 * S));
+
+    let refund = client.sell(&trader, &Side::Yes, &(60 * S));
+
+    assert_eq!(refund, quote); // sell returns what was refunded
+    assert_eq!(client.shares_of(&trader, &Side::Yes), 0); // shares removed
+    assert_eq!(client.get_state(), (0, 0, 100 * S)); // q restored
+    assert_eq!(tok.balance(&trader), after_buy + quote); // refunded
+    assert_eq!(client.price_yes(), S / 2); // price back to 0.5
+}
+
+#[test]
+fn cannot_sell_more_than_held() {
+    let env = Env::default();
+    let (client, _token, trader) = setup(&env);
+    client.buy(&trader, &Side::Yes, &(10 * S));
+    assert!(client.try_sell(&trader, &Side::Yes, &(11 * S)).is_err());
+}

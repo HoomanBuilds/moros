@@ -38,6 +38,7 @@ pub enum Error {
     NotInitialized = 1,
     AlreadyInitialized = 2,
     InvalidParams = 3,
+    InsufficientShares = 4,
 }
 
 #[contract]
@@ -125,6 +126,52 @@ impl LmsrMarket {
         Ok(cost)
     }
 
+    /// Collateral refunded to sell `shares` (fixed-point) of `side`.
+    /// Rounded DOWN by one unit (pool-favoring). Errors if it would drive q negative.
+    pub fn quote_sell(env: Env, side: Side, shares: i128) -> Result<i128, Error> {
+        if shares <= 0 {
+            return Err(Error::InvalidParams);
+        }
+        let (qy, qn, b) = Self::state(&env)?;
+        let (qy2, qn2) = Self::reduce(qy, qn, side, shares)?;
+        let before = math::cost(qy, qn, b);
+        let after = math::cost(qy2, qn2, b);
+        let refund = before - after - 1;
+        Ok(if refund > 0 { refund } else { 0 })
+    }
+
+    /// Sell `shares` (fixed-point) of `side` held by `trader`. Debits the shares,
+    /// moves the market quantities, and pays `quote_sell` collateral back. Returns the refund.
+    pub fn sell(env: Env, trader: Address, side: Side, shares: i128) -> Result<i128, Error> {
+        trader.require_auth();
+        let key = DataKey::Shares(trader.clone(), side);
+        let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+        if shares <= 0 || held < shares {
+            return Err(Error::InsufficientShares);
+        }
+        let refund = Self::quote_sell(env.clone(), side, shares)?;
+
+        env.storage().persistent().set(&key, &(held - shares));
+
+        let (qy, qn, _b) = Self::state(&env)?;
+        let (qy2, qn2) = Self::reduce(qy, qn, side, shares)?;
+        env.storage().instance().set(&DataKey::QYes, &qy2);
+        env.storage().instance().set(&DataKey::QNo, &qn2);
+
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        token::Client::new(&env, &token_addr).transfer(
+            &env.current_contract_address(),
+            &trader,
+            &refund,
+        );
+
+        Ok(refund)
+    }
+
     /// Shares (fixed-point) held by `trader` on `side`.
     pub fn shares_of(env: Env, trader: Address, side: Side) -> i128 {
         env.storage()
@@ -147,6 +194,14 @@ impl LmsrMarket {
         match side {
             Side::Yes => (qy + shares, qn),
             Side::No => (qy, qn + shares),
+        }
+    }
+
+    fn reduce(qy: i128, qn: i128, side: Side, shares: i128) -> Result<(i128, i128), Error> {
+        match side {
+            Side::Yes if shares <= qy => Ok((qy - shares, qn)),
+            Side::No if shares <= qn => Ok((qy, qn - shares)),
+            _ => Err(Error::InvalidParams),
         }
     }
 }
