@@ -1,11 +1,4 @@
-//! LMSR fixed-point math (i128, value * 2^32). No floats (Soroban-safe).
-//! LMSR: C(q) = b*ln(Σ exp(q_i/b));  price_i = exp(q_i/b) / Σ exp(q_j/b).
-//! Uses the max-subtraction (offset) trick to keep every exp argument <= 0.
-//! Validated on Stellar testnet (cost/price match: 119.8139 / 0.5498).
-//!
-//! Overflow: with `overflow-checks = true` these ops panic on i128 overflow
-//! rather than wrapping. Callers must keep real operand magnitudes bounded
-//! (products < 2^63); the market contract range-checks q and b on entry.
+//! LMSR fixed-point math (i128, value * 2^32).
 
 pub const FRAC: u32 = 32;
 pub const SCALE: i128 = 1 << FRAC; // 2^32

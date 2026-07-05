@@ -1,15 +1,11 @@
 #![no_std]
 //! LMSR prediction-market contract (Soroban).
-//!
-//! Holds YES/NO quantities and the liquidity parameter `b`, prices trades with the
-//! LMSR cost function, and settles them in a collateral token (SEP-41). Pricing math
-//! is in `math.rs`, validated on testnet. Buy is public in this phase (trader address
-//! visible); shielded/batched settlement is layered on in later phases per `docs/plans/*`.
 
 mod math;
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
+    Address, Env, Symbol,
 };
 
 /// Which outcome a trade is on.
@@ -45,7 +41,6 @@ enum DataKey {
     Shares(Address, Side),
 }
 
-// Guards the fixed-point ops against i128 overflow (real operand products < 2^63).
 const MAX_Q: i128 = 1i128 << 60;
 
 #[contracterror]
@@ -53,7 +48,6 @@ const MAX_Q: i128 = 1i128 << 60;
 #[repr(u32)]
 pub enum Error {
     NotInitialized = 1,
-    AlreadyInitialized = 2,
     InvalidParams = 3,
     InsufficientShares = 4,
     Unauthorized = 5,
@@ -68,10 +62,11 @@ pub struct LmsrMarket;
 #[contractimpl]
 #[allow(deprecated)] // events use the classic publish() API; migrate to #[contractevent] later
 impl LmsrMarket {
-    /// Initialize with an `admin`, a `collateral` token (SEP-41), liquidity
-    /// parameter `b` (fixed-point, value * 2^32), and the resolution parameters
-    /// (`asset` / `threshold` / `expiry`). Worst-case operator loss is `b * ln 2`.
-    pub fn init(
+    /// Constructor (runs atomically at deploy — cannot be front-run). Sets the
+    /// `admin`, `collateral` token (SEP-41), liquidity parameter `b` (fixed-point,
+    /// value * 2^32), and resolution parameters (`asset` / `threshold` / `expiry`).
+    /// Worst-case operator loss is `b * ln 2`.
+    pub fn __constructor(
         env: Env,
         admin: Address,
         collateral: Address,
@@ -79,18 +74,13 @@ impl LmsrMarket {
         asset: Symbol,
         threshold: i128,
         expiry: u64,
-    ) -> Result<(), Error> {
-        if env.storage().instance().has(&DataKey::B) {
-            return Err(Error::AlreadyInitialized);
-        }
+    ) {
         if b <= 0 || b > MAX_Q {
-            return Err(Error::InvalidParams);
+            panic_with_error!(&env, Error::InvalidParams);
         }
-        // Collateral is settled in the token's atomic units; cache its decimals so
-        // the fixed-point (2^32) LMSR math can be converted to real token amounts.
         let decimals = token::Client::new(&env, &collateral).decimals();
         if decimals > 18 {
-            return Err(Error::InvalidParams);
+            panic_with_error!(&env, Error::InvalidParams);
         }
         let s = env.storage().instance();
         s.set(&DataKey::Admin, &admin);
@@ -102,7 +92,6 @@ impl LmsrMarket {
         s.set(&DataKey::Threshold, &threshold);
         s.set(&DataKey::Expiry, &expiry);
         s.set(&DataKey::Decimals, &decimals);
-        Ok(())
     }
 
     /// Resolution parameters (asset / threshold / expiry).
@@ -154,7 +143,6 @@ impl LmsrMarket {
         trader.require_auth();
         let cost = Self::quote_buy(env.clone(), side, shares)?;
 
-        // Effects before interaction (a reverted transfer rolls all of this back atomically).
         let key = DataKey::Shares(trader.clone(), side);
         let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         env.storage().persistent().set(&key, &(held + shares));
@@ -164,7 +152,6 @@ impl LmsrMarket {
         env.storage().instance().set(&DataKey::QYes, &qy2);
         env.storage().instance().set(&DataKey::QNo, &qn2);
 
-        // Interaction last: pull collateral from the trader.
         let token_addr: Address = env
             .storage()
             .instance()
@@ -256,8 +243,6 @@ impl LmsrMarket {
         if env.storage().instance().has(&DataKey::Outcome) {
             return Err(Error::AlreadyResolved);
         }
-        // Solvency: the pool must hold enough collateral to pay every winning share
-        // (1 per share). Refuse to resolve into an insolvent state; fund first.
         let (qy, qn, _b) = Self::state(&env)?;
         let q_win = match outcome {
             Side::Yes => qy,
@@ -317,7 +302,6 @@ impl LmsrMarket {
         let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         env.storage().persistent().set(&key, &0i128); // burn regardless of outcome
 
-        // 1 collateral per winning share; convert fixed-point shares -> atomic (rounded down).
         let payout = if side == winning {
             Self::to_atomic(&env, held, false)
         } else {

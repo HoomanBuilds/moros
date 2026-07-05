@@ -1,16 +1,5 @@
 #![no_std]
 //! Reflector-driven Resolver for LMSR markets.
-//!
-//! A shared contract: a market that wants oracle resolution sets its `admin` to
-//! this Resolver's address. `resolve_market` reads the market's asset/threshold/
-//! expiry, requires the market to be at/after expiry, reads the Resolver's TRUSTED
-//! Reflector (SEP-40) price, and sets the outcome (YES iff price >= threshold) by
-//! calling `market.resolve`.
-//!
-//! The market interface (`Side`, `MarketInfo`, `MarketClient`) is declared locally
-//! via `#[contractclient]` rather than importing the market crate, so the market
-//! contract's wasm exports aren't linked into this contract. The types are
-//! structurally identical, so cross-contract calls serialize compatibly.
 
 use soroban_sdk::{
     contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, Address,
@@ -19,7 +8,6 @@ use soroban_sdk::{
 
 const ORACLE: Symbol = symbol_short!("ORACLE");
 
-// --- Reflector (SEP-40) interface ---
 #[contracttype]
 #[derive(Clone)]
 pub enum Asset {
@@ -39,7 +27,6 @@ pub trait Reflector {
     fn lastprice(env: Env, asset: Asset) -> Option<PriceData>;
 }
 
-// --- LMSR market interface (structurally matches lmsr-market) ---
 #[contracttype]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Side {
@@ -68,7 +55,6 @@ pub enum Error {
     NotYetExpired = 1,
     NoPrice = 2,
     NotInitialized = 3,
-    AlreadyInitialized = 4,
 }
 
 #[contract]
@@ -76,13 +62,10 @@ pub struct Resolver;
 
 #[contractimpl]
 impl Resolver {
-    /// Set the trusted Reflector oracle (once). Deploy one Resolver per oracle.
-    pub fn init(env: Env, oracle: Address) -> Result<(), Error> {
-        if env.storage().instance().has(&ORACLE) {
-            return Err(Error::AlreadyInitialized);
-        }
+    /// Set the trusted Reflector oracle at deploy time (constructor — runs
+    /// atomically during deployment, so it cannot be front-run). One Resolver per oracle.
+    pub fn __constructor(env: Env, oracle: Address) {
         env.storage().instance().set(&ORACLE, &oracle);
-        Ok(())
     }
 
     /// Resolve `market` using this Resolver's TRUSTED oracle (not caller-supplied).

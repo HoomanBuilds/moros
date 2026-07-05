@@ -32,11 +32,15 @@ fn setup(env: &Env) -> (ResolverClient<'_>, LmsrMarketClient<'_>, MockOracleClie
     env.mock_all_auths();
     let creator = Address::generate(env);
     let token = env.register_stellar_asset_contract_v2(creator).address();
-    let resolver = ResolverClient::new(env, &env.register(Resolver {}, ()));
-    let market = LmsrMarketClient::new(env, &env.register(LmsrMarket {}, ()));
     let oracle = MockOracleClient::new(env, &env.register(MockOracle {}, ()));
-    resolver.init(&oracle.address); // trusted oracle, set once
-    market.init(&resolver.address, &token, &(100 * S), &ASSET, &THRESHOLD, &0u64);
+    let resolver = ResolverClient::new(env, &env.register(Resolver {}, (oracle.address.clone(),)));
+    let market = LmsrMarketClient::new(
+        env,
+        &env.register(
+            LmsrMarket {},
+            (resolver.address.clone(), token.clone(), 100i128 * S, ASSET, THRESHOLD, 0u64),
+        ),
+    );
     (resolver, market, oracle)
 }
 
@@ -66,11 +70,15 @@ fn rejects_before_expiry() {
     env.mock_all_auths();
     let creator = Address::generate(&env);
     let token = env.register_stellar_asset_contract_v2(creator).address();
-    let resolver = ResolverClient::new(&env, &env.register(Resolver {}, ()));
-    let market = LmsrMarketClient::new(&env, &env.register(LmsrMarket {}, ()));
     let oracle = MockOracleClient::new(&env, &env.register(MockOracle {}, ()));
-    resolver.init(&oracle.address);
-    market.init(&resolver.address, &token, &(100 * S), &ASSET, &THRESHOLD, &9_999_999_999u64);
+    let resolver = ResolverClient::new(&env, &env.register(Resolver {}, (oracle.address.clone(),)));
+    let market = LmsrMarketClient::new(
+        &env,
+        &env.register(
+            LmsrMarket {},
+            (resolver.address.clone(), token.clone(), 100i128 * S, ASSET, THRESHOLD, 9_999_999_999u64),
+        ),
+    );
     oracle.set(&THRESHOLD);
     assert!(resolver.try_resolve_market(&market.address).is_err());
 }

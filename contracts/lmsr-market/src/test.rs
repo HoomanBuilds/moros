@@ -18,12 +18,16 @@ const EXPIRY: u64 = 2_000_000_000; // unix seconds
 fn setup(env: &Env) -> (LmsrMarketClient<'_>, Address, Address, Address) {
     env.mock_all_auths();
     let admin = Address::generate(env);
-    let sac = env.register_stellar_asset_contract_v2(admin.clone());
-    let token = sac.address();
+    let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
     let trader = Address::generate(env);
     StellarAssetClient::new(env, &token).mint(&trader, &(1_000_000 * S));
-    let client = LmsrMarketClient::new(env, &env.register(LmsrMarket {}, ()));
-    client.init(&admin, &token, &(100 * S), &ASSET, &THRESHOLD, &EXPIRY);
+    let client = LmsrMarketClient::new(
+        env,
+        &env.register(
+            LmsrMarket {},
+            (admin.clone(), token.clone(), 100i128 * S, ASSET, THRESHOLD, EXPIRY),
+        ),
+    );
     (client, token, trader, admin)
 }
 
@@ -43,15 +47,14 @@ fn price_is_half_at_zero() {
 }
 
 #[test]
+#[should_panic]
 fn rejects_bad_liquidity_param() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
-    let client = LmsrMarketClient::new(&env, &env.register(LmsrMarket {}, ()));
-    assert!(client
-        .try_init(&admin, &token, &0, &ASSET, &THRESHOLD, &EXPIRY)
-        .is_err());
+    // b = 0 -> the constructor panics, so registration fails
+    env.register(LmsrMarket {}, (admin, token, 0i128, ASSET, THRESHOLD, EXPIRY));
 }
 
 #[test]
