@@ -8,7 +8,9 @@
 
 mod math;
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env, Symbol};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol,
+};
 
 /// Which outcome a trade is on.
 #[contracttype]
@@ -62,6 +64,7 @@ pub enum Error {
 pub struct LmsrMarket;
 
 #[contractimpl]
+#[allow(deprecated)] // events use the classic publish() API; migrate to #[contractevent] later
 impl LmsrMarket {
     /// Initialize with an `admin`, a `collateral` token (SEP-41), liquidity
     /// parameter `b` (fixed-point, value * 2^32), and the resolution parameters
@@ -153,7 +156,7 @@ impl LmsrMarket {
             &cost,
         );
 
-        let key = DataKey::Shares(trader, side);
+        let key = DataKey::Shares(trader.clone(), side);
         let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         env.storage().persistent().set(&key, &(held + shares));
 
@@ -162,6 +165,8 @@ impl LmsrMarket {
         env.storage().instance().set(&DataKey::QYes, &qy2);
         env.storage().instance().set(&DataKey::QNo, &qn2);
 
+        env.events()
+            .publish((symbol_short!("buy"), trader), (side, shares, cost, qy2, qn2));
         Ok(cost)
     }
 
@@ -208,6 +213,8 @@ impl LmsrMarket {
             &refund,
         );
 
+        env.events()
+            .publish((symbol_short!("sell"), trader), (side, shares, refund, qy2, qn2));
         Ok(refund)
     }
 
@@ -235,6 +242,7 @@ impl LmsrMarket {
             return Err(Error::AlreadyResolved);
         }
         env.storage().instance().set(&DataKey::Outcome, &outcome);
+        env.events().publish((symbol_short!("resolved"),), outcome);
         Ok(())
     }
 
@@ -277,21 +285,22 @@ impl LmsrMarket {
         let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         env.storage().persistent().set(&key, &0i128); // burn regardless of outcome
 
-        if side != winning || held == 0 {
-            return Ok(0);
+        let payout = if side == winning { held } else { 0 };
+        if payout > 0 {
+            let token_addr: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Token)
+                .ok_or(Error::NotInitialized)?;
+            token::Client::new(&env, &token_addr).transfer(
+                &env.current_contract_address(),
+                &trader,
+                &payout,
+            );
         }
-
-        let token_addr: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .ok_or(Error::NotInitialized)?;
-        token::Client::new(&env, &token_addr).transfer(
-            &env.current_contract_address(),
-            &trader,
-            &held,
-        );
-        Ok(held)
+        env.events()
+            .publish((symbol_short!("redeem"), trader), (side, payout));
+        Ok(payout)
     }
 }
 

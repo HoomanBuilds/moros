@@ -2,9 +2,9 @@
 extern crate std;
 
 use crate::{math, LmsrMarket, LmsrMarketClient, Side};
-use soroban_sdk::testutils::Address as _;
+use soroban_sdk::testutils::{Address as _, Events as _};
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
-use soroban_sdk::{symbol_short, Address, Env, Symbol};
+use soroban_sdk::{symbol_short, vec, Address, Env, IntoVal, Symbol};
 
 const S: i128 = 1 << 32; // 2^32 fixed-point scale
 
@@ -188,4 +188,84 @@ fn cannot_redeem_before_resolution() {
     let (client, _token, trader, _admin) = setup(&env);
     client.buy(&trader, &Side::Yes, &(10 * S));
     assert!(client.try_redeem(&trader, &Side::Yes).is_err());
+}
+
+// --- events (consumed by the off-chain indexer) ---
+// Assert on this contract's events only (SAC token also emits); compare the full
+// sequence via filter_by_contract, which equals a Vec<(addr, topics, data)>.
+
+#[test]
+fn buy_emits_trade_event() {
+    let env = Env::default();
+    let (client, _token, trader, _admin) = setup(&env);
+    let cost = client.buy(&trader, &Side::Yes, &(60 * S));
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (symbol_short!("buy"), trader.clone()).into_val(&env),
+                (Side::Yes, 60i128 * S, cost, 60i128 * S, 0i128).into_val(&env),
+            )
+        ]
+    );
+}
+
+#[test]
+fn sell_emits_trade_event() {
+    let env = Env::default();
+    let (client, _token, trader, _admin) = setup(&env);
+    client.buy(&trader, &Side::Yes, &(60 * S));
+    let refund = client.sell(&trader, &Side::Yes, &(60 * S));
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (symbol_short!("sell"), trader.clone()).into_val(&env),
+                (Side::Yes, 60i128 * S, refund, 0i128, 0i128).into_val(&env),
+            )
+        ]
+    );
+}
+
+#[test]
+fn resolve_emits_event() {
+    let env = Env::default();
+    let (client, _token, _trader, admin) = setup(&env);
+    client.resolve(&admin, &Side::Yes);
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (symbol_short!("resolved"),).into_val(&env),
+                Side::Yes.into_val(&env),
+            )
+        ]
+    );
+}
+
+#[test]
+fn redeem_emits_event() {
+    let env = Env::default();
+    let (client, token, trader, admin) = setup(&env);
+    fund_subsidy(&env, &client, &token, &admin);
+    client.buy(&trader, &Side::Yes, &(60 * S));
+    client.resolve(&admin, &Side::Yes);
+    let payout = client.redeem(&trader, &Side::Yes);
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (symbol_short!("redeem"), trader.clone()).into_val(&env),
+                (Side::Yes, payout).into_val(&env),
+            )
+        ]
+    );
 }
