@@ -42,6 +42,8 @@ enum DataKey {
 }
 
 const MAX_Q: i128 = 1i128 << 60;
+const TTL_THRESHOLD: u32 = 120_960;
+const TTL_EXTEND_TO: u32 = 518_400;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -92,6 +94,7 @@ impl LmsrMarket {
         s.set(&DataKey::Threshold, &threshold);
         s.set(&DataKey::Expiry, &expiry);
         s.set(&DataKey::Decimals, &decimals);
+        Self::bump(&env);
     }
 
     /// Resolution parameters (asset / threshold / expiry).
@@ -119,6 +122,10 @@ impl LmsrMarket {
     /// (q_yes, q_no, b) — current market quantities (fixed-point).
     pub fn get_state(env: Env) -> Result<(i128, i128, i128), Error> {
         Self::state(&env)
+    }
+
+    pub fn extend_ttl(env: Env) {
+        Self::bump(&env);
     }
 
     /// Collateral cost to buy `shares` (fixed-point) of `side`.
@@ -151,6 +158,8 @@ impl LmsrMarket {
         let (qy2, qn2) = Self::apply(qy, qn, side, shares);
         env.storage().instance().set(&DataKey::QYes, &qy2);
         env.storage().instance().set(&DataKey::QNo, &qn2);
+        Self::bump(&env);
+        Self::bump_shares(&env, &key);
 
         let token_addr: Address = env
             .storage()
@@ -203,6 +212,8 @@ impl LmsrMarket {
         let (qy2, qn2) = Self::reduce(qy, qn, side, shares)?;
         env.storage().instance().set(&DataKey::QYes, &qy2);
         env.storage().instance().set(&DataKey::QNo, &qn2);
+        Self::bump(&env);
+        Self::bump_shares(&env, &key);
 
         let token_addr: Address = env
             .storage()
@@ -260,6 +271,7 @@ impl LmsrMarket {
         }
         env.storage().instance().set(&DataKey::Outcome, &outcome);
         env.events().publish((symbol_short!("resolved"),), outcome);
+        Self::bump(&env);
         Ok(())
     }
 
@@ -285,6 +297,7 @@ impl LmsrMarket {
             &env.current_contract_address(),
             &amount,
         );
+        Self::bump(&env);
         Ok(())
     }
 
@@ -321,11 +334,24 @@ impl LmsrMarket {
         }
         env.events()
             .publish((symbol_short!("redeem"), trader), (side, payout));
+        Self::bump(&env);
         Ok(payout)
     }
 }
 
 impl LmsrMarket {
+    fn bump(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+
+    fn bump_shares(env: &Env, key: &DataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(key, TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+
     fn state(env: &Env) -> Result<(i128, i128, i128), Error> {
         let s = env.storage().instance();
         let b: i128 = s.get(&DataKey::B).ok_or(Error::NotInitialized)?;

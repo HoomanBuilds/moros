@@ -190,6 +190,16 @@ fn redeem_losing_side_pays_nothing() {
 }
 
 #[test]
+fn extend_ttl_is_callable_and_preserves_state() {
+    let env = Env::default();
+    let (client, _token, trader, _admin) = setup(&env);
+    client.buy(&trader, &Side::Yes, &(10 * S));
+    client.extend_ttl();
+    assert_eq!(client.get_state(), (10 * S, 0, 100 * S));
+    assert_eq!(client.shares_of(&trader, &Side::Yes), 10 * S);
+}
+
+#[test]
 fn resolve_rejects_when_pool_cannot_cover_payouts() {
     let env = Env::default();
     let (client, _token, trader, admin) = setup(&env);
