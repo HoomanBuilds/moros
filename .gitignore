@@ -1,0 +1,41 @@
+# --- Reference / working folders (kept locally, not tracked) ---
+/docs/
+/inspiration/
+/spikes/
+/.claude/
+/.playwright-mcp/
+
+# --- Claude (never commit) ---
+CLAUDE.md
+
+# --- Rust / Soroban ---
+target/
+**/*.rs.bk
+*.wasm
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnp.*
+
+# --- Circom / snarkjs artifacts ---
+*.ptau
+*.zkey
+*.r1cs
+*.wtns
+*_js/
+witness.wtns
+
+# --- Env / secrets / local deploy state ---
+.env
+.env.*
+*.key
+*.pem
+deployments/*.local.json
+
+# --- OS / editor ---
+.DS_Store
+*.swp
+.idea/
+.vscode/
