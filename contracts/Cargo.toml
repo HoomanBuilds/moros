@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["lmsr-market"]
+
+[workspace.dependencies]
+soroban-sdk = "25.1.0"
+
+# Soroban release profile. NOTE: overflow-checks = true is a deliberate solvency
+# fix — a silent i128 wrap on the money path could mis-price a trade. Keep it on.
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true
