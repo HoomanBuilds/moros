@@ -26,7 +26,8 @@ template CommitmentHasher() {
     signal input label;              // hash(pool_scope, nonce) % SNARK_SCALAR_FIELD
     signal input secret;             // secret of commitment
     signal input nullifier;
-    
+    signal input side;
+
     // outputs
     signal output commitment;
     signal output nullifierHash;
@@ -34,9 +35,13 @@ template CommitmentHasher() {
     component nullifierHasher = Poseidon255(1);
     nullifierHasher.in[0] <== nullifier;
 
+    component secretSideHasher = Poseidon255(2);
+    secretSideHasher.in[0] <== secret;
+    secretSideHasher.in[1] <== side;
+
     component precommitmentHasher = Poseidon255(2);
     precommitmentHasher.in[0] <== nullifier;
-    precommitmentHasher.in[1] <== secret;
+    precommitmentHasher.in[1] <== secretSideHasher.out;
 
     // Commitment = Poseidon(value, label, precommitment) with t=4 (3 inputs)
     // This matches the Rust implementation: poseidon_hash(env, &[value, label, precommitment])

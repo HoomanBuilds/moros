@@ -12,6 +12,7 @@ template Withdraw(treeDepth, associationDepth) {
     signal input recipient;
     signal input relayer;
     signal input fee;
+    signal input winningOutcome;
 
     // PRIVATE SIGNALS
 
@@ -20,6 +21,7 @@ template Withdraw(treeDepth, associationDepth) {
     signal input value;                 // value of the commitment
     signal input nullifier;             // nullifier of the commitment
     signal input secret;                // Secret of the commitment
+    signal input side;
 
     // signals for merkle tree inclusion proofs
     signal input stateSiblings[treeDepth];   // siblings of the state tree
@@ -40,6 +42,7 @@ template Withdraw(treeDepth, associationDepth) {
     commitmentHasher.value <== value;
     commitmentHasher.secret <== secret;
     commitmentHasher.nullifier <== nullifier;
+    commitmentHasher.side <== side;
     signal commitment <== commitmentHasher.commitment;
 
     // output nullifier hash
@@ -84,6 +87,9 @@ template Withdraw(treeDepth, associationDepth) {
     signal recipientSq <== recipient * recipient;
     signal relayerSq <== relayer * relayer;
     signal feeSq <== fee * fee;
+
+    side * (1 - side) === 0;
+    side === winningOutcome;
 }
 
-component main {public [withdrawnValue, stateRoot, associationRoot, recipient, relayer, fee]} = Withdraw(20, 2);  // state tree depth 20, association tree depth 2
+component main {public [withdrawnValue, stateRoot, associationRoot, recipient, relayer, fee, winningOutcome]} = Withdraw(20, 2);  // state tree depth 20, association tree depth 2
