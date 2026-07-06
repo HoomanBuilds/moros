@@ -1,13 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["lmsr-market", "resolver"]
-exclude = ["shielded-pool"]
+members = ["contract", "libs/lean-imt", "libs/zk"]
 
 [workspace.dependencies]
-soroban-sdk = "25.1.0"
+soroban-sdk = { version = "25.0.0-rc.1" }
+soroban-poseidon = { version = "25.0.0-rc.1" }
 
-# Soroban release profile. NOTE: overflow-checks = true is a deliberate solvency
-# fix — a silent i128 wrap on the money path could mis-price a trade. Keep it on.
 [profile.release]
 opt-level = "z"
 overflow-checks = true
