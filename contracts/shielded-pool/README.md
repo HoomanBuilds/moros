@@ -9,10 +9,12 @@ Forked from [ymcrcat/soroban-privacy-pools](https://github.com/ymcrcat/soroban-p
 version; excluded from the parent `contracts` workspace.
 
 ## Status — being adapted for the market
-- Notes will carry `market + side`; redeem gated on the market's resolved outcome.
-- **NOT deployable yet:** the upstream `withdraw` does not bind the recipient into
-  the proof, so it is front-runnable. The `redeem` circuit must bind
-  recipient/relayer/fee first. Unaudited research code — testnet/demo only.
+- `circuits/main.circom` now **binds recipient/relayer/fee** (anti-front-run fix).
+- Pending wiring: regenerate the withdraw VK from the fixed circuit, update
+  `withdraw` to verify `recipient == to`, and regenerate the embedded test proofs.
+- Pending market adaptation: notes carry `market + side`; redeem gated on the
+  market's resolved outcome.
+- **NOT deployable yet.** Unaudited research code — testnet/demo only.
 
 ## Build
 ```
