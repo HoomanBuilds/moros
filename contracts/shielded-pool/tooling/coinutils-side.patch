@@ -1,0 +1,163 @@
+diff --git a/cli/coinutils/src/cli/args.rs b/cli/coinutils/src/cli/args.rs
+index 440aa84..81a010b 100644
+--- a/cli/coinutils/src/cli/args.rs
++++ b/cli/coinutils/src/cli/args.rs
+@@ -18,6 +18,8 @@ pub enum Commands {
+         /// Output file path
+         #[arg(short, long, default_value = "coin.json")]
+         output: String,
++        #[arg(long, default_value_t = 1)]
++        side: u32,
+     },
+     /// Withdraw a coin
+     Withdraw {
+diff --git a/cli/coinutils/src/cli/commands.rs b/cli/coinutils/src/cli/commands.rs
+index 92bf7f3..553438f 100644
+--- a/cli/coinutils/src/cli/commands.rs
++++ b/cli/coinutils/src/cli/commands.rs
+@@ -27,14 +27,14 @@ impl CommandHandler {
+     }
+ 
+     /// Handle the generate command
+-    pub fn handle_generate(&self, scope: String, output: String) -> Result<()> {
++    pub fn handle_generate(&self, scope: String, output: String, side: u32) -> Result<()> {
+         info!("Generating coin with scope: {}", scope);
+         debug!("Output file: {}", output);
+ 
+         let env = Env::default();
+         env.cost_estimate().budget().reset_unlimited();
+ 
+-        let generated_coin = generate_coin(&env, scope.as_bytes());
++        let generated_coin = generate_coin(&env, scope.as_bytes(), side);
+         debug!(
+             "Generated coin commitment: {}",
+             generated_coin.commitment_hex
+diff --git a/cli/coinutils/src/crypto/coin.rs b/cli/coinutils/src/crypto/coin.rs
+index bc94c70..208235a 100644
+--- a/cli/coinutils/src/crypto/coin.rs
++++ b/cli/coinutils/src/crypto/coin.rs
+@@ -35,13 +35,15 @@ pub fn generate_commitment(
+     label: BlsScalar,
+     nullifier: BlsScalar,
+     secret: BlsScalar,
++    side: BlsScalar,
+ ) -> BlsScalar {
+-    let precommitment = poseidon_hash(env, &[nullifier, secret]);
++    let secret_side = poseidon_hash(env, &[secret, side]);
++    let precommitment = poseidon_hash(env, &[nullifier, secret_side]);
+     poseidon_hash(env, &[value, label, precommitment])
+ }
+ 
+ /// Generate a complete coin with all necessary components
+-pub fn generate_coin(env: &Env, scope: &[u8]) -> GeneratedCoin {
++pub fn generate_coin(env: &Env, scope: &[u8], side: u32) -> GeneratedCoin {
+     use crate::crypto::conversions::bls_scalar_to_decimal_string;
+ 
+     let value = BlsScalar::from_u256(U256::from_u32(env, COIN_VALUE as u32));
+@@ -49,12 +51,14 @@ pub fn generate_coin(env: &Env, scope: &[u8]) -> GeneratedCoin {
+     let secret = random_fr(env);
+     let nonce = thread_rng().gen::<[u8; 32]>();
+     let label = generate_label(env, scope, &nonce);
++    let side_fr = BlsScalar::from_u256(U256::from_u32(env, side));
+     let commitment = generate_commitment(
+         env,
+         value.clone(),
+         label.clone(),
+         nullifier.clone(),
+         secret.clone(),
++        side_fr,
+     );
+ 
+     let value_decimal = bls_scalar_to_decimal_string(&value);
+@@ -68,6 +72,7 @@ pub fn generate_coin(env: &Env, scope: &[u8]) -> GeneratedCoin {
+         nullifier: nullifier_decimal,
+         secret: secret_decimal,
+         label: label_decimal,
++        side: side.to_string(),
+         commitment: commitment_decimal,
+     };
+ 
+@@ -99,7 +104,8 @@ mod tests {
+         let nullifier = BlsScalar::from_u256(U256::from_u32(&env, 300));
+         let secret = BlsScalar::from_u256(U256::from_u32(&env, 400));
+ 
+-        let result = generate_commitment(&env, value, label, nullifier, secret);
++        let side = BlsScalar::from_u256(U256::from_u32(&env, 1));
++        let result = generate_commitment(&env, value, label, nullifier, secret, side);
+         // Just verify it doesn't panic and returns a valid scalar
+         assert!(result.to_bytes().to_array().iter().any(|&x| x != 0));
+     }
+@@ -108,7 +114,7 @@ mod tests {
+     fn test_generate_coin() {
+         let env = Env::default();
+         let scope = b"test_scope";
+-        let result = generate_coin(&env, scope);
++        let result = generate_coin(&env, scope, 1);
+ 
+         // Verify the coin has all required fields
+         assert!(!result.coin.value.is_empty());
+diff --git a/cli/coinutils/src/main.rs b/cli/coinutils/src/main.rs
+index c920f69..5fc4e3e 100644
+--- a/cli/coinutils/src/main.rs
++++ b/cli/coinutils/src/main.rs
+@@ -11,7 +11,7 @@ fn main() {
+     let command_handler = CommandHandler::new();
+ 
+     let result = match cli.command {
+-        Commands::Generate { scope, output } => command_handler.handle_generate(scope, output),
++        Commands::Generate { scope, output, side } => command_handler.handle_generate(scope, output, side),
+         Commands::Withdraw {
+             coin_file,
+             state_file,
+diff --git a/cli/coinutils/src/merkle/withdrawal.rs b/cli/coinutils/src/merkle/withdrawal.rs
+index f112d23..d470e9a 100644
+--- a/cli/coinutils/src/merkle/withdrawal.rs
++++ b/cli/coinutils/src/merkle/withdrawal.rs
+@@ -28,6 +28,7 @@ impl WithdrawalManager {
+         let nullifier = decimal_string_to_bls_scalar(env, &coin.nullifier)?;
+         let secret = decimal_string_to_bls_scalar(env, &coin.secret)?;
+         let label = decimal_string_to_bls_scalar(env, &coin.label)?;
++        let side = decimal_string_to_bls_scalar(env, &coin.side)?;
+ 
+         // Reconstruct the commitment to verify it matches
+         let commitment = generate_commitment(
+@@ -36,6 +37,7 @@ impl WithdrawalManager {
+             label.clone(),
+             nullifier.clone(),
+             secret.clone(),
++            side.clone(),
+         );
+ 
+         // Build merkle tree from state file using lean-imt
+@@ -101,6 +103,7 @@ impl WithdrawalManager {
+             value: value_decimal,
+             nullifier: nullifier_decimal,
+             secret: secret_decimal,
++            side: bls_scalar_to_decimal_string(&side),
+             state_root: state_root_decimal,
+             state_index: commitment_index.to_string(),
+             state_siblings: siblings
+diff --git a/cli/coinutils/src/types/coin.rs b/cli/coinutils/src/types/coin.rs
+index 6d4c203..743090b 100644
+--- a/cli/coinutils/src/types/coin.rs
++++ b/cli/coinutils/src/types/coin.rs
+@@ -6,6 +6,7 @@ pub struct CoinData {
+     pub nullifier: String,
+     pub secret: String,
+     pub label: String,
++    pub side: String,
+     pub commitment: String,
+ }
+ 
+diff --git a/cli/coinutils/src/types/snark.rs b/cli/coinutils/src/types/snark.rs
+index eeba96a..a9d4c20 100644
+--- a/cli/coinutils/src/types/snark.rs
++++ b/cli/coinutils/src/types/snark.rs
+@@ -8,6 +8,7 @@ pub struct SnarkInput {
+     pub value: String,
+     pub nullifier: String,
+     pub secret: String,
++    pub side: String,
+     #[serde(rename = "stateRoot")]
+     pub state_root: String,
+     #[serde(rename = "stateIndex")]
