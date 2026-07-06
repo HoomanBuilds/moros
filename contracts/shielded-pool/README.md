@@ -22,10 +22,14 @@ an in-proof recipient. 8 public signals, 9 IC points; power-15 BLS12-381 setup.
     or an unresolved market is rejected.
 - **Per-market pool:** the `market` address is bound at construction, so a note's
   market is the pool it lives in; its side is committed inside the note.
+- `deposit` verifies a **bet-validity proof** (`circuits/deposit.circom`, reusing the
+  same `CommitmentHasher`): the note is well-formed, `side ∈ {0,1}`, `0 < amount ≤ cap`
+  — all without revealing size or side. The contract checks the proof's commitment
+  equals the deposited one and its `cap` equals the pool's configured cap.
 - **NOT deployable yet.** Unaudited research code — testnet/demo only.
 
-Follow-ups: `bet_validity` at `deposit` (hidden amount ≤ cap), variable stake +
-LMSR-backed payout, batching (Phase 4).
+Follow-ups: variable stake + LMSR-backed payout (winners capture the pot),
+batching to hide side/size across trades (Phase 4).
 
 ## Regenerating the withdraw proof
 See [`tooling/README.md`](tooling/README.md) for the full pipeline (self-run
