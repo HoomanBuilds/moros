@@ -38,6 +38,9 @@ pub enum Error {
     OnlyAdmin = 4,
     TreeAtCapacity = 5,
     AssociationRootMismatch = 6,
+    DepositProofFailed = 7,
+    CommitmentMismatch = 8,
+    CapMismatch = 9,
 }
 
 // Error messages for Vec<String> returns (legacy compatibility)
@@ -60,6 +63,8 @@ const TOKEN_KEY: Symbol = symbol_short!("token");
 const ASSOCIATION_ROOT_KEY: Symbol = symbol_short!("assoc");
 const ADMIN_KEY: Symbol = symbol_short!("admin");
 const MARKET_KEY: Symbol = symbol_short!("market");
+const DEPOSIT_VK_KEY: Symbol = symbol_short!("dvk");
+const CAP_KEY: Symbol = symbol_short!("cap");
 
 const FIXED_AMOUNT: i128 = 1000000000; // 1 XLM in stroops
 
@@ -71,16 +76,20 @@ impl PrivacyPoolsContract {
     pub fn __constructor(
         env: &Env,
         vk_bytes: Bytes,
+        deposit_vk_bytes: Bytes,
         token_address: Address,
         admin: Address,
         market: Address,
+        cap: i128,
     ) {
         // Store the admin
         env.storage().instance().set(&ADMIN_KEY, &admin);
 
         env.storage().instance().set(&VK_KEY, &vk_bytes);
+        env.storage().instance().set(&DEPOSIT_VK_KEY, &deposit_vk_bytes);
         env.storage().instance().set(&TOKEN_KEY, &token_address);
         env.storage().instance().set(&MARKET_KEY, &market);
+        env.storage().instance().set(&CAP_KEY, &cap);
 
         // Initialize empty merkle tree with fixed depth
         let tree = LeanIMT::new(env, TREE_DEPTH);
@@ -155,8 +164,35 @@ impl PrivacyPoolsContract {
     ///
     /// * Updates the merkle tree with the new commitment
     /// * Transfers the asset from the depositor to the contract
-    pub fn deposit(env: &Env, from: Address, commitment: BytesN<32>) -> Result<u32, Error> {
+    pub fn deposit(
+        env: &Env,
+        from: Address,
+        commitment: BytesN<32>,
+        proof_bytes: Bytes,
+        pub_signals_bytes: Bytes,
+    ) -> Result<u32, Error> {
         from.require_auth();
+
+        let dvk_bytes: Bytes = env.storage().instance().get(&DEPOSIT_VK_KEY).unwrap();
+        let dvk = VerificationKey::from_bytes(env, &dvk_bytes).unwrap();
+        let proof = Proof::from_bytes(env, &proof_bytes);
+        let pub_signals = PublicSignals::from_bytes(env, &pub_signals_bytes);
+
+        let res = Groth16Verifier::verify_proof(env, dvk, proof, &pub_signals.pub_signals);
+        if res.is_err() || !res.unwrap() {
+            return Err(Error::DepositProofFailed);
+        }
+
+        if pub_signals.pub_signals.get(0).unwrap().to_bytes() != commitment {
+            return Err(Error::CommitmentMismatch);
+        }
+
+        let cap: i128 = env.storage().instance().get(&CAP_KEY).unwrap();
+        let mut cap_bytes = [0u8; 32];
+        cap_bytes[16..].copy_from_slice(&cap.to_be_bytes());
+        if pub_signals.pub_signals.get(1).unwrap().to_bytes() != BytesN::from_array(env, &cap_bytes) {
+            return Err(Error::CapMismatch);
+        }
 
         // Get the stored token address
         let token_address: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
