@@ -231,7 +231,8 @@ impl PrivacyPoolsContract {
     ///
     /// # Security
     ///
-    /// * Requires authentication from the `to` address
+    /// * Relayer-submittable: the recipient is bound in the proof, so no signature
+    ///   from `to` is required and only the in-proof recipient can be paid
     /// * Verifies that the nullifier hasn't been used before (prevents double-spending)
     /// * Validates the zero-knowledge proof using Groth16 verification
     /// * Transfers exactly `FIXED_AMOUNT` of the configured token from the contract to the recipient
@@ -252,8 +253,6 @@ impl PrivacyPoolsContract {
         proof_bytes: Bytes,
         pub_signals_bytes: Bytes,
     ) -> Vec<String> {
-        to.require_auth();
-
         // Require association root to be set before any withdrawal
         if !Self::has_association_set(env) {
             panic!("Association root must be set before withdrawal");
