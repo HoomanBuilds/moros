@@ -78,53 +78,52 @@ fn g2_from_coords(env: &Env, x1: &str, x2: &str, y1: &str, y2: &str) -> G2Affine
     G2Affine::from_array(env, &buf)
 }
 
+fn test_commitment(env: &Env) -> BytesN<32> {
+    BytesN::from_array(
+        env,
+        &[
+            0x1d, 0x8c, 0xe4, 0xc4, 0x49, 0x5b, 0x5e, 0x34, 0x2a, 0xff, 0x61, 0x2e, 0x76, 0xb8,
+            0x32, 0x29, 0x49, 0x71, 0x3e, 0xb3, 0x9c, 0x0c, 0xa5, 0xbc, 0xe9, 0x98, 0xa5, 0xb3,
+            0xcf, 0xe4, 0x15, 0xb9,
+        ],
+    )
+}
+
+fn test_association_root(env: &Env) -> BytesN<32> {
+    BytesN::from_array(
+        env,
+        &[
+            0x41, 0x25, 0x34, 0xa2, 0xe9, 0xa7, 0x85, 0x3c, 0x11, 0x8c, 0xc6, 0x0c, 0x9f, 0x0e,
+            0x2c, 0x7c, 0x9e, 0x56, 0x9b, 0x23, 0x87, 0x46, 0x79, 0x9c, 0xc3, 0xb4, 0xaf, 0xd8,
+            0x67, 0x4b, 0x3e, 0x72,
+        ],
+    )
+}
+
+fn test_recipient(env: &Env) -> Address {
+    Address::from_string(&String::from_str(
+        env,
+        "GAGRIGZCFEYDOPSFJRJVUYLIN53H3BELSKM2BJ5OWW6MHSWR3DP6NEHL",
+    ))
+}
+
 fn init_vk(env: &Env) -> Bytes {
-    let alphax = "2625583050305146829700663917277485398332586266229739236073977691599912239208704058548731458555934906273399977862822";
-    let alphay = "1155364156944807367912876641032696519500054551629402873339575774959620483194368919563799050765095981406853619398751";
-
-    let betax1 = "1659696755509039809248937927616726274238080235224171061036366585278216098417245587200210264410333778948851576160490";
-    let betax2 = "1338363397031837211155983756179787835339490797745307535810204658838394402900152502268197396587061400659003281046656";
-    let betay1 = "1974652615426136516341494326987376616840373177388374023461177997087381634383568759591087499459321812809521924259354";
-    let betay2 = "3301884318087924474550898163462840036865878131635519297186391370517333773367262804074867347346141727012544462046142";
-
-    let gammax1 = "352701069587466618187139116011060144890029952792775240219908644239793785735715026873347600343865175952761926303160";
-    let gammax2 = "3059144344244213709971259814753781636986470325476647558659373206291635324768958432433509563104347017837885763365758";
-    let gammay1 = "1985150602287291935568054521177171638300868978215655730859378665066344726373823718423869104263333984641494340347905";
-    let gammay2 = "927553665492332455747201965776037880757740193453592970025027978793976877002675564980949289727957565575433344219582";
-
-    let deltax1 = "2750191744467054372912942146482544263484467550244832445881626112777617723646810063952263428512022936903253267127350";
-    let deltax2 = "2413234737575312815700598631122026291319065432043412800839944397857332202830802685415923770088689063622756702939375";
-    let deltay1 = "1076967202486993406108941342102174843689250913208763125383730107292668137282535239225119066564005251774661400843821";
-    let deltay2 = "784091089348445241891924627629031628871298938526420228496183038286414003726447208549611976928427786617444752683904";
-
-    let ic0x = "1931769351244036379618100283994844046485312882458040431401676712058257124546097756332532237907637132315648906217636";
-    let ic0y = "2219462221684288788247757134332962645470083865115055927456187574960992952094314940257753501443104606354496083113203";
-
-    let ic1x = "2726325242623221693388802248110816107554759305800882344642286106642968529507795071709947858512355148550879270019178";
-    let ic1y = "2690452834591447292232392438454117662004701691035040250634864436657178120453111433393322306334324558619029220405511";
-
-    let ic2x = "2276753520377413052133204619264853734926027674320220733263964937413806530791610300908525130874383991218501161443629";
-    let ic2y = "2216565042994647061456742959690979278824752277479734731836503122505090074006677407948960110633236603228440758211011";
-
-    let ic3x = "2054702829658916052030239062784122350883101497414801284378548048954817335805733517964277882891682327579038641542963";
-    let ic3y = "1861299377849520465661244108949779781960526739720579329803172490216038156998919390163110860296739149427635782605232";
-
-    let ic4x = "2856004998221708121377069305149495649378668245327503671752831152976814973551962498318427356938380464598719642329610";
-    let ic4y = "3445052445376607662168014620609501339582857414982758608624858423598446194176241135586201569345644453045853894315946";
-
     let vk = VerificationKey {
-        alpha: g1_from_coords(env, alphax, alphay),
-        beta: g2_from_coords(env, betax1, betax2, betay1, betay2),
-        gamma: g2_from_coords(env, gammax1, gammax2, gammay1, gammay2),
-        delta: g2_from_coords(env, deltax1, deltax2, deltay1, deltay2),
+        alpha: g1_from_coords(env, "927341188260013616574853185898561726568613395913854588927604954969096262378259678027131216778306785873028629205017", "3070123395880844486230643469920125439818797576783486794184978705617904400595773070461146891915200624066770752239301"),
+        beta: g2_from_coords(env, "3606228537388419908910503731121434271985986325783350278327810347603965962298622199795954626457892754735118434294706", "3273095258705896143294864472251173142853039271420450497226930313886470259982257547209322364452056146442118704908278", "3069056269062894294885096010984743174149719880340647572146519521810855339227572337381167390681619484556164111644563", "3026898264267563570356953177387805050934099489436130596814778851251015212489332174008962152919788299385907200686823"),
+        gamma: g2_from_coords(env, "352701069587466618187139116011060144890029952792775240219908644239793785735715026873347600343865175952761926303160", "3059144344244213709971259814753781636986470325476647558659373206291635324768958432433509563104347017837885763365758", "1985150602287291935568054521177171638300868978215655730859378665066344726373823718423869104263333984641494340347905", "927553665492332455747201965776037880757740193453592970025027978793976877002675564980949289727957565575433344219582"),
+        delta: g2_from_coords(env, "514377201294391085865356740012761039568667905550240239329103618062359691191954454779856550339555542644130722183052", "2650110605856605181259489377353447480027334824941631979057232802991818440648176708741961601369792261507637467997865", "108156346376755903063915503776407015479749444686449895422569412105898110216388769948237481601596039322011942533004", "2907176956754975741421716234783315982267737411234993551888176032845848248151311822920985531650637769134661277175617"),
         ic: Vec::from_array(
-            &env,
+            env,
             [
-                g1_from_coords(env, ic0x, ic0y),
-                g1_from_coords(env, ic1x, ic1y),
-                g1_from_coords(env, ic2x, ic2y),
-                g1_from_coords(env, ic3x, ic3y),
-                g1_from_coords(env, ic4x, ic4y),
+                g1_from_coords(env, "950380084615233020516049349515578566742159447332287093581855732722177127002577052381270684045283590910932482850936", "555394492154086299851594550088060473900169436755054891445126819021998574906352967934464961471019005283660474443294"),
+                g1_from_coords(env, "3997145013233198027275371230147764185138362053327437518507926670701107413101384302161362943516839034184951252278383", "2170445312355038895258308381310792180877874515165160359582979567409639386678470004789315193915647123305992907310334"),
+                g1_from_coords(env, "1811331416039558440457371578394796998581762626775595442869048512992361376842881504318285322227104377146561915486619", "2555869269063681811216011553134646017205040098902565488588345795071495094820420754014776576892458628373862618027056"),
+                g1_from_coords(env, "1729360931975081245648256649754603898882628927406301833989591841127356929012709403028532322857731470402144145923432", "839147341452245169138832759126845930561287328479131843556371492237922190092695897890735879286988612441004640771859"),
+                g1_from_coords(env, "1870219126019063086876808867399033874101367712251204976713659360069468844377477453729771571368567478623672803999539", "1621722767805602971773417955403574017301796746431494691182014938614548297193103520301037011449032576183212899610141"),
+                g1_from_coords(env, "716847949899336073836809765961155238384889446924150123430042885682338416657744479291609137528897320578522904818815", "832035177099474722801643052022637265073840684350370140451253847683451865997284500981228236566491943454742325803566"),
+                g1_from_coords(env, "2648790644738698460581675615830610304448811849868043946107612071294589323472633632373276933720599520265954306258181", "2173858535697512736327033791268997014824520933373783222387316099724849221647269801274377932644845989093446274501905"),
+                g1_from_coords(env, "1116964987565288438513118656870310386750429513279894768333700755861806541272236870930312092460189219017667347779327", "126694785889128678870018639464962810787612695172244920980530860628749532298751837408808302093779548768940924852283"),
             ],
         ),
     };
@@ -133,22 +132,10 @@ fn init_vk(env: &Env) -> Bytes {
 }
 
 fn init_proof(env: &Env) -> Bytes {
-    let pi_ax = "212441980386531387965179969427761278516713032280181090947921812756826140060407715059887577334725859148245723641819";
-    let pi_ay = "1043777624107376029707768486456740992720703652869770475160608327115557016215114376228813623265706726948422658129414";
-
-    let pi_bx1 = "3418594862087761466119736619773903243566736312162156790303713071542564953050210637510854068742634808271915139642232";
-    let pi_bx2 = "2964213444574507673113570038406470453416167035798707123655994180726336395671895988634516761061394366777882421458970";
-    let pi_by1 = "3223650775040459204413178680640740880187469067260410489432422220219327812050544783645893434878446219624098341623090";
-    let pi_by2 = "2459594096752687436760263121473341283140767398180854423130454432176129735618526991834231434439933241851791233993087";
-
-    let pi_cx = "443107262259769407693822320108000100156551631812684950355991461785927550068576958619659870180972229362608557133163";
-    let pi_cy = "2104019945288105000027262551270879368920664217362082679701219406216434095932547212599338209378889102523865669374434";
-
-    // Construct the proof from the pre-computed components
     let proof = Proof {
-        a: g1_from_coords(env, &pi_ax, &pi_ay),
-        b: g2_from_coords(env, &pi_bx1, &pi_bx2, &pi_by1, &pi_by2),
-        c: g1_from_coords(env, &pi_cx, &pi_cy),
+        a: g1_from_coords(env, "95010517405837349723580531200892839481774629123272712004246708528741126305631316353823894623433353065187431495291", "2614268847503544575065356501208696878779091974890917340167361707616623910278261520567118814818764599019328070668231"),
+        b: g2_from_coords(env, "659026321434636641199962072870925688841054584932141337484476142494461011170023734391177740141853703091837437888566", "3563768107486946951563792481440392851908496983047867233852995345806498350007021347444054346457399839741793072361068", "3461562088521093777623101629393274648130006352903534298628733219781203846760783559007638615354773050086464854738309", "652643969552544700716327472558502248917047245623839728153782720048203583632661308375213989718516634369431305955533"),
+        c: g1_from_coords(env, "1867460824370960453256326806442026114444057602378749864401154412209741690689897962697639252588631389444266297643131", "2288401485984245117793145641750134507227968478013538015030409864367252095605632428828953857926441197306550538298968"),
     };
 
     return proof.to_bytes(env);
@@ -160,9 +147,9 @@ fn init_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x4b, 0xb7, 0x52, 0xd5, 0x98, 0x01, 0xe5, 0x86, 0xfa, 0x43, 0xaa, 0x95, 0x2a, 0xb3,
-                0xc2, 0x31, 0xf8, 0xca, 0x8c, 0x9b, 0x86, 0x3b, 0x82, 0xca, 0x9a, 0xbd, 0x32, 0x00,
-                0xa7, 0xe5, 0xa2, 0x2d,
+                0x5f, 0x7d, 0x6c, 0x94, 0xdc, 0xe2, 0xc6, 0x00, 0x65, 0xcb, 0x42, 0x7e, 0x70, 0x65,
+                0x48, 0x8b, 0x2e, 0xa8, 0x25, 0xff, 0x13, 0x7b, 0x1c, 0x07, 0xa8, 0x8b, 0x52, 0xcb,
+                0xa1, 0x7f, 0x39, 0xfd,
             ],
         ),
     ); // nullifier
@@ -182,9 +169,9 @@ fn init_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x4a, 0x4f, 0x11, 0x8a, 0x44, 0xf7, 0xd0, 0x73, 0xe8, 0x8b, 0xae, 0x54, 0xe6, 0x20,
-                0x6d, 0xd2, 0x48, 0x97, 0xa5, 0x43, 0x48, 0xb9, 0xf2, 0xc8, 0xeb, 0x70, 0x7d, 0x26,
-                0xf4, 0x4e, 0x32, 0xbc,
+                0x10, 0x25, 0x5f, 0x41, 0x5c, 0x29, 0x77, 0x73, 0x28, 0x48, 0x34, 0x48, 0xdd, 0xf0,
+                0xa1, 0xe9, 0xed, 0x10, 0x53, 0xd8, 0x3a, 0x13, 0xf0, 0xf9, 0x38, 0xcc, 0xf5, 0x45,
+                0xea, 0x4b, 0x41, 0x43,
             ],
         ),
     ); // state root
@@ -193,14 +180,46 @@ fn init_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x5d, 0x58, 0x26, 0xf9, 0xc9, 0x18, 0x7b, 0xdb, 0x21, 0x3f, 0x01, 0xde, 0xd6, 0xd2,
-                0x30, 0xe9, 0xf1, 0xab, 0x65, 0x3b, 0x5b, 0xee, 0x60, 0x36, 0x50, 0x4e, 0x82, 0xbc,
-                0x07, 0x16, 0xba, 0xa2,
+                0x41, 0x25, 0x34, 0xa2, 0xe9, 0xa7, 0x85, 0x3c, 0x11, 0x8c, 0xc6, 0x0c, 0x9f, 0x0e,
+                0x2c, 0x7c, 0x9e, 0x56, 0x9b, 0x23, 0x87, 0x46, 0x79, 0x9c, 0xc3, 0xb4, 0xaf, 0xd8,
+                0x67, 0x4b, 0x3e, 0x72,
             ],
         ),
-    ); // Association root
+    ); // association root
+    let public_4 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x1f, 0xe4, 0x2c, 0xe7, 0xbf, 0x7e, 0x35, 0x25, 0x4a, 0xfb, 0x4a, 0x46, 0x3a, 0x0b,
+                0xa9, 0x4e, 0xd1, 0xdc, 0xa2, 0x14, 0xeb, 0xfd, 0x08, 0xe9, 0x58, 0x03, 0xc1, 0xf4,
+                0x94, 0xa0, 0xcf, 0x78,
+            ],
+        ),
+    ); // recipient
+    let public_5 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+            ],
+        ),
+    ); // relayer
+    let public_6 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+            ],
+        ),
+    ); // fee
 
-    // Create output vector for verification: [nullifierHash, withdrawnValue, stateRoot, associationRoot]
     let output = Vec::from_array(
         &env,
         [
@@ -208,6 +227,9 @@ fn init_pub_signals(env: &Env) -> Bytes {
             Fr::from_u256(public_1),
             Fr::from_u256(public_2),
             Fr::from_u256(public_3),
+            Fr::from_u256(public_4),
+            Fr::from_u256(public_5),
+            Fr::from_u256(public_6),
         ],
     );
 
@@ -224,12 +246,12 @@ fn init_erronous_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x65, 0x18, 0x92, 0xef, 0x37, 0x4f, 0x78, 0x93, 0x82, 0x36, 0xd4, 0x83, 0x2b, 0x62,
-                0xd3, 0x5f, 0xb7, 0x9c, 0x54, 0xf8, 0x72, 0xe3, 0x0f, 0x5a, 0xa9, 0xab, 0xf9, 0xe6,
-                0xab, 0x15, 0xcb, 0x41,
+                0x5f, 0x7d, 0x6c, 0x94, 0xdc, 0xe2, 0xc6, 0x00, 0x65, 0xcb, 0x42, 0x7e, 0x70, 0x65,
+                0x48, 0x8b, 0x2e, 0xa8, 0x25, 0xff, 0x13, 0x7b, 0x1c, 0x07, 0xa8, 0x8b, 0x52, 0xcb,
+                0xa1, 0x7f, 0x39, 0xfd,
             ],
         ),
-    ); // wrong nullifier
+    ); // nullifier
     let public_1 = U256::from_be_bytes(
         &env,
         &Bytes::from_array(
@@ -246,25 +268,57 @@ fn init_erronous_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x43, 0xc7, 0x5b, 0x13, 0x4d, 0x38, 0x9a, 0x5f, 0x97, 0x8c, 0xec, 0x2a, 0x75, 0x91,
-                0x10, 0xe9, 0x9d, 0x1b, 0x9b, 0x7b, 0xe0, 0x34, 0x45, 0xbd, 0xb9, 0x64, 0xd3, 0x43,
-                0x92, 0xc5, 0x79, 0x63,
+                0x10, 0x25, 0x5f, 0x41, 0x5c, 0x29, 0x77, 0x73, 0x28, 0x48, 0x34, 0x48, 0xdd, 0xf0,
+                0xa1, 0xe9, 0xed, 0x10, 0x53, 0xd8, 0x3a, 0x13, 0xf0, 0xf9, 0x38, 0xcc, 0xf5, 0x45,
+                0xea, 0x4b, 0x41, 0x42,
             ],
         ),
-    ); // wrong state root
+    ); // state root
     let public_3 = U256::from_be_bytes(
         &env,
         &Bytes::from_array(
             &env,
             &[
-                0x5d, 0x58, 0x26, 0xf9, 0xc9, 0x18, 0x7b, 0xdb, 0x21, 0x3f, 0x01, 0xde, 0xd6, 0xd2,
-                0x30, 0xe9, 0xf1, 0xab, 0x65, 0x3b, 0x5b, 0xee, 0x60, 0x36, 0x50, 0x4e, 0x82, 0xbc,
-                0x07, 0x16, 0xba, 0xa2,
+                0x41, 0x25, 0x34, 0xa2, 0xe9, 0xa7, 0x85, 0x3c, 0x11, 0x8c, 0xc6, 0x0c, 0x9f, 0x0e,
+                0x2c, 0x7c, 0x9e, 0x56, 0x9b, 0x23, 0x87, 0x46, 0x79, 0x9c, 0xc3, 0xb4, 0xaf, 0xd8,
+                0x67, 0x4b, 0x3e, 0x72,
             ],
         ),
-    ); // Same association root as correct proof
+    ); // association root
+    let public_4 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x1f, 0xe4, 0x2c, 0xe7, 0xbf, 0x7e, 0x35, 0x25, 0x4a, 0xfb, 0x4a, 0x46, 0x3a, 0x0b,
+                0xa9, 0x4e, 0xd1, 0xdc, 0xa2, 0x14, 0xeb, 0xfd, 0x08, 0xe9, 0x58, 0x03, 0xc1, 0xf4,
+                0x94, 0xa0, 0xcf, 0x78,
+            ],
+        ),
+    ); // recipient
+    let public_5 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+            ],
+        ),
+    ); // relayer
+    let public_6 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+            ],
+        ),
+    ); // fee
 
-    // Create output vector for verification: [nullifierHash, withdrawnValue, stateRoot, associationRoot]
     let output = Vec::from_array(
         &env,
         [
@@ -272,6 +326,9 @@ fn init_erronous_pub_signals(env: &Env) -> Bytes {
             Fr::from_u256(public_1),
             Fr::from_u256(public_2),
             Fr::from_u256(public_3),
+            Fr::from_u256(public_4),
+            Fr::from_u256(public_5),
+            Fr::from_u256(public_6),
         ],
     );
 
@@ -314,7 +371,7 @@ fn test_deposit_and_withdraw_correct_proof() {
 
     // Create test addresses
     let alice = Address::generate(&env);
-    let bob = Address::generate(&env);
+    let bob = test_recipient(&env);
 
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
     let token_client = MockTokenClient::new(&env, &token_id);
@@ -328,14 +385,7 @@ fn test_deposit_and_withdraw_correct_proof() {
     assert_eq!(token_client.balance(&alice), 1000000000);
 
     // Test deposit
-    let commitment = BytesN::from_array(
-        &env,
-        &[
-            0x10, 0xcb, 0x63, 0x1d, 0x17, 0x4a, 0x98, 0xb2, 0x44, 0x0b, 0x68, 0xd2, 0xe5, 0x7d,
-            0xa2, 0xae, 0x9a, 0x13, 0xf7, 0xd1, 0xcc, 0xcb, 0x1f, 0x41, 0xa1, 0xdd, 0x3d, 0x69,
-            0xa2, 0x2f, 0xaa, 0xe9,
-        ],
-    );
+    let commitment = test_commitment(&env);
 
     // Mock authentication for alice
     env.mock_all_auths();
@@ -351,14 +401,7 @@ fn test_deposit_and_withdraw_correct_proof() {
     assert_eq!(token_client.balance(&contract_id), 1000000000); // Contract should have the tokens
 
     // Set association root to match the proof
-    let association_root = BytesN::from_array(
-        &env,
-        &[
-            0x5d, 0x58, 0x26, 0xf9, 0xc9, 0x18, 0x7b, 0xdb, 0x21, 0x3f, 0x01, 0xde, 0xd6, 0xd2,
-            0x30, 0xe9, 0xf1, 0xab, 0x65, 0x3b, 0x5b, 0xee, 0x60, 0x36, 0x50, 0x4e, 0x82, 0xbc,
-            0x07, 0x16, 0xba, 0xa2,
-        ],
-    );
+    let association_root = test_association_root(&env);
     env.mock_all_auths();
     let set_result = client.set_association_root(&admin, &association_root);
     assert_eq!(
@@ -387,13 +430,41 @@ fn test_deposit_and_withdraw_correct_proof() {
 }
 
 #[test]
+fn test_withdraw_wrong_recipient_rejected() {
+    let env = Env::default();
+    let (token_id, contract_id, admin) = setup_test_environment(&env);
+    let client = PrivacyPoolsContractClient::new(&env, &contract_id);
+    let token_client = MockTokenClient::new(&env, &token_id);
+
+    let alice = Address::generate(&env);
+    env.mock_all_auths();
+    token_client.mint(&alice, &1000000000);
+    client.deposit(&alice, &test_commitment(&env));
+    client.set_association_root(&admin, &test_association_root(&env));
+
+    let mallory = Address::generate(&env);
+    let proof = init_proof(&env);
+    let pub_signals = init_pub_signals(&env);
+
+    let result = client.withdraw(&mallory, &proof, &pub_signals);
+    assert_eq!(
+        result,
+        vec![&env, String::from_str(&env, ERROR_RECIPIENT_MISMATCH)]
+    );
+
+    assert_eq!(token_client.balance(&mallory), 0);
+    assert_eq!(token_client.balance(&contract_id), 1000000000);
+    assert_eq!(client.get_nullifiers().len(), 0);
+}
+
+#[test]
 fn test_deposit_and_withdraw_wrong_proof() {
     let env = Env::default();
     let (token_id, contract_id, admin) = setup_test_environment(&env);
 
     // Create test addresses
     let alice = Address::generate(&env);
-    let bob = Address::generate(&env);
+    let bob = test_recipient(&env);
 
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
     let token_client = MockTokenClient::new(&env, &token_id);
@@ -407,14 +478,7 @@ fn test_deposit_and_withdraw_wrong_proof() {
     assert_eq!(token_client.balance(&alice), 1000000000);
 
     // Test deposit
-    let commitment = BytesN::from_array(
-        &env,
-        &[
-            0x10, 0xcb, 0x63, 0x1d, 0x17, 0x4a, 0x98, 0xb2, 0x44, 0x0b, 0x68, 0xd2, 0xe5, 0x7d,
-            0xa2, 0xae, 0x9a, 0x13, 0xf7, 0xd1, 0xcc, 0xcb, 0x1f, 0x41, 0xa1, 0xdd, 0x3d, 0x69,
-            0xa2, 0x2f, 0xaa, 0xe9,
-        ],
-    );
+    let commitment = test_commitment(&env);
 
     // Mock authentication for alice
     env.mock_all_auths();
@@ -426,14 +490,7 @@ fn test_deposit_and_withdraw_wrong_proof() {
     assert_eq!(commitments.get(0).unwrap(), commitment);
 
     // Set association root to match the erroneous pub signals
-    let association_root = BytesN::from_array(
-        &env,
-        &[
-            0x5d, 0x58, 0x26, 0xf9, 0xc9, 0x18, 0x7b, 0xdb, 0x21, 0x3f, 0x01, 0xde, 0xd6, 0xd2,
-            0x30, 0xe9, 0xf1, 0xab, 0x65, 0x3b, 0x5b, 0xee, 0x60, 0x36, 0x50, 0x4e, 0x82, 0xbc,
-            0x07, 0x16, 0xba, 0xa2,
-        ],
-    );
+    let association_root = test_association_root(&env);
     env.mock_all_auths();
     client.set_association_root(&admin, &association_root);
 
@@ -462,18 +519,11 @@ fn test_withdraw_insufficient_balance() {
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
 
     // Set association root to match the proof
-    let association_root = BytesN::from_array(
-        &env,
-        &[
-            0x5d, 0x58, 0x26, 0xf9, 0xc9, 0x18, 0x7b, 0xdb, 0x21, 0x3f, 0x01, 0xde, 0xd6, 0xd2,
-            0x30, 0xe9, 0xf1, 0xab, 0x65, 0x3b, 0x5b, 0xee, 0x60, 0x36, 0x50, 0x4e, 0x82, 0xbc,
-            0x07, 0x16, 0xba, 0xa2,
-        ],
-    );
+    let association_root = test_association_root(&env);
     env.mock_all_auths();
     client.set_association_root(&admin, &association_root);
 
-    let bob = Address::generate(&env);
+    let bob = test_recipient(&env);
     let proof = init_proof(&env);
     let pub_signals = init_pub_signals(&env);
 
@@ -497,33 +547,19 @@ fn test_reuse_nullifier() {
     let token_client = MockTokenClient::new(&env, &token_id);
 
     let alice = Address::generate(&env);
-    let bob = Address::generate(&env);
+    let bob = test_recipient(&env);
 
     // Mint tokens to alice for the deposit
     env.mock_all_auths();
     token_client.mint(&alice, &1000000000);
 
     // Deposit
-    let commitment = BytesN::from_array(
-        &env,
-        &[
-            0x10, 0xcb, 0x63, 0x1d, 0x17, 0x4a, 0x98, 0xb2, 0x44, 0x0b, 0x68, 0xd2, 0xe5, 0x7d,
-            0xa2, 0xae, 0x9a, 0x13, 0xf7, 0xd1, 0xcc, 0xcb, 0x1f, 0x41, 0xa1, 0xdd, 0x3d, 0x69,
-            0xa2, 0x2f, 0xaa, 0xe9,
-        ],
-    );
+    let commitment = test_commitment(&env);
     env.mock_all_auths();
     client.deposit(&alice, &commitment);
 
     // Set association root to match the proof
-    let association_root = BytesN::from_array(
-        &env,
-        &[
-            0x5d, 0x58, 0x26, 0xf9, 0xc9, 0x18, 0x7b, 0xdb, 0x21, 0x3f, 0x01, 0xde, 0xd6, 0xd2,
-            0x30, 0xe9, 0xf1, 0xab, 0x65, 0x3b, 0x5b, 0xee, 0x60, 0x36, 0x50, 0x4e, 0x82, 0xbc,
-            0x07, 0x16, 0xba, 0xa2,
-        ],
-    );
+    let association_root = test_association_root(&env);
     env.mock_all_auths();
     client.set_association_root(&admin, &association_root);
 
@@ -583,7 +619,7 @@ fn test_withdraw_without_association_set() {
 
     // Create test addresses
     let alice = Address::generate(&env);
-    let bob = Address::generate(&env);
+    let bob = test_recipient(&env);
 
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
     let token_client = MockTokenClient::new(&env, &token_id);
@@ -597,14 +633,7 @@ fn test_withdraw_without_association_set() {
     assert_eq!(token_client.balance(&alice), 1000000000);
 
     // Test deposit - use the same commitment as in our proof
-    let commitment = BytesN::from_array(
-        &env,
-        &[
-            0x10, 0xcb, 0x63, 0x1d, 0x17, 0x4a, 0x98, 0xb2, 0x44, 0x0b, 0x68, 0xd2, 0xe5, 0x7d,
-            0xa2, 0xae, 0x9a, 0x13, 0xf7, 0xd1, 0xcc, 0xcb, 0x1f, 0x41, 0xa1, 0xdd, 0x3d, 0x69,
-            0xa2, 0x2f, 0xaa, 0xe9,
-        ],
-    );
+    let commitment = test_commitment(&env);
 
     // Mock authentication for alice
     env.mock_all_auths();
@@ -643,7 +672,7 @@ fn test_withdraw_association_root_mismatch() {
 
     // Create test addresses
     let alice = Address::generate(&env);
-    let bob = Address::generate(&env);
+    let bob = test_recipient(&env);
 
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
     let token_client = MockTokenClient::new(&env, &token_id);
@@ -657,14 +686,7 @@ fn test_withdraw_association_root_mismatch() {
     assert_eq!(token_client.balance(&alice), 1000000000);
 
     // Test deposit - use the same commitment as in our proof
-    let commitment = BytesN::from_array(
-        &env,
-        &[
-            0x10, 0xcb, 0x63, 0x1d, 0x17, 0x4a, 0x98, 0xb2, 0x44, 0x0b, 0x68, 0xd2, 0xe5, 0x7d,
-            0xa2, 0xae, 0x9a, 0x13, 0xf7, 0xd1, 0xcc, 0xcb, 0x1f, 0x41, 0xa1, 0xdd, 0x3d, 0x69,
-            0xa2, 0x2f, 0xaa, 0xe9,
-        ],
-    );
+    let commitment = test_commitment(&env);
 
     // Mock authentication for alice
     env.mock_all_auths();
@@ -730,14 +752,7 @@ fn test_set_association_root_non_admin() {
     let non_admin = Address::generate(&env);
 
     // Create a test association root
-    let association_root = BytesN::from_array(
-        &env,
-        &[
-            0x5d, 0x58, 0x26, 0xf9, 0xc9, 0x18, 0x7b, 0xdb, 0x21, 0x3f, 0x01, 0xde, 0xd6, 0xd2,
-            0x30, 0xe9, 0xf1, 0xab, 0x65, 0x3b, 0x5b, 0xee, 0x60, 0x36, 0x50, 0x4e, 0x82, 0xbc,
-            0x07, 0x16, 0xba, 0xa2,
-        ],
-    );
+    let association_root = test_association_root(&env);
 
     // Mock authentication for the non-admin user
     env.mock_all_auths();
@@ -772,7 +787,7 @@ fn test_withdraw_requires_association_root() {
 
     // Create test addresses
     let alice = Address::generate(&env);
-    let bob = Address::generate(&env);
+    let bob = test_recipient(&env);
 
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
     let token_client = MockTokenClient::new(&env, &token_id);
@@ -782,14 +797,7 @@ fn test_withdraw_requires_association_root() {
     token_client.mint(&alice, &1000000000);
 
     // Test deposit
-    let commitment = BytesN::from_array(
-        &env,
-        &[
-            0x10, 0xcb, 0x63, 0x1d, 0x17, 0x4a, 0x98, 0xb2, 0x44, 0x0b, 0x68, 0xd2, 0xe5, 0x7d,
-            0xa2, 0xae, 0x9a, 0x13, 0xf7, 0xd1, 0xcc, 0xcb, 0x1f, 0x41, 0xa1, 0xdd, 0x3d, 0x69,
-            0xa2, 0x2f, 0xaa, 0xe9,
-        ],
-    );
+    let commitment = test_commitment(&env);
 
     // Mock authentication for alice
     env.mock_all_auths();

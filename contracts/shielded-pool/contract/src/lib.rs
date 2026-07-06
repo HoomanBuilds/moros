@@ -3,8 +3,8 @@
 extern crate alloc;
 
 use soroban_sdk::{
-    contract, contractimpl, log, symbol_short, token, vec, Address, Bytes, BytesN, Env, String,
-    Symbol, Vec,
+    contract, contractimpl, log, symbol_short, token, vec, xdr::ToXdr, Address, Bytes, BytesN, Env,
+    String, Symbol, Vec,
 };
 
 use lean_imt::{LeanIMT, TREE_DEPTH_KEY, TREE_LEAVES_KEY, TREE_ROOT_KEY};
@@ -32,6 +32,7 @@ pub enum Error {
 pub const ERROR_NULLIFIER_USED: &str = "Nullifier already used";
 pub const ERROR_INSUFFICIENT_BALANCE: &str = "Insufficient balance";
 pub const ERROR_COIN_OWNERSHIP_PROOF: &str = "Couldn't verify coin ownership proof";
+pub const ERROR_RECIPIENT_MISMATCH: &str = "Recipient does not match proof";
 pub const ERROR_WITHDRAW_SUCCESS: &str = "Withdrawal successful";
 pub const ERROR_ONLY_ADMIN: &str = "Only the admin can set association root";
 pub const SUCCESS_ASSOCIATION_ROOT_SET: &str = "Association root set successfully";
@@ -215,11 +216,15 @@ impl PrivacyPoolsContract {
         let proof = Proof::from_bytes(env, &proof_bytes);
         let pub_signals = PublicSignals::from_bytes(env, &pub_signals_bytes);
 
-        // Extract public signals: [nullifierHash, withdrawnValue, stateRoot, associationRoot]
         let nullifier_hash = &pub_signals.pub_signals.get(0).unwrap();
         let _withdrawn_value = &pub_signals.pub_signals.get(1).unwrap();
         let proof_root = &pub_signals.pub_signals.get(2).unwrap();
         let proof_association_root = &pub_signals.pub_signals.get(3).unwrap();
+        let proof_recipient = &pub_signals.pub_signals.get(4).unwrap();
+
+        if Self::recipient_field(env, &to) != proof_recipient.to_bytes() {
+            return vec![env, String::from_str(env, ERROR_RECIPIENT_MISMATCH)];
+        }
 
         // Verify association set root matches the proof
         let stored_association_root = Self::get_association_root(env);
@@ -311,6 +316,13 @@ impl PrivacyPoolsContract {
         let token_address: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
         let token_client = token::Client::new(env, &token_address);
         token_client.balance(&env.current_contract_address())
+    }
+
+    fn recipient_field(env: &Env, to: &Address) -> BytesN<32> {
+        let hash = env.crypto().sha256(&to.clone().to_xdr(env));
+        let mut arr = hash.to_array();
+        arr[0] &= 0x1f;
+        BytesN::from_array(env, &arr)
     }
 
     /// Validates that the caller is the admin

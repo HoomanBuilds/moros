@@ -81,7 +81,6 @@ template Withdraw(treeDepth, associationDepth) {
     // ensure withdrawn value doesn't exceed commitment value
     // (this is enforced by the remainingValue being non-negative through range check)
 
-    // bind recipient/relayer/fee into the proof so it cannot be re-targeted (front-run)
     signal recipientSq <== recipient * recipient;
     signal relayerSq <== relayer * relayer;
     signal feeSq <== fee * fee;
