@@ -3,8 +3,8 @@
 extern crate alloc;
 
 use soroban_sdk::{
-    contract, contractimpl, log, symbol_short, token, vec, xdr::ToXdr, Address, Bytes, BytesN, Env,
-    String, Symbol, Vec,
+    contract, contractclient, contractimpl, contracttype, log, symbol_short, token, vec,
+    xdr::ToXdr, Address, Bytes, BytesN, Env, String, Symbol, Vec,
 };
 
 use lean_imt::{LeanIMT, TREE_DEPTH_KEY, TREE_LEAVES_KEY, TREE_ROOT_KEY};
@@ -14,6 +14,18 @@ use zk::{Groth16Verifier, Proof, PublicSignals, VerificationKey};
 mod test;
 
 use soroban_sdk::contracterror;
+
+#[contracttype]
+#[derive(Clone, Copy, PartialEq)]
+pub enum Side {
+    Yes,
+    No,
+}
+
+#[contractclient(name = "MarketClient")]
+pub trait Market {
+    fn outcome(env: Env) -> Option<Side>;
+}
 
 // Contract errors
 #[contracterror]
@@ -33,6 +45,8 @@ pub const ERROR_NULLIFIER_USED: &str = "Nullifier already used";
 pub const ERROR_INSUFFICIENT_BALANCE: &str = "Insufficient balance";
 pub const ERROR_COIN_OWNERSHIP_PROOF: &str = "Couldn't verify coin ownership proof";
 pub const ERROR_RECIPIENT_MISMATCH: &str = "Recipient does not match proof";
+pub const ERROR_MARKET_UNRESOLVED: &str = "Market not resolved";
+pub const ERROR_WRONG_OUTCOME: &str = "Note is not on the winning outcome";
 pub const ERROR_WITHDRAW_SUCCESS: &str = "Withdrawal successful";
 pub const ERROR_ONLY_ADMIN: &str = "Only the admin can set association root";
 pub const SUCCESS_ASSOCIATION_ROOT_SET: &str = "Association root set successfully";
@@ -45,6 +59,7 @@ const VK_KEY: Symbol = symbol_short!("vk");
 const TOKEN_KEY: Symbol = symbol_short!("token");
 const ASSOCIATION_ROOT_KEY: Symbol = symbol_short!("assoc");
 const ADMIN_KEY: Symbol = symbol_short!("admin");
+const MARKET_KEY: Symbol = symbol_short!("market");
 
 const FIXED_AMOUNT: i128 = 1000000000; // 1 XLM in stroops
 
@@ -53,12 +68,19 @@ pub struct PrivacyPoolsContract;
 
 #[contractimpl]
 impl PrivacyPoolsContract {
-    pub fn __constructor(env: &Env, vk_bytes: Bytes, token_address: Address, admin: Address) {
+    pub fn __constructor(
+        env: &Env,
+        vk_bytes: Bytes,
+        token_address: Address,
+        admin: Address,
+        market: Address,
+    ) {
         // Store the admin
         env.storage().instance().set(&ADMIN_KEY, &admin);
 
         env.storage().instance().set(&VK_KEY, &vk_bytes);
         env.storage().instance().set(&TOKEN_KEY, &token_address);
+        env.storage().instance().set(&MARKET_KEY, &market);
 
         // Initialize empty merkle tree with fixed depth
         let tree = LeanIMT::new(env, TREE_DEPTH);
@@ -221,6 +243,7 @@ impl PrivacyPoolsContract {
         let proof_root = &pub_signals.pub_signals.get(2).unwrap();
         let proof_association_root = &pub_signals.pub_signals.get(3).unwrap();
         let proof_recipient = &pub_signals.pub_signals.get(4).unwrap();
+        let proof_winning = &pub_signals.pub_signals.get(7).unwrap();
 
         if Self::recipient_field(env, &to) != proof_recipient.to_bytes() {
             return vec![env, String::from_str(env, ERROR_RECIPIENT_MISMATCH)];
@@ -261,6 +284,18 @@ impl PrivacyPoolsContract {
         let res = Groth16Verifier::verify_proof(env, vk, proof, &pub_signals.pub_signals);
         if res.is_err() || !res.unwrap() {
             return vec![env, String::from_str(env, ERROR_COIN_OWNERSHIP_PROOF)];
+        }
+
+        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
+        let winning: u8 = match MarketClient::new(env, &market).outcome() {
+            Some(Side::Yes) => 1,
+            Some(Side::No) => 0,
+            None => return vec![env, String::from_str(env, ERROR_MARKET_UNRESOLVED)],
+        };
+        let mut winning_bytes = [0u8; 32];
+        winning_bytes[31] = winning;
+        if proof_winning.to_bytes() != BytesN::from_array(env, &winning_bytes) {
+            return vec![env, String::from_str(env, ERROR_WRONG_OUTCOME)];
         }
 
         // Add nullifier to used nullifiers only after all checks pass
