@@ -380,6 +380,68 @@ fn init_erronous_pub_signals(env: &Env) -> Bytes {
     pub_signals.to_bytes(env)
 }
 
+fn init_deposit_vk(env: &Env) -> Bytes {
+    let vk = VerificationKey {
+        alpha: g1_from_coords(env, "498096176487216679327361136947535099636681698045067210078959885922834934566608391096040938452749016509772006336337", "2772211886376673709292937008866741277323116873472485433526706121510292956370840145929694541977921631755822954363395"),
+        beta: g2_from_coords(env, "3688749396582217800728123824350218306928851687537166143507198041413976840866518788019990782664662680912130460652290", "3738402338172532271069588764590694875160982492775445449824188734757473923242973970365900004370874139638933996196988", "3977909346238777002102548710206455447003993585610055752631747771384033917905292544784757028839990468194866430785581", "306354319493681378568761503382884080258085025375612238548445348594744034427657423782595277482363188725313913404385"),
+        gamma: g2_from_coords(env, "352701069587466618187139116011060144890029952792775240219908644239793785735715026873347600343865175952761926303160", "3059144344244213709971259814753781636986470325476647558659373206291635324768958432433509563104347017837885763365758", "1985150602287291935568054521177171638300868978215655730859378665066344726373823718423869104263333984641494340347905", "927553665492332455747201965776037880757740193453592970025027978793976877002675564980949289727957565575433344219582"),
+        delta: g2_from_coords(env, "3461847753750820224178529163587860045536016947963630888694468009133940540493248757369060882518280366751454385748762", "1763773451153600970701787526015454915919553735493690918460004291266385012425848041240058244035841914957177736852310", "2668838301570508544040274238752127856479142633862910584883203738242308001024170937150952093312705273667534990004164", "3387806811949368005426574136610148042702590237111473782847351648664511946734165694040681966420169563080592618064269"),
+        ic: Vec::from_array(
+            env,
+            [
+                g1_from_coords(env, "2525368387686119133158240838281547028373836612940390706844788786323574093821192975969153997987399651187451475956989", "2859824489237497338564760890570756888954398534644849343144784807094014800809206101014458418039679442004003920617828"),
+                g1_from_coords(env, "3895292292918978922222539492042826387092416265198517021685392832861652920546818795250588413967295296288661578918141", "2649126800558856244350478342714736249446244544758518217670691834394702686313258091485854016063249217430098543069756"),
+                g1_from_coords(env, "2943134976022779937468233660602552560115841028728370677187115157451850765492367677998261882565225856972878241764920", "3264114213708060323303004359417298450263954690188117902080637546131935471559022463248013478648808840341328239973824"),
+            ],
+        ),
+    };
+
+    vk.to_bytes(env)
+}
+
+fn init_deposit_proof(env: &Env) -> Bytes {
+    let proof = Proof {
+        a: g1_from_coords(env, "737923202379040323781428764732210662661426845485211599080825485013501580088883193115193876548827329147094197201736", "770389758434686650902164848460650488102910675980251091670783739621572399459658035412415679692451604008287614192856"),
+        b: g2_from_coords(env, "2410338739714421562030151772847361730719559699089203185195813673387435789200039397412049568846342033447164456421581", "1981126012729579258494097313945885393500529175889317319031248016665406873731298157053085513807677471380714460901494", "911949882454804696012732801760048207761906699061339242904747578686025895493739933512196767093393473955932461729038", "3377882371951109102440598630195459942313660225296154586302084806879389616068625174344205495911888703333440822443088"),
+        c: g1_from_coords(env, "377874089757147915511057809980279863136962973928836166174369008705980307753054773466371943738933027902448149789723", "744074742686285060595024777769187396615569064123739153089726674023884612302298711392256015085256265558327460060455"),
+    };
+
+    proof.to_bytes(env)
+}
+
+fn init_deposit_pub_signals(env: &Env) -> Bytes {
+    let public_0 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x70, 0x9f, 0x9c, 0x5a, 0xca, 0x88, 0xef, 0x30, 0x21, 0x82, 0x44, 0x01, 0xe8, 0x4f,
+                0xc2, 0xef, 0xaf, 0x06, 0x7c, 0xa1, 0xcc, 0xa6, 0x7a, 0x00, 0x0d, 0x35, 0x89, 0x9b,
+                0x4c, 0x4b, 0xd1, 0xc3,
+            ],
+        ),
+    );
+    let public_1 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x3b, 0x9a, 0xca, 0x00,
+            ],
+        ),
+    );
+
+    let output = Vec::from_array(&env, [Fr::from_u256(public_0), Fr::from_u256(public_1)]);
+
+    let pub_signals = PublicSignals {
+        pub_signals: output,
+    };
+
+    pub_signals.to_bytes(env)
+}
+
 fn setup_test_environment(env: &Env, outcome: Option<Side>) -> (Address, Address, Address) {
     let token_admin = Address::generate(env);
     let token_id = env.register(MockToken, ());
@@ -395,7 +457,14 @@ fn setup_test_environment(env: &Env, outcome: Option<Side>) -> (Address, Address
     let market_id = env.register(MockMarket, (outcome,));
     let privacy_pools_id = env.register(
         PrivacyPoolsContract,
-        (init_vk(env), token_id.clone(), admin.clone(), market_id),
+        (
+            init_vk(env),
+            init_deposit_vk(env),
+            token_id.clone(),
+            admin.clone(),
+            market_id,
+            1000000000i128,
+        ),
     );
 
     (token_id, privacy_pools_id, admin)
@@ -427,7 +496,7 @@ fn test_deposit_and_withdraw_correct_proof() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment);
+    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
 
     // Check commitments
     let commitments = client.get_commitments();
@@ -477,7 +546,7 @@ fn test_withdraw_wrong_recipient_rejected() {
     let alice = Address::generate(&env);
     env.mock_all_auths();
     token_client.mint(&alice, &1000000000);
-    client.deposit(&alice, &test_commitment(&env));
+    client.deposit(&alice, &test_commitment(&env), &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
     client.set_association_root(&admin, &test_association_root(&env));
 
     let mallory = Address::generate(&env);
@@ -505,7 +574,7 @@ fn test_withdraw_losing_outcome_rejected() {
     let alice = Address::generate(&env);
     env.mock_all_auths();
     token_client.mint(&alice, &1000000000);
-    client.deposit(&alice, &test_commitment(&env));
+    client.deposit(&alice, &test_commitment(&env), &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
     client.set_association_root(&admin, &test_association_root(&env));
 
     let bob = test_recipient(&env);
@@ -530,7 +599,7 @@ fn test_withdraw_unresolved_market_rejected() {
     let alice = Address::generate(&env);
     env.mock_all_auths();
     token_client.mint(&alice, &1000000000);
-    client.deposit(&alice, &test_commitment(&env));
+    client.deposit(&alice, &test_commitment(&env), &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
     client.set_association_root(&admin, &test_association_root(&env));
 
     let bob = test_recipient(&env);
@@ -541,6 +610,29 @@ fn test_withdraw_unresolved_market_rejected() {
     );
 
     assert_eq!(client.get_nullifiers().len(), 0);
+}
+
+#[test]
+fn test_deposit_wrong_commitment_rejected() {
+    let env = Env::default();
+    let (token_id, contract_id, _admin) = setup_test_environment(&env, Some(Side::Yes));
+    let client = PrivacyPoolsContractClient::new(&env, &contract_id);
+    let token_client = MockTokenClient::new(&env, &token_id);
+
+    let alice = Address::generate(&env);
+    env.mock_all_auths();
+    token_client.mint(&alice, &1000000000);
+
+    let bad = BytesN::from_array(&env, &[0xaau8; 32]);
+    let r = client.try_deposit(
+        &alice,
+        &bad,
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
+    assert!(r.is_err() || r.unwrap().is_err());
+    assert_eq!(client.get_commitment_count(), 0);
+    assert_eq!(token_client.balance(&contract_id), 0);
 }
 
 #[test]
@@ -568,7 +660,7 @@ fn test_deposit_and_withdraw_wrong_proof() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment);
+    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
 
     // Check commitments
     let commitments = client.get_commitments();
@@ -642,7 +734,7 @@ fn test_reuse_nullifier() {
     // Deposit
     let commitment = test_commitment(&env);
     env.mock_all_auths();
-    client.deposit(&alice, &commitment);
+    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
 
     // Set association root to match the proof
     let association_root = test_association_root(&env);
@@ -723,7 +815,7 @@ fn test_withdraw_without_association_set() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment);
+    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
 
     // Check commitments
     let commitments = client.get_commitments();
@@ -776,7 +868,7 @@ fn test_withdraw_association_root_mismatch() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment);
+    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
 
     // Check commitments
     let commitments = client.get_commitments();
@@ -887,7 +979,7 @@ fn test_withdraw_requires_association_root() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment);
+    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
 
     // Check balances after deposit
     assert_eq!(token_client.balance(&alice), 0); // Alice's balance should be 0
