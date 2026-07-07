@@ -1,6 +1,7 @@
 import { spawnSync } from "child_process";
 import { mkdirSync, writeFileSync, readFileSync } from "fs";
 import { resolve } from "path";
+import { fileURLToPath } from "url";
 import { cfg } from "./config.mjs";
 
 function run(bin, args, opts = {}) {
@@ -56,5 +57,7 @@ export function batch(ordersPath) {
   console.log("[batcher] submitted:", (r.stdout + r.stderr).split("\n").find((l) => l.includes("batch") || l.includes("Success")) || "done");
 }
 
-const ordersPath = process.argv[2] || resolve(cfg.repo, "services/orders.example.json");
-batch(ordersPath);
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const ordersPath = process.argv[2] || resolve(cfg.repo, "services/orders.example.json");
+  batch(ordersPath);
+}
