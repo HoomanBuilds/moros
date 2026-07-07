@@ -148,6 +148,80 @@ fn apply_batch_rejects_non_batcher() {
 }
 
 #[test]
+fn apply_batch_committee_moves_q_with_quorum() {
+    let env = Env::default();
+    let (client, token, _trader, admin) = setup(&env);
+    let tok = TokenClient::new(&env, &token);
+    let m1 = Address::generate(&env);
+    let m2 = Address::generate(&env);
+    let m3 = Address::generate(&env);
+    let funder = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
+    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
+
+    let quoted = client.quote_batch(&(30 * S), &(20 * S));
+    let start = tok.balance(&funder);
+    let net =
+        client.apply_batch_committee(&vec![&env, m1.clone(), m3.clone()], &funder, &(30 * S), &(20 * S));
+
+    assert_eq!(net, quoted);
+    assert_eq!(client.get_state(), (30 * S, 20 * S, 100 * S));
+    assert_eq!(tok.balance(&funder), start - net);
+    assert_eq!(tok.balance(&client.address), net);
+}
+
+#[test]
+fn apply_batch_committee_rejects_below_threshold() {
+    let env = Env::default();
+    let (client, token, _trader, admin) = setup(&env);
+    let m1 = Address::generate(&env);
+    let m2 = Address::generate(&env);
+    let m3 = Address::generate(&env);
+    let funder = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
+    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
+
+    let r = client.try_apply_batch_committee(&vec![&env, m1.clone()], &funder, &(30 * S), &(20 * S));
+    assert!(r.is_err() || r.unwrap().is_err());
+    assert_eq!(client.get_state(), (0, 0, 100 * S));
+}
+
+#[test]
+fn apply_batch_committee_rejects_non_member() {
+    let env = Env::default();
+    let (client, token, _trader, admin) = setup(&env);
+    let m1 = Address::generate(&env);
+    let m2 = Address::generate(&env);
+    let m3 = Address::generate(&env);
+    let mallory = Address::generate(&env);
+    let funder = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
+    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
+
+    let r =
+        client.try_apply_batch_committee(&vec![&env, m1.clone(), mallory.clone()], &funder, &(30 * S), &(20 * S));
+    assert!(r.is_err() || r.unwrap().is_err());
+    assert_eq!(client.get_state(), (0, 0, 100 * S));
+}
+
+#[test]
+fn apply_batch_committee_rejects_duplicate_signer() {
+    let env = Env::default();
+    let (client, token, _trader, admin) = setup(&env);
+    let m1 = Address::generate(&env);
+    let m2 = Address::generate(&env);
+    let m3 = Address::generate(&env);
+    let funder = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
+    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
+
+    let r =
+        client.try_apply_batch_committee(&vec![&env, m1.clone(), m1.clone()], &funder, &(30 * S), &(20 * S));
+    assert!(r.is_err() || r.unwrap().is_err());
+    assert_eq!(client.get_state(), (0, 0, 100 * S));
+}
+
+#[test]
 fn sell_refunds_collateral_debits_shares_and_restores_price() {
     let env = Env::default();
     let (client, token, trader, _admin) = setup(&env);

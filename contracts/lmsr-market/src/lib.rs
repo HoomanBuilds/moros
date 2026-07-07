@@ -5,7 +5,7 @@ mod math;
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token,
-    Address, Env, Symbol,
+    Address, Env, Symbol, Vec,
 };
 
 /// Which outcome a trade is on.
@@ -39,6 +39,8 @@ enum DataKey {
     Expiry,
     Decimals,
     Batcher,
+    Committee,
+    CommitteeT,
     Shares(Address, Side),
 }
 
@@ -105,6 +107,18 @@ pub struct Resolved {
 pub struct Batch {
     #[topic]
     pub batcher: Address,
+    pub dqyes: i128,
+    pub dqno: i128,
+    pub qy: i128,
+    pub qn: i128,
+    pub net: i128,
+}
+
+#[contractevent(topics = ["cbatch"], data_format = "vec")]
+pub struct CommitteeBatch {
+    #[topic]
+    pub funder: Address,
+    pub signers: u32,
     pub dqyes: i128,
     pub dqno: i128,
     pub qy: i128,
@@ -448,6 +462,94 @@ impl LmsrMarket {
         Self::bump(&env);
         Batch {
             batcher,
+            dqyes,
+            dqno,
+            qy: qy2,
+            qn: qn2,
+            net,
+        }
+        .publish(&env);
+        Ok(net)
+    }
+
+    pub fn set_committee(
+        env: Env,
+        admin: Address,
+        members: Vec<Address>,
+        threshold: u32,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        if admin != stored {
+            return Err(Error::Unauthorized);
+        }
+        if threshold == 0 || members.len() < threshold {
+            return Err(Error::InvalidParams);
+        }
+        env.storage().instance().set(&DataKey::Committee, &members);
+        env.storage().instance().set(&DataKey::CommitteeT, &threshold);
+        Self::bump(&env);
+        Ok(())
+    }
+
+    pub fn apply_batch_committee(
+        env: Env,
+        signers: Vec<Address>,
+        funder: Address,
+        dqyes: i128,
+        dqno: i128,
+    ) -> Result<i128, Error> {
+        let members: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::Committee)
+            .ok_or(Error::NotInitialized)?;
+        let threshold: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CommitteeT)
+            .ok_or(Error::NotInitialized)?;
+        if signers.len() < threshold {
+            return Err(Error::Unauthorized);
+        }
+        let mut seen: Vec<Address> = Vec::new(&env);
+        for s in signers.iter() {
+            if !members.contains(&s) || seen.contains(&s) {
+                return Err(Error::Unauthorized);
+            }
+            s.require_auth();
+            seen.push_back(s);
+        }
+        if env.storage().instance().has(&DataKey::Outcome) {
+            return Err(Error::AlreadyResolved);
+        }
+        funder.require_auth();
+        let net = Self::quote_batch(env.clone(), dqyes, dqno)?;
+        let (qy, qn, _b) = Self::state(&env)?;
+        let qy2 = qy + dqyes;
+        let qn2 = qn + dqno;
+
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        token::Client::new(&env, &token_addr).transfer(
+            &funder,
+            &env.current_contract_address(),
+            &net,
+        );
+
+        env.storage().instance().set(&DataKey::QYes, &qy2);
+        env.storage().instance().set(&DataKey::QNo, &qn2);
+        Self::bump(&env);
+        CommitteeBatch {
+            funder,
+            signers: signers.len(),
             dqyes,
             dqno,
             qy: qy2,
