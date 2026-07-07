@@ -12,11 +12,11 @@ fn main() {
     let mut secret = Vec::new();
     let mut nullifier = Vec::new();
     let mut commitments = Vec::new();
-    for (amt, sd) in orders {
-        let a = s32(amt);
-        let s = s32(sd);
-        let sec = random_fr(&env);
-        let nul = random_fr(&env);
+    for (i, (amt, sd)) in orders.iter().enumerate() {
+        let a = s32(*amt);
+        let s = s32(*sd);
+        let sec = s32(100 + (i as u32) * 2);
+        let nul = s32(101 + (i as u32) * 2);
         let sn = poseidon_hash(&env, &[sec.clone(), nul.clone()]);
         let c = poseidon_hash(&env, &[a.clone(), s.clone(), sn]);
         amount.push(a);
@@ -25,6 +25,7 @@ fn main() {
         nullifier.push(nul);
         commitments.push(c);
     }
+    let _ = random_fr;
 
     let mut tree = LeanIMT::new(&env, 2);
     for c in &commitments {
@@ -57,4 +58,10 @@ fn main() {
         siblings_json.join(",")
     );
     eprintln!("expected dQYes=30 dQNo=20");
+    for c in &commitments {
+        eprintln!(
+            "COMMIT {}",
+            hex::encode(bls_scalar_to_bytes(c.clone()).to_array())
+        );
+    }
 }
