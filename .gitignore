@@ -43,3 +43,4 @@ deployments/*.local.json
 *.swp
 .idea/
 .vscode/
+circuits/build/
