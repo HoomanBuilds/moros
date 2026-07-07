@@ -470,6 +470,46 @@ fn init_deposit_pub_signals(env: &Env) -> Bytes {
     pub_signals.to_bytes(env)
 }
 
+fn init_order_commitments(env: &Env) -> Vec<BytesN<32>> {
+    Vec::from_array(
+        env,
+        [
+            BytesN::from_array(
+                env,
+                &[
+                    0x4e, 0xc1, 0xe1, 0x38, 0xc2, 0x91, 0xff, 0x06, 0xbe, 0x8c, 0x96, 0x6a, 0x18, 0x93,
+                    0x8a, 0x75, 0x2b, 0x66, 0xf1, 0xa4, 0xcc, 0x08, 0xff, 0x4b, 0x46, 0x8d, 0x66, 0x7a,
+                    0x7c, 0x2a, 0x60, 0x39,
+                ],
+            ),
+            BytesN::from_array(
+                env,
+                &[
+                    0x61, 0x91, 0x35, 0x58, 0x30, 0x91, 0xda, 0xc1, 0x05, 0x86, 0x49, 0x24, 0x81, 0x23,
+                    0x70, 0x52, 0x43, 0xe5, 0x07, 0x1a, 0xf8, 0x17, 0xcc, 0xcd, 0x39, 0xa6, 0x19, 0x91,
+                    0x29, 0x8c, 0x2b, 0x1e,
+                ],
+            ),
+            BytesN::from_array(
+                env,
+                &[
+                    0x54, 0x69, 0xfb, 0x15, 0xbb, 0x0f, 0x0e, 0x87, 0xf4, 0x29, 0xdd, 0x1f, 0x3e, 0x35,
+                    0x50, 0xad, 0x69, 0xeb, 0xdd, 0x0f, 0x04, 0x8b, 0x54, 0x4e, 0x7c, 0xad, 0xa2, 0xa4,
+                    0x30, 0x90, 0x84, 0x0b,
+                ],
+            ),
+            BytesN::from_array(
+                env,
+                &[
+                    0x13, 0x18, 0xaa, 0xde, 0x5f, 0xbf, 0x09, 0xbb, 0xdb, 0xd5, 0xfd, 0x45, 0x2c, 0x14,
+                    0x07, 0x32, 0xfe, 0x2f, 0x36, 0x56, 0x2e, 0xf5, 0x7c, 0xba, 0x1a, 0xf3, 0x8d, 0xd4,
+                    0x08, 0x5f, 0x6c, 0xe6,
+                ],
+            ),
+        ],
+    )
+}
+
 fn init_batch_vk(env: &Env) -> Bytes {
     let vk = VerificationKey {
         alpha: g1_from_coords(env, "498096176487216679327361136947535099636681698045067210078959885922834934566608391096040938452749016509772006336337", "2772211886376673709292937008866741277323116873472485433526706121510292956370840145929694541977921631755822954363395"),
@@ -496,9 +536,9 @@ fn init_batch_vk(env: &Env) -> Bytes {
 
 fn init_batch_proof(env: &Env) -> Bytes {
     let proof = Proof {
-        a: g1_from_coords(env, "1086908429453562880198668119349831155980499803968661463415074191867871782918161359521861132652710267380006546068286", "1506520076328652678227814560933735439258975378035388457732208335516023423464033543627410988910978519612143543747351"),
-        b: g2_from_coords(env, "2023276807595406318368351849922768237654229039166759038775931651346854881299979651773910584996299386592608610842883", "2606084809021363546476489739774482346666638940165667592656383582113473990513605403316417878666193160018447922726622", "3957550243192034633291347383549386631727237996245306175845211325980938494380237697135392224011471956032433201040844", "48988394558390242560097709439886783792614279742680007855656499122318888093551800051180333612271978174735059523028"),
-        c: g1_from_coords(env, "2064287879471760344580268547328477175434190160654016159184817001589799463056808286122653687596364967568699689737005", "789104504116955895764608685065811512892946298432422462410416504199728415797093726252533893772790321995942505269045"),
+        a: g1_from_coords(env, "838353351685664239056464767396640902050032743434208944572649683562092317609236565962463702727230089603242822273550", "3732260042940831583569299190465898252384612351106393389295279879642899627842742905263529014404966636432858811611533"),
+        b: g2_from_coords(env, "2824094912819246267308242266238680996867072321728315896375179917866879978786967893944335989225413142134957915581374", "2363605256350394526131883942032584081844393539520174539309915922829983540817263890832057174709173205420923311344465", "2514697693587015921369595913624346861270552441182366062196542387138782554205808515311644567824049218245502379777844", "1052540293355231466260900657597721884025229882384863514099124953534503378537531360449793964238874374341868539718697"),
+        c: g1_from_coords(env, "2144291601939391703743445488149633805845656066573393763433504790240921976201649175355939161583654245090174630212043", "1661982646816392761714512961342720692623753490748301558769074570121029917994060474069699565052161278424502456311720"),
     };
 
     proof.to_bytes(env)
@@ -532,9 +572,9 @@ fn init_batch_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x12, 0x70, 0x58, 0x63, 0xd2, 0x91, 0x23, 0x72, 0xdb, 0x2e, 0xb6, 0xa9, 0xfa, 0x58,
-                0xe7, 0x8f, 0x0b, 0xfc, 0xd1, 0xc8, 0x23, 0x89, 0x9f, 0x3b, 0xdc, 0x50, 0x27, 0x2c,
-                0x08, 0x61, 0x6a, 0xb9,
+                0x57, 0x8d, 0x34, 0xed, 0x1c, 0xf3, 0x92, 0x7c, 0xc4, 0x85, 0xa7, 0x9d, 0x94, 0xf4,
+                0x85, 0x7c, 0xdb, 0x3b, 0x2a, 0x9c, 0xf5, 0xeb, 0x8d, 0x01, 0x15, 0xd4, 0x01, 0xff,
+                0xc4, 0xc1, 0x66, 0xe3,
             ],
         ),
     );
@@ -543,9 +583,9 @@ fn init_batch_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x36, 0x7e, 0x16, 0x25, 0x03, 0xd9, 0xab, 0x4b, 0x73, 0xee, 0x4c, 0x11, 0x2b, 0x46,
-                0xe1, 0x46, 0xb5, 0x19, 0x43, 0xfa, 0xc1, 0x00, 0x6d, 0xa0, 0x11, 0xb4, 0xa6, 0x88,
-                0x9f, 0xd0, 0x55, 0xf9,
+                0x2a, 0xce, 0x77, 0xef, 0x80, 0x53, 0x7e, 0xd1, 0x33, 0xbd, 0xfd, 0x1c, 0xd4, 0xc8,
+                0xab, 0x79, 0x0c, 0x80, 0xc0, 0x9d, 0x08, 0xc3, 0x91, 0x95, 0x14, 0xce, 0xa3, 0xb2,
+                0x87, 0x39, 0x98, 0xab,
             ],
         ),
     );
@@ -554,9 +594,9 @@ fn init_batch_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x24, 0xd1, 0xd8, 0xad, 0x7c, 0x3e, 0xaf, 0x3c, 0x18, 0xbc, 0x3e, 0xdf, 0x3a, 0xde,
-                0x7f, 0x0c, 0x5e, 0x07, 0x1b, 0x28, 0x09, 0xc0, 0x52, 0x1b, 0x69, 0x18, 0x8c, 0xe4,
-                0xcd, 0xf5, 0x07, 0x9d,
+                0x59, 0xef, 0x1e, 0x57, 0xa2, 0x35, 0xc5, 0xb5, 0x98, 0x8b, 0x42, 0x25, 0xd0, 0xb3,
+                0xd1, 0xee, 0xb1, 0x3c, 0xc0, 0xef, 0x39, 0xe6, 0x3b, 0xb1, 0xed, 0x7e, 0x8c, 0x43,
+                0xb3, 0xb3, 0x11, 0xae,
             ],
         ),
     );
@@ -565,9 +605,9 @@ fn init_batch_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x3a, 0x81, 0x50, 0x59, 0xdf, 0xae, 0x67, 0xc7, 0x27, 0xc6, 0x89, 0x8f, 0xad, 0x69,
-                0x82, 0x6d, 0x8d, 0xdd, 0x25, 0x45, 0xe9, 0x69, 0x1a, 0x67, 0x46, 0xc5, 0x87, 0x9d,
-                0xed, 0x19, 0xcb, 0x83,
+                0x25, 0x95, 0x52, 0x50, 0x2e, 0x71, 0x72, 0xa0, 0xc8, 0x34, 0xa6, 0x88, 0x16, 0x99,
+                0x12, 0xf9, 0x3a, 0x26, 0xbf, 0x5f, 0x98, 0xae, 0x3c, 0xf3, 0xea, 0xa5, 0x3e, 0x50,
+                0x49, 0x52, 0x53, 0x02,
             ],
         ),
     );
@@ -576,9 +616,9 @@ fn init_batch_pub_signals(env: &Env) -> Bytes {
         &Bytes::from_array(
             &env,
             &[
-                0x22, 0xa4, 0x84, 0x28, 0xc0, 0xcd, 0x9b, 0x75, 0x38, 0x5d, 0xee, 0xe4, 0x4a, 0x01,
-                0xf6, 0xb1, 0x40, 0x90, 0x6a, 0x60, 0x1c, 0xe6, 0xe8, 0xe9, 0x0a, 0xd1, 0xeb, 0xcf,
-                0xaa, 0xaa, 0x89, 0x82,
+                0x61, 0xf0, 0x7d, 0x5b, 0x61, 0x51, 0x44, 0x68, 0x90, 0x56, 0xbb, 0x64, 0xf9, 0x87,
+                0xe6, 0x4a, 0xce, 0x90, 0x9e, 0xd3, 0x78, 0x7c, 0x80, 0xe9, 0xce, 0x73, 0xf8, 0xa5,
+                0x5f, 0xb2, 0xf7, 0x02,
             ],
         ),
     );
@@ -828,7 +868,12 @@ fn submit_batch_verifies_and_moves_market_odds() {
     );
     let client = PrivacyPoolsContractClient::new(&env, &pool_id);
     client.set_batch_vk(&admin, &init_batch_vk(&env));
-    token_client.mint(&pool_id, &1000);
+
+    let trader = Address::generate(&env);
+    token_client.mint(&trader, &1000);
+    for c in init_order_commitments(&env).iter() {
+        client.place_order(&trader, &c, &10);
+    }
 
     let net = client.submit_batch(
         &30,
@@ -839,7 +884,57 @@ fn submit_batch_verifies_and_moves_market_odds() {
     assert_eq!(net, 25);
     assert_eq!(mm.get_q(), (30, 20));
     assert_eq!(token_client.balance(&market_id), 25);
-    assert_eq!(token_client.balance(&pool_id), 975);
+    assert_eq!(token_client.balance(&pool_id), 15);
+}
+
+#[test]
+fn submit_batch_rejects_replay() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token_admin = Address::generate(&env);
+    let token_id = env.register(MockToken, ());
+    let token_client = MockTokenClient::new(&env, &token_id);
+    token_client.initialize(
+        &token_admin,
+        &7u32,
+        &String::from_str(&env, "T"),
+        &String::from_str(&env, "T"),
+    );
+
+    let admin = Address::generate(&env);
+    let market_id = env.register(MockMarket, (Some(Side::Yes),));
+    let mm = MockMarketClient::new(&env, &market_id);
+    mm.set_token(&token_id);
+
+    let pool_id = env.register(
+        PrivacyPoolsContract,
+        (
+            init_vk(&env),
+            init_deposit_vk(&env),
+            token_id.clone(),
+            admin.clone(),
+            market_id.clone(),
+            1000000000i128,
+        ),
+    );
+    let client = PrivacyPoolsContractClient::new(&env, &pool_id);
+    client.set_batch_vk(&admin, &init_batch_vk(&env));
+
+    let trader = Address::generate(&env);
+    token_client.mint(&trader, &1000);
+    for c in init_order_commitments(&env).iter() {
+        client.place_order(&trader, &c, &10);
+    }
+
+    client.submit_batch(&30, &20, &init_batch_proof(&env), &init_batch_pub_signals(&env));
+    let r = client.try_submit_batch(
+        &30,
+        &20,
+        &init_batch_proof(&env),
+        &init_batch_pub_signals(&env),
+    );
+    assert!(r.is_err() || r.unwrap().is_err());
+    assert_eq!(mm.get_q(), (30, 20));
 }
 
 #[test]
