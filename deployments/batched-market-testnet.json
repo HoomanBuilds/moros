@@ -1,0 +1,20 @@
+{
+  "network": "testnet",
+  "description": "Live validation of the market-as-maker ZK-batched flow: place private orders -> submit_batch verifies the batch-netting proof on-chain -> pool moves the market's public LMSR odds and pays the net cost via authorize_as_current_contract (cross-contract auth), trustlessly.",
+  "contracts": {
+    "collateral_xlm_sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+    "lmsr_market": "CDQBD7V7GYUOM4KVBT5AAJVGLYKU2Q24AL2A5ZOVIYQJDC2W7W2SF4Z5",
+    "shielded_pool": "CAT4QLABBY5ITD3KGS7UNNPTWRRC5U72E4GOLRG7QQGDF354BM6C2NO3"
+  },
+  "flow": {
+    "orders_placed": 4,
+    "order_root": "61f07d5b615144689056bb64f987e64ace909ed3787c80e9ce73f8a55fb2f702",
+    "submit_batch_tx": "45890eb265ab0cfb76730c84bc115584efe7f6557bf2755b1748c59f94146ca8",
+    "dqyes": 30,
+    "dqno": 20,
+    "q_before": [0, 0],
+    "q_after": [30, 20],
+    "auth": "pool paid the market inside apply_batch via authorize_as_current_contract (validated on real network, no mock)"
+  },
+  "note": "Batch amounts here are raw (net LMSR cost ~0). A visible demo uses fixed-point share amounts. Unaudited research prototype, testnet only."
+}
