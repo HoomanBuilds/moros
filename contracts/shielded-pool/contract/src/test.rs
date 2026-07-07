@@ -69,12 +69,40 @@ pub struct MockMarket;
 impl MockMarket {
     pub fn __constructor(env: Env, outcome: Option<Side>) {
         env.storage().instance().set(&symbol_short!("outcome"), &outcome);
+        env.storage().instance().set(&symbol_short!("qy"), &0i128);
+        env.storage().instance().set(&symbol_short!("qn"), &0i128);
     }
     pub fn outcome(env: Env) -> Option<Side> {
         env.storage()
             .instance()
             .get(&symbol_short!("outcome"))
             .unwrap_or(None)
+    }
+    pub fn set_token(env: Env, token: Address) {
+        env.storage().instance().set(&symbol_short!("token"), &token);
+    }
+    pub fn quote_batch(_env: Env, dqyes: i128, dqno: i128) -> i128 {
+        (dqyes + dqno) / 2
+    }
+    pub fn apply_batch(env: Env, batcher: Address, dqyes: i128, dqno: i128) -> i128 {
+        let net = (dqyes + dqno) / 2;
+        let token: Address = env.storage().instance().get(&symbol_short!("token")).unwrap();
+        soroban_sdk::token::Client::new(&env, &token).transfer(
+            &batcher,
+            &env.current_contract_address(),
+            &net,
+        );
+        let qy: i128 = env.storage().instance().get(&symbol_short!("qy")).unwrap_or(0);
+        let qn: i128 = env.storage().instance().get(&symbol_short!("qn")).unwrap_or(0);
+        env.storage().instance().set(&symbol_short!("qy"), &(qy + dqyes));
+        env.storage().instance().set(&symbol_short!("qn"), &(qn + dqno));
+        net
+    }
+    pub fn get_q(env: Env) -> (i128, i128) {
+        (
+            env.storage().instance().get(&symbol_short!("qy")).unwrap_or(0),
+            env.storage().instance().get(&symbol_short!("qn")).unwrap_or(0),
+        )
     }
 }
 
@@ -442,6 +470,139 @@ fn init_deposit_pub_signals(env: &Env) -> Bytes {
     pub_signals.to_bytes(env)
 }
 
+fn init_batch_vk(env: &Env) -> Bytes {
+    let vk = VerificationKey {
+        alpha: g1_from_coords(env, "498096176487216679327361136947535099636681698045067210078959885922834934566608391096040938452749016509772006336337", "2772211886376673709292937008866741277323116873472485433526706121510292956370840145929694541977921631755822954363395"),
+        beta: g2_from_coords(env, "3688749396582217800728123824350218306928851687537166143507198041413976840866518788019990782664662680912130460652290", "3738402338172532271069588764590694875160982492775445449824188734757473923242973970365900004370874139638933996196988", "3977909346238777002102548710206455447003993585610055752631747771384033917905292544784757028839990468194866430785581", "306354319493681378568761503382884080258085025375612238548445348594744034427657423782595277482363188725313913404385"),
+        gamma: g2_from_coords(env, "352701069587466618187139116011060144890029952792775240219908644239793785735715026873347600343865175952761926303160", "3059144344244213709971259814753781636986470325476647558659373206291635324768958432433509563104347017837885763365758", "1985150602287291935568054521177171638300868978215655730859378665066344726373823718423869104263333984641494340347905", "927553665492332455747201965776037880757740193453592970025027978793976877002675564980949289727957565575433344219582"),
+        delta: g2_from_coords(env, "1548148996206557342913216095947693900207287287037985228052666806255156246105297261570252371114948104953747198027961", "788361334462515095571871599988556172522678333966518086037653053722007901027845288605664198197911891913824258935430", "26478141723356370895744226698221651809439563736648007683908880520588705128772039080401347721041502578404115697634", "441832085796398197550181710839456708038028747178082557133285290108543009635235474526312664353188136574740155611275"),
+        ic: Vec::from_array(
+            env,
+            [
+                g1_from_coords(env, "850636947921663919533848346746830184692762901627368790185341521570674435129282506831766286329981523427538843824772", "1327742088426809311116325248475676316856075288865070722034101108576605974413219097996632161556629411579956358622888"),
+                g1_from_coords(env, "2919117701672803084391386244164746385510001857526289884777904988592303301011897728237303123881583013096014704009661", "3318226707499415896428725923781924873336167935880461087711993922022160352134191626937937362721002435983253200020350"),
+                g1_from_coords(env, "2890639660178845651948087856466842481303285461939125418572134387371153208507627065655689471554329156103561667549240", "2486026229648392062607501276543248192743520748599213814936062340844864073044844256879782639159808014770233961770283"),
+                g1_from_coords(env, "395686256060391972990919014040899173696985829507425592437340092425295377971069457318252766910912315384734762586493", "891835316874719179783401203884814524578874613926121279031867619872095528382589797090153024657822818507672760447976"),
+                g1_from_coords(env, "1900025326961590538315524346649698620010028197784356280827526024421766091591008494393486411758770737729829571165544", "1446695698171532772174469609629200429110838907461822765074324648593235323547612452172160396264011093561324419711642"),
+                g1_from_coords(env, "3550930596586256381783533347888977099238617132223380464263407077619508938283334823383889384039537507596585720690831", "2748120315015804611249377695093165883895199026995923466299033551524028977484510915058860123943643236541984843978434"),
+                g1_from_coords(env, "1363536944560665692803984893356087181391629193482946335401542308843264057497200943336331803386965296093776823843461", "82055020371608456065044472990400947861698315334599743367849409235077158770002388429292803274181680584686815883590"),
+                g1_from_coords(env, "2469819472132741364793055296411288724031515610112396824939979416283793569801706658601846722572018838015607346901907", "3399405617951714083710978613611303048272201817270042822946407358280619998882175084934128886606678136255856090663699"),
+            ],
+        ),
+    };
+
+    vk.to_bytes(env)
+}
+
+fn init_batch_proof(env: &Env) -> Bytes {
+    let proof = Proof {
+        a: g1_from_coords(env, "1086908429453562880198668119349831155980499803968661463415074191867871782918161359521861132652710267380006546068286", "1506520076328652678227814560933735439258975378035388457732208335516023423464033543627410988910978519612143543747351"),
+        b: g2_from_coords(env, "2023276807595406318368351849922768237654229039166759038775931651346854881299979651773910584996299386592608610842883", "2606084809021363546476489739774482346666638940165667592656383582113473990513605403316417878666193160018447922726622", "3957550243192034633291347383549386631727237996245306175845211325980938494380237697135392224011471956032433201040844", "48988394558390242560097709439886783792614279742680007855656499122318888093551800051180333612271978174735059523028"),
+        c: g1_from_coords(env, "2064287879471760344580268547328477175434190160654016159184817001589799463056808286122653687596364967568699689737005", "789104504116955895764608685065811512892946298432422462410416504199728415797093726252533893772790321995942505269045"),
+    };
+
+    proof.to_bytes(env)
+}
+
+fn init_batch_pub_signals(env: &Env) -> Bytes {
+    let public_0 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x1e,
+            ],
+        ),
+    );
+    let public_1 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x14,
+            ],
+        ),
+    );
+    let public_2 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x12, 0x70, 0x58, 0x63, 0xd2, 0x91, 0x23, 0x72, 0xdb, 0x2e, 0xb6, 0xa9, 0xfa, 0x58,
+                0xe7, 0x8f, 0x0b, 0xfc, 0xd1, 0xc8, 0x23, 0x89, 0x9f, 0x3b, 0xdc, 0x50, 0x27, 0x2c,
+                0x08, 0x61, 0x6a, 0xb9,
+            ],
+        ),
+    );
+    let public_3 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x36, 0x7e, 0x16, 0x25, 0x03, 0xd9, 0xab, 0x4b, 0x73, 0xee, 0x4c, 0x11, 0x2b, 0x46,
+                0xe1, 0x46, 0xb5, 0x19, 0x43, 0xfa, 0xc1, 0x00, 0x6d, 0xa0, 0x11, 0xb4, 0xa6, 0x88,
+                0x9f, 0xd0, 0x55, 0xf9,
+            ],
+        ),
+    );
+    let public_4 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x24, 0xd1, 0xd8, 0xad, 0x7c, 0x3e, 0xaf, 0x3c, 0x18, 0xbc, 0x3e, 0xdf, 0x3a, 0xde,
+                0x7f, 0x0c, 0x5e, 0x07, 0x1b, 0x28, 0x09, 0xc0, 0x52, 0x1b, 0x69, 0x18, 0x8c, 0xe4,
+                0xcd, 0xf5, 0x07, 0x9d,
+            ],
+        ),
+    );
+    let public_5 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x3a, 0x81, 0x50, 0x59, 0xdf, 0xae, 0x67, 0xc7, 0x27, 0xc6, 0x89, 0x8f, 0xad, 0x69,
+                0x82, 0x6d, 0x8d, 0xdd, 0x25, 0x45, 0xe9, 0x69, 0x1a, 0x67, 0x46, 0xc5, 0x87, 0x9d,
+                0xed, 0x19, 0xcb, 0x83,
+            ],
+        ),
+    );
+    let public_6 = U256::from_be_bytes(
+        &env,
+        &Bytes::from_array(
+            &env,
+            &[
+                0x22, 0xa4, 0x84, 0x28, 0xc0, 0xcd, 0x9b, 0x75, 0x38, 0x5d, 0xee, 0xe4, 0x4a, 0x01,
+                0xf6, 0xb1, 0x40, 0x90, 0x6a, 0x60, 0x1c, 0xe6, 0xe8, 0xe9, 0x0a, 0xd1, 0xeb, 0xcf,
+                0xaa, 0xaa, 0x89, 0x82,
+            ],
+        ),
+    );
+
+    let output = Vec::from_array(
+        &env,
+        [
+            Fr::from_u256(public_0),
+            Fr::from_u256(public_1),
+            Fr::from_u256(public_2),
+            Fr::from_u256(public_3),
+            Fr::from_u256(public_4),
+            Fr::from_u256(public_5),
+            Fr::from_u256(public_6),
+        ],
+    );
+
+    let pub_signals = PublicSignals {
+        pub_signals: output,
+    };
+
+    pub_signals.to_bytes(env)
+}
+
 fn setup_test_environment(env: &Env, outcome: Option<Side>) -> (Address, Address, Address) {
     let token_admin = Address::generate(env);
     let token_id = env.register(MockToken, ());
@@ -633,6 +794,52 @@ fn test_deposit_wrong_commitment_rejected() {
     assert!(r.is_err() || r.unwrap().is_err());
     assert_eq!(client.get_commitment_count(), 0);
     assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+#[test]
+fn submit_batch_verifies_and_moves_market_odds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token_admin = Address::generate(&env);
+    let token_id = env.register(MockToken, ());
+    let token_client = MockTokenClient::new(&env, &token_id);
+    token_client.initialize(
+        &token_admin,
+        &7u32,
+        &String::from_str(&env, "T"),
+        &String::from_str(&env, "T"),
+    );
+
+    let admin = Address::generate(&env);
+    let market_id = env.register(MockMarket, (Some(Side::Yes),));
+    let mm = MockMarketClient::new(&env, &market_id);
+    mm.set_token(&token_id);
+
+    let pool_id = env.register(
+        PrivacyPoolsContract,
+        (
+            init_vk(&env),
+            init_deposit_vk(&env),
+            token_id.clone(),
+            admin.clone(),
+            market_id.clone(),
+            1000000000i128,
+        ),
+    );
+    let client = PrivacyPoolsContractClient::new(&env, &pool_id);
+    client.set_batch_vk(&admin, &init_batch_vk(&env));
+    token_client.mint(&pool_id, &1000);
+
+    let net = client.submit_batch(
+        &30,
+        &20,
+        &init_batch_proof(&env),
+        &init_batch_pub_signals(&env),
+    );
+    assert_eq!(net, 25);
+    assert_eq!(mm.get_q(), (30, 20));
+    assert_eq!(token_client.balance(&market_id), 25);
+    assert_eq!(token_client.balance(&pool_id), 975);
 }
 
 #[test]
