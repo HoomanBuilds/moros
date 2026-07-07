@@ -122,6 +122,18 @@ fn apply_batch_moves_q_and_charges_batcher() {
 }
 
 #[test]
+fn quote_batch_equals_apply_batch_charge() {
+    let env = Env::default();
+    let (client, token, _trader, admin) = setup(&env);
+    let batcher = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&batcher, &(1_000_000 * S));
+    client.set_batcher(&admin, &batcher);
+    let quoted = client.quote_batch(&(30 * S), &(20 * S));
+    let charged = client.apply_batch(&batcher, &(30 * S), &(20 * S));
+    assert_eq!(quoted, charged);
+}
+
+#[test]
 fn apply_batch_rejects_non_batcher() {
     let env = Env::default();
     let (client, token, _trader, admin) = setup(&env);

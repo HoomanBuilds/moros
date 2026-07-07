@@ -399,6 +399,21 @@ impl LmsrMarket {
         Ok(())
     }
 
+    pub fn quote_batch(env: Env, dqyes: i128, dqno: i128) -> Result<i128, Error> {
+        if dqyes < 0 || dqno < 0 {
+            return Err(Error::InvalidParams);
+        }
+        let (qy, qn, b) = Self::state(&env)?;
+        let qy2 = qy + dqyes;
+        let qn2 = qn + dqno;
+        if qy2 > MAX_Q || qn2 > MAX_Q {
+            return Err(Error::InvalidParams);
+        }
+        let before = math::cost(qy, qn, b);
+        let after = math::cost(qy2, qn2, b);
+        Ok(Self::to_atomic(&env, after - before, true))
+    }
+
     pub fn apply_batch(env: Env, batcher: Address, dqyes: i128, dqno: i128) -> Result<i128, Error> {
         batcher.require_auth();
         let stored: Address = env
@@ -412,18 +427,10 @@ impl LmsrMarket {
         if env.storage().instance().has(&DataKey::Outcome) {
             return Err(Error::AlreadyResolved);
         }
-        if dqyes < 0 || dqno < 0 {
-            return Err(Error::InvalidParams);
-        }
-        let (qy, qn, b) = Self::state(&env)?;
+        let net = Self::quote_batch(env.clone(), dqyes, dqno)?;
+        let (qy, qn, _b) = Self::state(&env)?;
         let qy2 = qy + dqyes;
         let qn2 = qn + dqno;
-        if qy2 > MAX_Q || qn2 > MAX_Q {
-            return Err(Error::InvalidParams);
-        }
-        let before = math::cost(qy, qn, b);
-        let after = math::cost(qy2, qn2, b);
-        let net = Self::to_atomic(&env, after - before, true);
 
         let token_addr: Address = env
             .storage()
