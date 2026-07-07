@@ -20,7 +20,7 @@ cargo build --release --bin stellar-coinutils
 
 ## Regenerating the withdraw VK + proof
 Trusted setup is a self-run BLS12-381 ceremony (no prebuilt ptau exists). The
-withdraw circuit is ~16.5k constraints → **power-15** ptau.
+withdraw circuit is ~16.5k constraints -> **power-15** ptau.
 ```
 cd contracts/shielded-pool/circuits
 circom main.circom --r1cs --wasm -l <circomlib> -l . --prime bls12381 -o build
@@ -37,7 +37,7 @@ winningOutcome` to the input, generate the witness, and `snarkjs groth16 prove`.
 `recipient` must equal the contract's `recipient_field(to)` (see the
 `recipient_field` fn); `winningOutcome` must equal `side`.
 
-**Testnet/demo only — dev powers-of-tau, not a mainnet-safe ceremony.**
+**Testnet/demo only - dev powers-of-tau, not a mainnet-safe ceremony.**
 
 ## Batch-netting (Phase 4)
 `batch-input-generator.rs` is a coinutils bin (`src/bin/batch.rs`) that builds the
