@@ -26,7 +26,10 @@ an in-proof recipient. 8 public signals, 9 IC points; power-15 BLS12-381 setup.
   same `CommitmentHasher`): the note is well-formed, `side ∈ {0,1}`, `0 < amount ≤ cap`
   — all without revealing size or side. The contract checks the proof's commitment
   equals the deposited one and its `cap` equals the pool's configured cap.
-- **NOT deployable yet.** Unaudited research code — testnet/demo only.
+- **Validated live on testnet** — deploy → deposit (bet-validity verified on-chain)
+  → resolve → relayer-submitted withdraw (redeem verified on-chain). See
+  [`deployments/shielded-pool-testnet.json`](../../deployments/shielded-pool-testnet.json).
+- Unaudited research code — testnet/demo only.
 
 Follow-ups: variable stake + LMSR-backed payout (winners capture the pot),
 batching to hide side/size across trades (Phase 4).
