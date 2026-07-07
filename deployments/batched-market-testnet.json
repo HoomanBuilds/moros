@@ -1,20 +1,22 @@
 {
   "network": "testnet",
-  "description": "Live validation of the market-as-maker ZK-batched flow: place private orders -> submit_batch verifies the batch-netting proof on-chain -> pool moves the market's public LMSR odds and pays the net cost via authorize_as_current_contract (cross-contract auth), trustlessly.",
+  "description": "Full market-as-maker ZK prediction-market flow, validated live: private orders -> ZK-proven batch moves the public LMSR odds trustlessly -> resolve -> private, relayer-submitted redeem where the winning order is paid by the pool. Individual order side/amount stay hidden throughout.",
   "contracts": {
     "collateral_xlm_sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-    "lmsr_market": "CDQBD7V7GYUOM4KVBT5AAJVGLYKU2Q24AL2A5ZOVIYQJDC2W7W2SF4Z5",
-    "shielded_pool": "CAT4QLABBY5ITD3KGS7UNNPTWRRC5U72E4GOLRG7QQGDF354BM6C2NO3"
+    "lmsr_market": "CAB6OWIM7C7S4ZRDOZCNUEZUTHTAL2EANWDEZMVVTYX7FFTUYFB3HKJL",
+    "shielded_pool": "CB555GWMO5WSKYJJZCHEUMSWVVL6KQVMGNHDMWEYJZASYHF36SOJSLK7"
   },
   "flow": {
-    "orders_placed": 4,
+    "1_orders_placed": 4,
     "order_root": "61f07d5b615144689056bb64f987e64ace909ed3787c80e9ce73f8a55fb2f702",
-    "submit_batch_tx": "45890eb265ab0cfb76730c84bc115584efe7f6557bf2755b1748c59f94146ca8",
-    "dqyes": 30,
-    "dqno": 20,
-    "q_before": [0, 0],
-    "q_after": [30, 20],
-    "auth": "pool paid the market inside apply_batch via authorize_as_current_contract (validated on real network, no mock)"
+    "2_submit_batch": { "dqyes": 30, "dqno": 20, "q_before": [0, 0], "q_after": [30, 20], "auth": "pool paid the market via authorize_as_current_contract" },
+    "3_resolve": "Yes (market funded with a b*ln2 buffer to pass its solvency guard)",
+    "4_redeem_order_tx": "a706a51786c30f14e4bf511b51fc899e1d2791759beae8f92835d7870d8622ab",
+    "redeem_recipient": "GAGRIGZCFEYDOPSFJRJVUYLIN53H3BELSKM2BJ5OWW6MHSWR3DP6NEHL",
+    "redeem_submitter": "deployer (relayer, no recipient signature)",
+    "payout": 10,
+    "bob_balance_before": "101000000000",
+    "bob_balance_after": "101000000010"
   },
-  "note": "Batch amounts here are raw (net LMSR cost ~0). A visible demo uses fixed-point share amounts. Unaudited research prototype, testnet only."
+  "notes": "Batch amounts are raw for this test (net LMSR cost ~0); a visible/economically-meaningful demo uses fixed-point share amounts. Payout is settled from the pool (parimutuel-style escrow) with the market as odds engine + outcome source. Unaudited research prototype, testnet only."
 }
