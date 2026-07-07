@@ -77,6 +77,8 @@ const ORDER_LEAVES_KEY: Symbol = symbol_short!("oleaves");
 const ORDER_DEPTH_KEY: Symbol = symbol_short!("odepth");
 const ORDER_ROOT_KEY: Symbol = symbol_short!("oroot");
 const BATCH_NULL_KEY: Symbol = symbol_short!("bnull");
+const REDEEM_VK_KEY: Symbol = symbol_short!("rvk");
+const REDEEM_NULL_KEY: Symbol = symbol_short!("rnull");
 const ORDER_TREE_DEPTH: u32 = 2;
 const BATCH_N: u32 = 4;
 
@@ -625,5 +627,84 @@ impl PrivacyPoolsContract {
         let mut bytes = [0u8; 32];
         bytes[16..].copy_from_slice(&n.to_be_bytes());
         BytesN::from_array(env, &bytes)
+    }
+
+    pub fn set_redeem_vk(env: &Env, caller: Address, vk_bytes: Bytes) -> Result<(), Error> {
+        caller.require_auth();
+        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
+        if caller != admin {
+            return Err(Error::OnlyAdmin);
+        }
+        env.storage().instance().set(&REDEEM_VK_KEY, &vk_bytes);
+        Ok(())
+    }
+
+    pub fn redeem_order(
+        env: &Env,
+        to: Address,
+        proof_bytes: Bytes,
+        pub_signals_bytes: Bytes,
+    ) -> Vec<String> {
+        let rvk_bytes: Bytes = env.storage().instance().get(&REDEEM_VK_KEY).unwrap();
+        let rvk = VerificationKey::from_bytes(env, &rvk_bytes).unwrap();
+        let proof = Proof::from_bytes(env, &proof_bytes);
+        let pub_signals = PublicSignals::from_bytes(env, &pub_signals_bytes);
+        let res = Groth16Verifier::verify_proof(env, rvk, proof, &pub_signals.pub_signals);
+        if res.is_err() || !res.unwrap() {
+            return vec![env, String::from_str(env, ERROR_COIN_OWNERSHIP_PROOF)];
+        }
+
+        let nullifier = pub_signals.pub_signals.get(0).unwrap().to_bytes();
+        let payout_bytes = pub_signals.pub_signals.get(1).unwrap().to_bytes().to_array();
+        let proof_order_root = pub_signals.pub_signals.get(2).unwrap().to_bytes();
+        let proof_recipient = pub_signals.pub_signals.get(3).unwrap().to_bytes();
+        let proof_winning = pub_signals.pub_signals.get(4).unwrap().to_bytes();
+
+        if Self::recipient_field(env, &to) != proof_recipient {
+            return vec![env, String::from_str(env, ERROR_RECIPIENT_MISMATCH)];
+        }
+        if proof_order_root != Self::get_order_root(env) {
+            return vec![env, String::from_str(env, "Order root mismatch")];
+        }
+
+        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
+        let winning: i128 = match MarketClient::new(env, &market).outcome() {
+            Some(Side::Yes) => 1,
+            Some(Side::No) => 0,
+            None => return vec![env, String::from_str(env, ERROR_MARKET_UNRESOLVED)],
+        };
+        if proof_winning != Self::field_of_i128(env, winning) {
+            return vec![env, String::from_str(env, ERROR_WRONG_OUTCOME)];
+        }
+
+        let mut redeem_nulls: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&REDEEM_NULL_KEY)
+            .unwrap_or(vec![env]);
+        if redeem_nulls.contains(&nullifier) {
+            return vec![env, String::from_str(env, ERROR_NULLIFIER_USED)];
+        }
+        redeem_nulls.push_back(nullifier);
+        env.storage().instance().set(&REDEEM_NULL_KEY, &redeem_nulls);
+
+        let mut payout_arr = [0u8; 16];
+        payout_arr.copy_from_slice(&payout_bytes[16..32]);
+        let payout = i128::from_be_bytes(payout_arr);
+
+        let token_address: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
+        token::Client::new(env, &token_address).transfer(
+            &env.current_contract_address(),
+            &to,
+            &payout,
+        );
+        vec![env]
+    }
+
+    pub fn get_redeem_nullifiers(env: &Env) -> Vec<BytesN<32>> {
+        env.storage()
+            .instance()
+            .get(&REDEEM_NULL_KEY)
+            .unwrap_or(vec![env])
     }
 }
