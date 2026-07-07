@@ -102,6 +102,16 @@ function bsgs(M, bound) {
   return null;
 }
 
+export function ptFromDec(x, y) {
+  return [bj.F.e(BigInt(x)), bj.F.e(BigInt(y))];
+}
+export function ptToDec(P) {
+  return [bj.F.toString(P[0]), bj.F.toString(P[1])];
+}
+export function eq(a, b) {
+  return bj.F.eq(a[0], b[0]) && bj.F.eq(a[1], b[1]);
+}
+
 export function thresholdDecrypt(cipher, partials, bound = 100000) {
   const indices = partials.map((p) => p.i);
   let S = ID();
