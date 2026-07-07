@@ -4,7 +4,7 @@
 mod math;
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
+    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token,
     Address, Env, Symbol,
 };
 
@@ -58,11 +58,60 @@ pub enum Error {
     Undersolvent = 8,
 }
 
+#[contractevent(topics = ["created"], data_format = "vec")]
+pub struct Created {
+    pub asset: Symbol,
+    pub threshold: i128,
+    pub expiry: u64,
+    pub b: i128,
+}
+
+#[contractevent(topics = ["buy"], data_format = "vec")]
+pub struct Buy {
+    #[topic]
+    pub trader: Address,
+    pub side: Side,
+    pub shares: i128,
+    pub cost: i128,
+    pub qy: i128,
+    pub qn: i128,
+}
+
+#[contractevent(topics = ["sell"], data_format = "vec")]
+pub struct Sell {
+    #[topic]
+    pub trader: Address,
+    pub side: Side,
+    pub shares: i128,
+    pub refund: i128,
+    pub qy: i128,
+    pub qn: i128,
+}
+
+#[contractevent(topics = ["fund"], data_format = "vec")]
+pub struct Fund {
+    #[topic]
+    pub from: Address,
+    pub amount: i128,
+}
+
+#[contractevent(topics = ["resolved"], data_format = "single-value")]
+pub struct Resolved {
+    pub outcome: Side,
+}
+
+#[contractevent(topics = ["redeem"], data_format = "vec")]
+pub struct Redeem {
+    #[topic]
+    pub trader: Address,
+    pub side: Side,
+    pub payout: i128,
+}
+
 #[contract]
 pub struct LmsrMarket;
 
 #[contractimpl]
-#[allow(deprecated)] // events use the classic publish() API; migrate to #[contractevent] later
 impl LmsrMarket {
     /// Constructor (runs atomically at deploy — cannot be front-run). Sets the
     /// `admin`, `collateral` token (SEP-41), liquidity parameter `b` (fixed-point,
@@ -94,6 +143,13 @@ impl LmsrMarket {
         s.set(&DataKey::Threshold, &threshold);
         s.set(&DataKey::Expiry, &expiry);
         s.set(&DataKey::Decimals, &decimals);
+        Created {
+            asset,
+            threshold,
+            expiry,
+            b,
+        }
+        .publish(&env);
         Self::bump(&env);
     }
 
@@ -172,8 +228,15 @@ impl LmsrMarket {
             &cost,
         );
 
-        env.events()
-            .publish((symbol_short!("buy"), trader), (side, shares, cost, qy2, qn2));
+        Buy {
+            trader,
+            side,
+            shares,
+            cost,
+            qy: qy2,
+            qn: qn2,
+        }
+        .publish(&env);
         Ok(cost)
     }
 
@@ -226,8 +289,15 @@ impl LmsrMarket {
             &refund,
         );
 
-        env.events()
-            .publish((symbol_short!("sell"), trader), (side, shares, refund, qy2, qn2));
+        Sell {
+            trader,
+            side,
+            shares,
+            refund,
+            qy: qy2,
+            qn: qn2,
+        }
+        .publish(&env);
         Ok(refund)
     }
 
@@ -270,7 +340,7 @@ impl LmsrMarket {
             return Err(Error::Undersolvent);
         }
         env.storage().instance().set(&DataKey::Outcome, &outcome);
-        env.events().publish((symbol_short!("resolved"),), outcome);
+        Resolved { outcome }.publish(&env);
         Self::bump(&env);
         Ok(())
     }
@@ -297,6 +367,7 @@ impl LmsrMarket {
             &env.current_contract_address(),
             &amount,
         );
+        Fund { from, amount }.publish(&env);
         Self::bump(&env);
         Ok(())
     }
@@ -332,8 +403,12 @@ impl LmsrMarket {
                 &payout,
             );
         }
-        env.events()
-            .publish((symbol_short!("redeem"), trader), (side, payout));
+        Redeem {
+            trader,
+            side,
+            payout,
+        }
+        .publish(&env);
         Self::bump(&env);
         Ok(payout)
     }
