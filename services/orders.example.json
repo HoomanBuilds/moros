@@ -1,0 +1,6 @@
+[
+  {"amount":"10","side":"1","secret":"100","nullifier":"101"},
+  {"amount":"20","side":"1","secret":"102","nullifier":"103"},
+  {"amount":"5","side":"0","secret":"104","nullifier":"105"},
+  {"amount":"15","side":"0","secret":"106","nullifier":"107"}
+]
