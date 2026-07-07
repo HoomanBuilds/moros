@@ -3,8 +3,9 @@
 extern crate alloc;
 
 use soroban_sdk::{
+    auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
     contract, contractclient, contractimpl, contracttype, log, symbol_short, token, vec,
-    xdr::ToXdr, Address, Bytes, BytesN, Env, String, Symbol, Vec,
+    xdr::ToXdr, Address, Bytes, BytesN, Env, IntoVal, String, Symbol, Vec,
 };
 
 use lean_imt::{LeanIMT, TREE_DEPTH_KEY, TREE_LEAVES_KEY, TREE_ROOT_KEY};
@@ -25,6 +26,8 @@ pub enum Side {
 #[contractclient(name = "MarketClient")]
 pub trait Market {
     fn outcome(env: Env) -> Option<Side>;
+    fn quote_batch(env: Env, dqyes: i128, dqno: i128) -> i128;
+    fn apply_batch(env: Env, batcher: Address, dqyes: i128, dqno: i128) -> i128;
 }
 
 // Contract errors
@@ -41,6 +44,8 @@ pub enum Error {
     DepositProofFailed = 7,
     CommitmentMismatch = 8,
     CapMismatch = 9,
+    BatchProofFailed = 10,
+    BatchMismatch = 11,
 }
 
 // Error messages for Vec<String> returns (legacy compatibility)
@@ -65,6 +70,7 @@ const ADMIN_KEY: Symbol = symbol_short!("admin");
 const MARKET_KEY: Symbol = symbol_short!("market");
 const DEPOSIT_VK_KEY: Symbol = symbol_short!("dvk");
 const CAP_KEY: Symbol = symbol_short!("cap");
+const BATCH_VK_KEY: Symbol = symbol_short!("bvk");
 
 const FIXED_AMOUNT: i128 = 1000000000; // 1 XLM in stroops
 
@@ -480,5 +486,62 @@ impl PrivacyPoolsContract {
     /// * The address of the admin (contract deployer)
     pub fn get_admin(env: &Env) -> Address {
         env.storage().instance().get(&ADMIN_KEY).unwrap()
+    }
+
+    pub fn set_batch_vk(env: &Env, caller: Address, vk_bytes: Bytes) -> Result<(), Error> {
+        caller.require_auth();
+        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
+        if caller != admin {
+            return Err(Error::OnlyAdmin);
+        }
+        env.storage().instance().set(&BATCH_VK_KEY, &vk_bytes);
+        Ok(())
+    }
+
+    pub fn submit_batch(
+        env: &Env,
+        dqyes: i128,
+        dqno: i128,
+        proof_bytes: Bytes,
+        pub_signals_bytes: Bytes,
+    ) -> Result<i128, Error> {
+        let bvk_bytes: Bytes = env.storage().instance().get(&BATCH_VK_KEY).unwrap();
+        let bvk = VerificationKey::from_bytes(env, &bvk_bytes).unwrap();
+        let proof = Proof::from_bytes(env, &proof_bytes);
+        let pub_signals = PublicSignals::from_bytes(env, &pub_signals_bytes);
+        let res = Groth16Verifier::verify_proof(env, bvk, proof, &pub_signals.pub_signals);
+        if res.is_err() || !res.unwrap() {
+            return Err(Error::BatchProofFailed);
+        }
+        if Self::field_of_i128(env, dqyes) != pub_signals.pub_signals.get(0).unwrap().to_bytes()
+            || Self::field_of_i128(env, dqno) != pub_signals.pub_signals.get(1).unwrap().to_bytes()
+        {
+            return Err(Error::BatchMismatch);
+        }
+
+        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
+        let token: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
+        let client = MarketClient::new(env, &market);
+        let net = client.quote_batch(&dqyes, &dqno);
+        let me = env.current_contract_address();
+        env.authorize_as_current_contract(vec![
+            env,
+            InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context: ContractContext {
+                    contract: token,
+                    fn_name: symbol_short!("transfer"),
+                    args: (me.clone(), market, net).into_val(env),
+                },
+                sub_invocations: vec![env],
+            }),
+        ]);
+        client.apply_batch(&me, &dqyes, &dqno);
+        Ok(net)
+    }
+
+    fn field_of_i128(env: &Env, n: i128) -> BytesN<32> {
+        let mut bytes = [0u8; 32];
+        bytes[16..].copy_from_slice(&n.to_be_bytes());
+        BytesN::from_array(env, &bytes)
     }
 }
