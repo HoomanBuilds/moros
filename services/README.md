@@ -1,9 +1,9 @@
 # Off-chain batcher + relayer
 
-Orchestrates the ZK-batched market. No trusted matching: the batcher only nets and
-proves; correctness is enforced on-chain by the batch proof. Run it as one-shot
-scripts (`batcher.mjs` / `relayer.mjs`) or as a long-running intake service
-(`server.mjs`).
+Orchestrates the ZK-batched market. **Correctness is trustless** (the net update is a
+Groth16 proof verified on-chain), but the batcher is **trusted with order privacy** -
+see "Trust model" below. Run it as one-shot scripts (`batcher.mjs` / `relayer.mjs`) or
+as a long-running intake service (`server.mjs`).
 
 ## Setup
 Create `services/.env` (git-ignored) with your deployment:
@@ -56,6 +56,26 @@ deployed contracts' embedded VKs, so they cannot be regenerated on the VM. Ship 
 ./services/deploy-vm.sh provision      # installs snarkjs, builds/uses bins, verifies artifacts
 ./services/deploy-vm.sh service        # installs + starts a systemd unit (journalctl -u zkmarket-batcher -f)
 ```
+
+## Trust model + security (read this)
+- **The batcher learns order openings.** To prove the net, the batcher receives each
+  order's `amount, side, secret, nullifier`. That means the operator sees individual
+  positions (privacy is from the *chain/public*, not from the operator) AND, because it
+  holds the `secret`, it could in principle craft a redeem proof for a winning order to
+  an address it controls. So the batcher is a **trusted party for privacy + custody**,
+  even though it cannot forge an incorrect net (the chain rejects that). The production
+  fix is client-side / per-trader proving with proof aggregation so the operator never
+  sees secrets - that is roadmap, not built here.
+- **Auth**: set `SERVICE_TOKEN` in `.env`; all mutating endpoints require
+  `Authorization: Bearer <token>`. Without it they are open (dev only, warned at start).
+- **Secrets handling**: the pending queue is in-memory only (not persisted); the witness
+  input + `.wtns` (which contain openings) and the redeem temp files are deleted after
+  each use. Restarting the server drops the queue (traders resubmit).
+- **Hot key**: `SOURCE` is a funded signing key on the box that pays fees - fund it
+  minimally and rotate it. **Terminate TLS in front** (reverse proxy); the intake
+  carries secrets, so never expose it over plaintext HTTP.
+- Input is validated (decimal fields, `side ∈ {0,1}`), body size and queue length are
+  capped.
 
 ## Notes
 - Demo scale: fixed N=4 orders per batch (depth-2 order tree). Larger N needs a bigger

@@ -1,5 +1,5 @@
 import { spawnSync } from "child_process";
-import { mkdirSync, writeFileSync, readFileSync } from "fs";
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
 import { cfg } from "./config.mjs";
@@ -30,31 +30,36 @@ export function batch(ordersPath) {
   if (gen.status !== 0) throw new Error("batch generator failed: " + gen.stderr);
   writeFileSync(inputPath, gen.stdout);
 
-  console.log("[batcher] generating witness");
-  run("node", [cfg.batchWitnessGen, cfg.batchWasm, inputPath, wtns]);
-  console.log("[batcher] proving (snarkjs groth16)");
-  run(cfg.snarkjs, ["groth16", "prove", cfg.batchZkey, wtns, proofPath, publicPath]);
+  try {
+    console.log("[batcher] generating witness");
+    run("node", [cfg.batchWitnessGen, cfg.batchWasm, inputPath, wtns]);
+    console.log("[batcher] proving (snarkjs groth16)");
+    run(cfg.snarkjs, ["groth16", "prove", cfg.batchZkey, wtns, proofPath, publicPath]);
 
-  const pub = JSON.parse(readFileSync(publicPath, "utf8"));
-  const dqyes = pub[0];
-  const dqno = pub[1];
-  const proofHex = hexFrom("proof", proofPath);
-  const pubHex = hexFrom("public", publicPath);
-  console.log(`[batcher] net delta: dqyes=${dqyes} dqno=${dqno}`);
+    const pub = JSON.parse(readFileSync(publicPath, "utf8"));
+    const dqyes = pub[0];
+    const dqno = pub[1];
+    const proofHex = hexFrom("proof", proofPath);
+    const pubHex = hexFrom("public", publicPath);
+    console.log(`[batcher] net delta: dqyes=${dqyes} dqno=${dqno}`);
 
-  if (!cfg.poolId) {
-    console.log("[batcher] POOL_ID not set - printing submit args instead of submitting");
-    console.log(JSON.stringify({ dqyes, dqno, proofHex, pubHex }, null, 2));
-    return;
+    if (!cfg.poolId) {
+      console.log("[batcher] POOL_ID not set - printing submit args instead of submitting");
+      console.log(JSON.stringify({ dqyes, dqno, proofHex, pubHex }, null, 2));
+      return;
+    }
+    console.log("[batcher] submitting submit_batch to", cfg.poolId);
+    const r = run("stellar", [
+      "contract", "invoke", "--id", cfg.poolId,
+      "--source", cfg.source, "--network", cfg.network, "--send=yes", "--",
+      "submit_batch", "--dqyes", dqyes, "--dqno", dqno,
+      "--proof_bytes", proofHex, "--pub_signals_bytes", pubHex,
+    ]);
+    console.log("[batcher] submitted:", (r.stdout + r.stderr).split("\n").find((l) => l.includes("batch") || l.includes("Success")) || "done");
+  } finally {
+    rmSync(inputPath, { force: true });
+    rmSync(wtns, { force: true });
   }
-  console.log("[batcher] submitting submit_batch to", cfg.poolId);
-  const r = run("stellar", [
-    "contract", "invoke", "--id", cfg.poolId,
-    "--source", cfg.source, "--network", cfg.network, "--send=yes", "--",
-    "submit_batch", "--dqyes", dqyes, "--dqno", dqno,
-    "--proof_bytes", proofHex, "--pub_signals_bytes", pubHex,
-  ]);
-  console.log("[batcher] submitted:", (r.stdout + r.stderr).split("\n").find((l) => l.includes("batch") || l.includes("Success")) || "done");
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
