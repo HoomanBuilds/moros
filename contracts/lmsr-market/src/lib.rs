@@ -38,6 +38,7 @@ enum DataKey {
     Threshold,
     Expiry,
     Decimals,
+    Batcher,
     Shares(Address, Side),
 }
 
@@ -98,6 +99,17 @@ pub struct Fund {
 #[contractevent(topics = ["resolved"], data_format = "single-value")]
 pub struct Resolved {
     pub outcome: Side,
+}
+
+#[contractevent(topics = ["batch"], data_format = "vec")]
+pub struct Batch {
+    #[topic]
+    pub batcher: Address,
+    pub dqyes: i128,
+    pub dqno: i128,
+    pub qy: i128,
+    pub qn: i128,
+    pub net: i128,
 }
 
 #[contractevent(topics = ["redeem"], data_format = "vec")]
@@ -370,6 +382,73 @@ impl LmsrMarket {
         Fund { from, amount }.publish(&env);
         Self::bump(&env);
         Ok(())
+    }
+
+    pub fn set_batcher(env: Env, admin: Address, batcher: Address) -> Result<(), Error> {
+        admin.require_auth();
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        if admin != stored {
+            return Err(Error::Unauthorized);
+        }
+        env.storage().instance().set(&DataKey::Batcher, &batcher);
+        Self::bump(&env);
+        Ok(())
+    }
+
+    pub fn apply_batch(env: Env, batcher: Address, dqyes: i128, dqno: i128) -> Result<i128, Error> {
+        batcher.require_auth();
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Batcher)
+            .ok_or(Error::NotInitialized)?;
+        if batcher != stored {
+            return Err(Error::Unauthorized);
+        }
+        if env.storage().instance().has(&DataKey::Outcome) {
+            return Err(Error::AlreadyResolved);
+        }
+        if dqyes < 0 || dqno < 0 {
+            return Err(Error::InvalidParams);
+        }
+        let (qy, qn, b) = Self::state(&env)?;
+        let qy2 = qy + dqyes;
+        let qn2 = qn + dqno;
+        if qy2 > MAX_Q || qn2 > MAX_Q {
+            return Err(Error::InvalidParams);
+        }
+        let before = math::cost(qy, qn, b);
+        let after = math::cost(qy2, qn2, b);
+        let net = Self::to_atomic(&env, after - before, true);
+
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        token::Client::new(&env, &token_addr).transfer(
+            &batcher,
+            &env.current_contract_address(),
+            &net,
+        );
+
+        env.storage().instance().set(&DataKey::QYes, &qy2);
+        env.storage().instance().set(&DataKey::QNo, &qn2);
+        Self::bump(&env);
+        Batch {
+            batcher,
+            dqyes,
+            dqno,
+            qy: qy2,
+            qn: qn2,
+            net,
+        }
+        .publish(&env);
+        Ok(net)
     }
 
     /// Redeem `trader`'s `side` shares after resolution. Winning shares pay 1

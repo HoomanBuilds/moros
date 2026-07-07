@@ -98,6 +98,44 @@ fn buy_debits_collateral_credits_shares_and_moves_price() {
 }
 
 #[test]
+fn apply_batch_moves_q_and_charges_batcher() {
+    let env = Env::default();
+    let (client, token, _trader, admin) = setup(&env);
+    let tok = TokenClient::new(&env, &token);
+    let batcher = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&batcher, &(1_000_000 * S));
+    client.set_batcher(&admin, &batcher);
+
+    let dqyes = 30 * S;
+    let dqno = 20 * S;
+    let pow = 10i128.pow(tok.decimals());
+    let cost_fixed = math::cost(dqyes, dqno, 100 * S) - math::cost(0, 0, 100 * S);
+    let expected_net = (cost_fixed * pow + (S - 1)) / S;
+
+    let start = tok.balance(&batcher);
+    let net = client.apply_batch(&batcher, &dqyes, &dqno);
+
+    assert_eq!(net, expected_net);
+    assert_eq!(client.get_state(), (dqyes, dqno, 100 * S));
+    assert_eq!(tok.balance(&batcher), start - net);
+    assert_eq!(tok.balance(&client.address), net);
+}
+
+#[test]
+fn apply_batch_rejects_non_batcher() {
+    let env = Env::default();
+    let (client, token, _trader, admin) = setup(&env);
+    let batcher = Address::generate(&env);
+    let mallory = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&mallory, &(1_000_000 * S));
+    client.set_batcher(&admin, &batcher);
+
+    let r = client.try_apply_batch(&mallory, &(10 * S), &(10 * S));
+    assert!(r.is_err() || r.unwrap().is_err());
+    assert_eq!(client.get_state(), (0, 0, 100 * S));
+}
+
+#[test]
 fn sell_refunds_collateral_debits_shares_and_restores_price() {
     let env = Env::default();
     let (client, token, trader, _admin) = setup(&env);
