@@ -46,6 +46,8 @@ pub enum Error {
     CapMismatch = 9,
     BatchProofFailed = 10,
     BatchMismatch = 11,
+    OrderRootMismatch = 12,
+    InvalidStake = 13,
 }
 
 // Error messages for Vec<String> returns (legacy compatibility)
@@ -71,6 +73,12 @@ const MARKET_KEY: Symbol = symbol_short!("market");
 const DEPOSIT_VK_KEY: Symbol = symbol_short!("dvk");
 const CAP_KEY: Symbol = symbol_short!("cap");
 const BATCH_VK_KEY: Symbol = symbol_short!("bvk");
+const ORDER_LEAVES_KEY: Symbol = symbol_short!("oleaves");
+const ORDER_DEPTH_KEY: Symbol = symbol_short!("odepth");
+const ORDER_ROOT_KEY: Symbol = symbol_short!("oroot");
+const BATCH_NULL_KEY: Symbol = symbol_short!("bnull");
+const ORDER_TREE_DEPTH: u32 = 2;
+const BATCH_N: u32 = 4;
 
 const FIXED_AMOUNT: i128 = 1000000000; // 1 XLM in stroops
 
@@ -103,6 +111,12 @@ impl PrivacyPoolsContract {
         env.storage().instance().set(&TREE_LEAVES_KEY, &leaves);
         env.storage().instance().set(&TREE_DEPTH_KEY, &depth);
         env.storage().instance().set(&TREE_ROOT_KEY, &root);
+
+        let order_tree = LeanIMT::new(env, ORDER_TREE_DEPTH);
+        let (oleaves, odepth, oroot) = order_tree.to_storage();
+        env.storage().instance().set(&ORDER_LEAVES_KEY, &oleaves);
+        env.storage().instance().set(&ORDER_DEPTH_KEY, &odepth);
+        env.storage().instance().set(&ORDER_ROOT_KEY, &oroot);
     }
 
     /// Stores a commitment in the merkle tree and updates the tree state
@@ -141,6 +155,55 @@ impl PrivacyPoolsContract {
         env.storage().instance().set(&TREE_ROOT_KEY, &new_root);
 
         Ok((new_root, leaf_index))
+    }
+
+    fn store_order(env: &Env, commitment: BytesN<32>) -> Result<(BytesN<32>, u32), Error> {
+        let leaves: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&ORDER_LEAVES_KEY)
+            .unwrap_or(vec![env]);
+        let depth: u32 = env.storage().instance().get(&ORDER_DEPTH_KEY).unwrap_or(0);
+        let root: BytesN<32> = env
+            .storage()
+            .instance()
+            .get(&ORDER_ROOT_KEY)
+            .unwrap_or(BytesN::from_array(env, &[0u8; 32]));
+        let mut tree = LeanIMT::from_storage(env, leaves, depth, root);
+        tree.insert(commitment).map_err(|_| Error::TreeAtCapacity)?;
+        let leaf_index = tree.get_leaf_count() - 1;
+        let (new_leaves, new_depth, new_root) = tree.to_storage();
+        env.storage().instance().set(&ORDER_LEAVES_KEY, &new_leaves);
+        env.storage().instance().set(&ORDER_DEPTH_KEY, &new_depth);
+        env.storage().instance().set(&ORDER_ROOT_KEY, &new_root);
+        Ok((new_root, leaf_index))
+    }
+
+    pub fn place_order(
+        env: &Env,
+        from: Address,
+        commitment: BytesN<32>,
+        stake: i128,
+    ) -> Result<u32, Error> {
+        from.require_auth();
+        if stake <= 0 {
+            return Err(Error::InvalidStake);
+        }
+        let token_address: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
+        token::Client::new(env, &token_address).transfer(
+            &from,
+            &env.current_contract_address(),
+            &stake,
+        );
+        let (_, leaf_index) = Self::store_order(env, commitment)?;
+        Ok(leaf_index)
+    }
+
+    pub fn get_order_root(env: &Env) -> BytesN<32> {
+        env.storage()
+            .instance()
+            .get(&ORDER_ROOT_KEY)
+            .unwrap_or(BytesN::from_array(env, &[0u8; 32]))
     }
 
     /// Deposits funds into the privacy pool and stores a commitment in the merkle tree.
@@ -518,6 +581,25 @@ impl PrivacyPoolsContract {
         {
             return Err(Error::BatchMismatch);
         }
+        if pub_signals.pub_signals.get(6).unwrap().to_bytes() != Self::get_order_root(env) {
+            return Err(Error::OrderRootMismatch);
+        }
+
+        let mut batch_nulls: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&BATCH_NULL_KEY)
+            .unwrap_or(vec![env]);
+        let mut i = 2u32;
+        while i < 2 + BATCH_N {
+            let nh = pub_signals.pub_signals.get(i).unwrap().to_bytes();
+            if batch_nulls.contains(&nh) {
+                return Err(Error::NullifierUsed);
+            }
+            batch_nulls.push_back(nh);
+            i += 1;
+        }
+        env.storage().instance().set(&BATCH_NULL_KEY, &batch_nulls);
 
         let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
         let token: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
