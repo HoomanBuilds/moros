@@ -38,3 +38,9 @@ winningOutcome` to the input, generate the witness, and `snarkjs groth16 prove`.
 `recipient_field` fn); `winningOutcome` must equal `side`.
 
 **Testnet/demo only — dev powers-of-tau, not a mainnet-safe ceremony.**
+
+## Batch-netting (Phase 4)
+`batch-input-generator.rs` is a coinutils bin (`src/bin/batch.rs`) that builds the
+order tree (Poseidon255 + LeanIMT, matching `circuits/batch.circom`) and emits the
+witness input for the batch-netting proof. Validated N=4: `dQYes=30, dQNo=20` from
+4 hidden orders, verifies off-chain. ~3.2k constraints/order (N=16 ≈ 51k, fits 4 GB).
