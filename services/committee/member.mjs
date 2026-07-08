@@ -1,12 +1,17 @@
 import { createServer } from "http";
 import { timingSafeEqual } from "crypto";
-import { G8, ID, R, add, mul, randScalar } from "./jubjub.mjs";
-import { feldmanCheck } from "./dkg-jubjub.mjs";
-import { provePartial } from "./chaum-pedersen.mjs";
+import { Address, Keypair, Networks, authorizeEntry, scValToNative, xdr } from "@stellar/stellar-sdk";
+import { G8, ID, R, add, mul, randScalar, thresholdDecrypt } from "./jubjub.mjs";
+import { feldmanCheck, memberVerifyKey } from "./dkg-jubjub.mjs";
+import { provePartial, verifyPartial } from "./chaum-pedersen.mjs";
 
 const PORT = Number(process.env.PORT || 9711);
 const INDEX = BigInt(process.env.INDEX || 1);
 const TOKEN = process.env.MEMBER_TOKEN || "";
+const MARKET = process.env.MARKET || "";
+const NET_BOUND = Number(process.env.NET_BOUND || 100000);
+const S = 1n << 32n;
+const kp = process.env.MEMBER_SK ? Keypair.fromSecret(process.env.MEMBER_SK) : null;
 
 const pt = (p) => [p[0].toString(), p[1].toString()];
 const unpt = (a) => [BigInt(a[0]), BigInt(a[1])];
@@ -63,7 +68,9 @@ function send(res, code, obj) {
 
 const server = createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true, index: INDEX.toString() });
+    if (req.method === "GET" && req.url === "/health") {
+      return send(res, 200, { ok: true, index: INDEX.toString(), address: kp ? kp.publicKey() : null });
+    }
     if (!authed(req)) return send(res, 401, { error: "unauthorized" });
 
     if (req.method === "POST" && req.url === "/dkg/init") {
@@ -130,6 +137,54 @@ const server = createServer(async (req, res) => {
         d: pt(p.d),
         proof: { a1: pt(p.proof.a1), a2: pt(p.proof.a2), z: p.proof.z.toString() },
       });
+    }
+
+    if (req.method === "POST" && req.url === "/attest") {
+      if (!finalShare) return send(res, 409, { error: "dkg not complete" });
+      if (!kp || !MARKET) return send(res, 409, { error: "MEMBER_SK or MARKET not configured" });
+      const { entryXdr, validUntilLedger, cipherYes, cipherNo, partialsYes, partialsNo, dqyes, dqno } = await body(req);
+
+      const allCms = [];
+      for (let i = 1; i <= roster.n; i++) allCms.push(allCommitments[i].map(unpt));
+      const verifyNet = (cipherRaw, partialsRaw, expect) => {
+        const cipher = { c1: unpt(cipherRaw.c1), c2: unpt(cipherRaw.c2) };
+        const partials = [];
+        for (const p of partialsRaw) {
+          const partial = {
+            i: BigInt(p.i),
+            d: unpt(p.d),
+            proof: { a1: unpt(p.proof.a1), a2: unpt(p.proof.a2), z: BigInt(p.proof.z) },
+          };
+          if (!verifyPartial(memberVerifyKey(allCms, partial.i), cipher.c1, partial)) return false;
+          partials.push({ i: partial.i, d: partial.d });
+        }
+        return thresholdDecrypt(cipher, partials, NET_BOUND) === BigInt(expect);
+      };
+      if (!verifyNet(cipherYes, partialsYes, dqyes)) return send(res, 400, { error: "dqyes does not match verified decryption" });
+      if (!verifyNet(cipherNo, partialsNo, dqno)) return send(res, 400, { error: "dqno does not match verified decryption" });
+
+      const entry = xdr.SorobanAuthorizationEntry.fromXDR(entryXdr, "base64");
+      const fn = entry.rootInvocation().function();
+      if (fn.switch() !== xdr.SorobanAuthorizedFunctionType.sorobanAuthorizedFunctionTypeContractFn()) {
+        return send(res, 400, { error: "not a contract invocation" });
+      }
+      const inv = fn.contractFn();
+      if (Address.fromScAddress(inv.contractAddress()).toString() !== MARKET) {
+        return send(res, 400, { error: "entry targets a different contract" });
+      }
+      if (inv.functionName().toString() !== "apply_batch_committee") {
+        return send(res, 400, { error: "entry calls a different function" });
+      }
+      const args = inv.args();
+      if (scValToNative(args[2]) !== BigInt(dqyes) * S || scValToNative(args[3]) !== BigInt(dqno) * S) {
+        return send(res, 400, { error: "entry net does not match verified net" });
+      }
+      const cred = Address.fromScAddress(entry.credentials().address().address()).toString();
+      if (cred !== kp.publicKey()) return send(res, 400, { error: "entry is not for this member" });
+
+      const signed = await authorizeEntry(entry, kp, Number(validUntilLedger), Networks.TESTNET);
+      console.log(`[member ${INDEX}] attested net (${dqyes}, ${dqno}) for ${MARKET}`);
+      return send(res, 200, { signedEntryXdr: signed.toXDR("base64") });
     }
 
     send(res, 404, { error: "not found" });

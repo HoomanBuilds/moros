@@ -5,15 +5,16 @@ import {
 } from "@stellar/stellar-sdk";
 import { fileURLToPath } from "url";
 
-export async function submitCommitteeBatch({ market, dqyes, dqno, funderSk, signerSks, rpcUrl }) {
+export async function submitCommitteeBatch({ market, dqyes, dqno, funderSk, signerSks, signerAddrs, attest, rpcUrl }) {
   const server = new rpc.Server(rpcUrl ?? process.env.RPC_URL ?? "https://soroban-testnet.stellar.org");
   const passphrase = Networks.TESTNET;
   const funderKp = Keypair.fromSecret(funderSk);
-  const signerKps = signerSks.map((s) => Keypair.fromSecret(s));
+  const signerKps = (signerSks ?? []).map((s) => Keypair.fromSecret(s));
+  const addrs = signerAddrs ?? signerKps.map((kp) => kp.publicKey());
   const contract = new Contract(market);
 
   const args = [
-    xdr.ScVal.scvVec(signerKps.map((kp) => new Address(kp.publicKey()).toScVal())),
+    xdr.ScVal.scvVec(addrs.map((a) => new Address(a).toScVal())),
     new Address(funderKp.publicKey()).toScVal(),
     nativeToScVal(BigInt(dqyes), { type: "i128" }),
     nativeToScVal(BigInt(dqno), { type: "i128" }),
@@ -38,6 +39,11 @@ export async function submitCommitteeBatch({ market, dqyes, dqno, funderSk, sign
       continue;
     }
     const addr = Address.fromScAddress(entry.credentials().address().address()).toString();
+    if (attest) {
+      const signedXdr = await attest({ address: addr, entryXdr: entry.toXDR("base64"), validUntilLedger: validUntil });
+      signedAuth.push(xdr.SorobanAuthorizationEntry.fromXDR(signedXdr, "base64"));
+      continue;
+    }
     const kp = signerKps.find((k) => k.publicKey() === addr);
     if (!kp) throw new Error(`no key for auth entry address: ${addr}`);
     signedAuth.push(await authorizeEntry(entry, kp, validUntil, passphrase));

@@ -60,9 +60,10 @@ export async function runDKG(members, t, token) {
   return { pk: unpt(pk), commitments: all, n, t };
 }
 
-export async function decryptNet(quorum, dkg, cipher, token) {
+export async function collectPartials(quorum, dkg, cipher, token) {
   const c1 = [cipher.c1[0].toString(), cipher.c1[1].toString()];
   const partials = [];
+  const raw = [];
   for (const [i, url] of Object.entries(quorum)) {
     const p = await post(url, "/partial", { c1 }, token);
     const partial = {
@@ -76,6 +77,16 @@ export async function decryptNet(quorum, dkg, cipher, token) {
       throw new Error(`member ${i} returned an INVALID partial decryption - excluded`);
     }
     partials.push({ i: partial.i, d: partial.d });
+    raw.push(p);
   }
-  return thresholdDecrypt(cipher, partials);
+  return { net: thresholdDecrypt(cipher, partials), partials: raw };
+}
+
+export async function decryptNet(quorum, dkg, cipher, token) {
+  const { net } = await collectPartials(quorum, dkg, cipher, token);
+  return net;
+}
+
+export async function attestEntry(url, payload, token) {
+  return post(url, "/attest", payload, token);
 }
