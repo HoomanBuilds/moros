@@ -11,10 +11,11 @@
       "partials": "Chaum-Pedersen verified"
     },
     "apply_batch_committee": {
-      "tx": "6d886a22da9664c9f8b8e56eb80e715ef179d4633b304c9336dee19a6ebe4b08",
+      "tx": "013a29c140561c339c85b4470bb9c5c1ed2c71bcf2030323b714e4490a18ab4e",
       "net_stroops": "251249474",
       "dqyes_fp": "128849018880",
-      "dqno_fp": "85899345920"
+      "dqno_fp": "85899345920",
+      "signing": "each member verified the decryption and signed its own auth entry (server never held committee keys)"
     },
     "redeem": {
       "recipient": "GDEZWZW3DEI7MWMN7D25IR7XQC277IFWQD7HHCLYKP5HWYVIVCRP36GH",
@@ -24,8 +25,8 @@
   },
   "contracts": {
     "collateral_xlm_sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-    "lmsr_market": "CBEJDT3CUX3YXGWEV767KUJOJBCBT4VSEWLTVAUOUN7S4WVL5F2UUL52",
-    "shielded_pool": "CCUK73G25UNQV76WEUTG544NWMZ7G5YREKOD3X56OV6QQ4DR2QYR2LKX"
+    "lmsr_market": "CCCL74JR5OMVCSH642PFSZL24RE6BUSJJ4465SEPM7UGG2ZN3Q6UDHSL",
+    "shielded_pool": "CASEBMZR4CXUFSBB5XCQJUVMPNR5QN5ZXXGQG56YAMHQKY423FRCVLHX"
   },
   "committee": {
     "members": [

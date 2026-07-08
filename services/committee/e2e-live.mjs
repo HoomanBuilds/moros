@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import { createHash } from "crypto";
 import { Address, xdr } from "@stellar/stellar-sdk";
 import { addCiphers } from "./jubjub.mjs";
-import { runDKG, decryptNet } from "./coordinator.mjs";
+import { runDKG, collectPartials, attestEntry } from "./coordinator.mjs";
 import { submitCommitteeBatch } from "./submit-multisig.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -88,8 +88,15 @@ const TOKEN = "e2e-live-token";
 const members = { 1: "http://127.0.0.1:39721", 2: "http://127.0.0.1:39722", 3: "http://127.0.0.1:39723" };
 const procs = Object.entries(members).map(([i, url]) =>
   spawn("node", [resolve(HERE, "member.mjs")], {
-    env: { ...process.env, PORT: new URL(url).port, INDEX: i, MEMBER_TOKEN: TOKEN },
-    stdio: "ignore",
+    env: {
+      ...process.env,
+      PORT: new URL(url).port,
+      INDEX: i,
+      MEMBER_TOKEN: TOKEN,
+      MARKET: market,
+      MEMBER_SK: sh("stellar", ["keys", "show", `comm${i}`]).trim(),
+    },
+    stdio: ["ignore", "inherit", "inherit"],
   })
 );
 
@@ -161,22 +168,46 @@ try {
   const netYes = addCiphers(cyes);
   const netNo = addCiphers(cno);
   const quorum = { 1: members[1], 3: members[3] };
-  const dqyes = await decryptNet(quorum, dkg, netYes, TOKEN);
-  const dqno = await decryptNet(quorum, dkg, netNo, TOKEN);
+  const yes = await collectPartials(quorum, dkg, netYes, TOKEN);
+  const no = await collectPartials(quorum, dkg, netNo, TOKEN);
+  const dqyes = yes.net;
+  const dqno = no.net;
   console.log(`    net: dqyes=${dqyes} dqno=${dqno} (expect 30, 20)`);
   if (dqyes !== 30n || dqno !== 20n) throw new Error("net mismatch");
   record.steps.committee_net = { dqyes: dqyes.toString(), dqno: dqno.toString(), partials: "Chaum-Pedersen verified" };
 
-  console.log("[7] multisig apply_batch_committee on-chain");
+  console.log("[7] apply_batch_committee: members verify the net and sign their OWN auth entries");
+  const cipherJson = (c) => ({ c1: [c.c1[0].toString(), c.c1[1].toString()], c2: [c.c2[0].toString(), c.c2[1].toString()] });
+  const attestPayload = {
+    cipherYes: cipherJson(netYes),
+    cipherNo: cipherJson(netNo),
+    partialsYes: yes.partials,
+    partialsNo: no.partials,
+    dqyes: dqyes.toString(),
+    dqno: dqno.toString(),
+  };
+  const addrToUrl = {};
+  for (const [i, url] of Object.entries(quorum)) {
+    const h = await (await fetch(`${url}/health`)).json();
+    addrToUrl[h.address] = url;
+  }
   const batch = await submitCommitteeBatch({
     market,
     dqyes: (dqyes * S).toString(),
     dqno: (dqno * S).toString(),
     funderSk: process.env.FUNDER_SK,
-    signerSks: [process.env.SIGNER1_SK, process.env.SIGNER2_SK],
+    signerAddrs: Object.keys(addrToUrl),
+    attest: async ({ address, entryXdr, validUntilLedger }) => {
+      const r = await attestEntry(addrToUrl[address], { entryXdr, validUntilLedger, ...attestPayload }, TOKEN);
+      return r.signedEntryXdr;
+    },
   });
   console.log(`    tx ${batch.hash} net charged ${batch.net}`);
-  record.steps.apply_batch_committee = { tx: batch.hash, net_stroops: batch.net.toString(), dqyes_fp: (dqyes * S).toString(), dqno_fp: (dqno * S).toString() };
+  record.steps.apply_batch_committee = {
+    tx: batch.hash, net_stroops: batch.net.toString(),
+    dqyes_fp: (dqyes * S).toString(), dqno_fp: (dqno * S).toString(),
+    signing: "each member verified the decryption and signed its own auth entry (server never held committee keys)",
+  };
 
   console.log("[8] fund market buffer + resolve Yes");
   invoke(market, "deployer", "fund", ["--from", DEPLOYER, "--amount", "100000000"]);
