@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@stellar/stellar-sdk": "^16.0.1",
     "circomlibjs": "^0.1.7",
     "snarkjs": "^0.7.4"
   }
