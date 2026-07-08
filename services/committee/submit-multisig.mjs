@@ -1,3 +1,4 @@
+import "../config.mjs";
 import {
   rpc, TransactionBuilder, Networks, BASE_FEE, Contract, Address, Keypair,
   nativeToScVal, scValToNative, xdr, Operation, authorizeEntry,
