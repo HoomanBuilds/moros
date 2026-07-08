@@ -1,10 +1,13 @@
 import http from "http";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { timingSafeEqual } from "crypto";
+import * as snarkjs from "snarkjs";
 import { cfg } from "./config.mjs";
-import { batch } from "./batcher.mjs";
 import { relay } from "./relayer.mjs";
+import { addCiphers } from "./committee/jubjub.mjs";
+import { runDKG, collectPartials, attestEntry } from "./committee/coordinator.mjs";
+import { submitCommitteeBatch } from "./committee/submit-multisig.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
 const BATCH_N = Number(process.env.BATCH_N || 4);
@@ -12,11 +15,48 @@ const WINDOW_MS = Number(process.env.WINDOW_MS || 60000);
 const MAX_PENDING = Number(process.env.MAX_PENDING || 1000);
 const MAX_BODY = 256 * 1024;
 const TOKEN = process.env.SERVICE_TOKEN || "";
+const MEMBER_TOKEN = process.env.MEMBER_TOKEN || "";
+const MEMBERS = (process.env.MEMBERS || "").split(",").filter(Boolean);
+const THRESHOLD = Number(process.env.THRESHOLD || 2);
+const MARKET = process.env.MARKET || "";
+const DRY = process.env.DRY_RUN === "1";
+const S = 1n << 32n;
 if (!TOKEN) console.warn("[server] SERVICE_TOKEN unset - mutating endpoints are OPEN (dev only)");
+if (MEMBERS.length === 0) {
+  console.error("[server] MEMBERS unset - need committee member URLs");
+  process.exit(1);
+}
 
 mkdirSync(cfg.work, { recursive: true });
 const DEC = /^[0-9]{1,78}$/;
+const VK = JSON.parse(readFileSync(resolve(cfg.repo, "contracts/shielded-pool/circuits/build/encrypt_order_vk.json"), "utf8"));
+
+const members = Object.fromEntries(MEMBERS.map((url, k) => [k + 1, url]));
+let dkg = null;
+let pkDec = null;
+const memberAddrs = {};
 let pending = [];
+const seenNullifiers = new Set();
+
+async function bootstrap() {
+  for (const [i, url] of Object.entries(members)) {
+    for (let k = 0; ; k++) {
+      try {
+        const r = await fetch(`${url}/health`);
+        if (r.ok) {
+          const h = await r.json();
+          if (h.address) memberAddrs[h.address] = url;
+          break;
+        }
+      } catch {}
+      if (k > 100) throw new Error(`member ${i} unreachable`);
+      await new Promise((res) => setTimeout(res, 500));
+    }
+  }
+  dkg = await runDKG(members, THRESHOLD, MEMBER_TOKEN);
+  pkDec = [dkg.pk[0].toString(), dkg.pk[1].toString()];
+  console.log(`[server] committee DKG complete (${MEMBERS.length} members, t=${THRESHOLD}); epoch pk published at /pk`);
+}
 
 function authed(req) {
   if (!TOKEN) return true;
@@ -27,29 +67,65 @@ function authed(req) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+const ptOf = (pub, at) => [BigInt(pub[at]), BigInt(pub[at + 1])];
+const cipherJson = (c) => ({ c1: [c.c1[0].toString(), c.c1[1].toString()], c2: [c.c2[0].toString(), c.c2[1].toString()] });
+
 let batching = false;
-function runBatch() {
-  if (batching) return { skipped: "batch in progress" };
+async function runWindow() {
+  if (batching) return { skipped: "window in progress" };
+  if (!dkg) return { skipped: "committee not ready" };
   if (pending.length < BATCH_N) return { skipped: `need ${BATCH_N} orders, have ${pending.length}` };
   batching = true;
-  const ordersFile = resolve(cfg.work, "window-orders.json");
   try {
-    const orders = pending.slice(0, BATCH_N);
-    writeFileSync(ordersFile, JSON.stringify(orders));
-    batch(ordersFile);
+    const window = pending.slice(0, BATCH_N);
+    const netYes = addCiphers(window.map((o) => o.cyes));
+    const netNo = addCiphers(window.map((o) => o.cno));
+
+    const quorum = Object.fromEntries(Object.entries(members).slice(0, THRESHOLD));
+    const yes = await collectPartials(quorum, dkg, netYes, MEMBER_TOKEN);
+    const no = await collectPartials(quorum, dkg, netNo, MEMBER_TOKEN);
+    if (yes.net === null || no.net === null) throw new Error("net decryption exceeded bound");
+    console.log(`[server] window net: dqyes=${yes.net} dqno=${no.net} (${BATCH_N} orders, individuals never decrypted)`);
+
+    if (DRY || !MARKET || !process.env.FUNDER_SK) {
+      pending = pending.slice(BATCH_N);
+      return { dryRun: true, dqyes: yes.net.toString(), dqno: no.net.toString() };
+    }
+
+    const attestPayload = {
+      cipherYes: cipherJson(netYes),
+      cipherNo: cipherJson(netNo),
+      partialsYes: yes.partials,
+      partialsNo: no.partials,
+      dqyes: yes.net.toString(),
+      dqno: no.net.toString(),
+    };
+    const out = await submitCommitteeBatch({
+      market: MARKET,
+      dqyes: (yes.net * S).toString(),
+      dqno: (no.net * S).toString(),
+      funderSk: process.env.FUNDER_SK,
+      signerAddrs: Object.keys(memberAddrs).slice(0, THRESHOLD),
+      attest: async ({ address, entryXdr, validUntilLedger }) => {
+        const url = memberAddrs[address];
+        if (!url) throw new Error(`no member service for signer ${address}`);
+        const r = await attestEntry(url, { entryXdr, validUntilLedger, ...attestPayload }, MEMBER_TOKEN);
+        return r.signedEntryXdr;
+      },
+    });
     pending = pending.slice(BATCH_N);
-    return { batched: BATCH_N, remaining: pending.length };
+    console.log(`[server] batch applied on-chain: tx ${out.hash} net ${out.net}`);
+    return { batched: BATCH_N, tx: out.hash, net: out.net.toString(), dqyes: yes.net.toString(), dqno: no.net.toString() };
   } catch (e) {
     return { error: String(e.message || e) };
   } finally {
-    rmSync(ordersFile, { force: true });
     batching = false;
   }
 }
 
-setInterval(() => {
-  const r = runBatch();
-  if (r.batched) console.log("[server] window batch:", r);
+setInterval(async () => {
+  const r = await runWindow();
+  if (r.batched || r.dryRun) console.log("[server] window:", JSON.stringify(r));
 }, WINDOW_MS);
 
 function readBody(req) {
@@ -73,23 +149,49 @@ const server = http.createServer(async (req, res) => {
   };
   try {
     if (req.method === "GET" && req.url === "/status") {
-      return send(200, { pending: pending.length, batchN: BATCH_N, windowMs: WINDOW_MS, pool: cfg.poolId || null });
+      return send(200, {
+        pending: pending.length, batchN: BATCH_N, windowMs: WINDOW_MS,
+        committee: { members: MEMBERS.length, threshold: THRESHOLD, ready: !!dkg },
+        market: MARKET || null, pool: cfg.poolId || null,
+      });
+    }
+    if (req.method === "GET" && req.url === "/pk") {
+      if (!pkDec) return send(503, { error: "committee not ready" });
+      return send(200, { pk: pkDec, note: "encrypt orders to this epoch key; prove with encrypt_order.circom" });
     }
     if (req.method !== "POST") return send(404, { error: "not found" });
     if (!authed(req)) return send(401, { error: "unauthorized" });
 
     if (req.url === "/order") {
+      if (!pkDec) return send(503, { error: "committee not ready" });
       const o = await readBody(req);
-      for (const k of ["amount", "side", "secret", "nullifier"]) {
-        if (typeof o[k] !== "string" || !DEC.test(o[k])) return send(400, { error: `invalid decimal field: ${k}` });
+      if (!o.proof || !Array.isArray(o.publicSignals) || o.publicSignals.length !== 12) {
+        return send(400, { error: "need proof and 12 publicSignals" });
       }
-      if (o.side !== "0" && o.side !== "1") return send(400, { error: "side must be 0 or 1" });
+      for (const s of o.publicSignals) {
+        if (typeof s !== "string" || !DEC.test(s)) return send(400, { error: "publicSignals must be decimal strings" });
+      }
+      if (o.publicSignals[10] !== pkDec[0] || o.publicSignals[11] !== pkDec[1]) {
+        return send(400, { error: "order not encrypted to the current committee pk (GET /pk)" });
+      }
+      const nullifierHash = o.publicSignals[1];
+      if (seenNullifiers.has(nullifierHash)) return send(409, { error: "nullifier already queued or batched" });
       if (pending.length >= MAX_PENDING) return send(429, { error: "pending queue full" });
-      pending.push({ amount: o.amount, side: o.side, secret: o.secret, nullifier: o.nullifier });
-      return send(200, { queued: true, pending: pending.length });
+
+      const ok = await snarkjs.groth16.verify(VK, o.publicSignals, o.proof);
+      if (!ok) return send(400, { error: "encryption-validity proof rejected" });
+
+      seenNullifiers.add(nullifierHash);
+      pending.push({
+        commitment: o.publicSignals[0],
+        nullifierHash,
+        cyes: { c1: ptOf(o.publicSignals, 2), c2: ptOf(o.publicSignals, 4) },
+        cno: { c1: ptOf(o.publicSignals, 6), c2: ptOf(o.publicSignals, 8) },
+      });
+      return send(200, { queued: true, pending: pending.length, note: "server holds ciphertexts only" });
     }
     if (req.url === "/batch") {
-      return send(200, runBatch());
+      return send(200, await runWindow());
     }
     if (req.url === "/redeem") {
       const o = await readBody(req);
@@ -111,6 +213,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+await bootstrap();
 server.listen(PORT, () =>
-  console.log(`[server] batcher/relayer on :${PORT} (batchN=${BATCH_N}, window=${WINDOW_MS}ms, pool=${cfg.poolId || "unset"}, auth=${TOKEN ? "on" : "OFF"})`)
+  console.log(`[server] no-leak committee intake on :${PORT} (batchN=${BATCH_N}, window=${WINDOW_MS}ms, market=${DRY ? "dry-run" : MARKET || "dry-run"}, auth=${TOKEN ? "on" : "OFF"})`)
 );
