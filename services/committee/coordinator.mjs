@@ -5,18 +5,31 @@ import { verifyPartial } from "./chaum-pedersen.mjs";
 const unpt = (a) => [BigInt(a[0]), BigInt(a[1])];
 
 async function post(url, path, obj, token) {
-  const r = await fetch(`${url}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify(obj),
-  });
-  if (!r.ok) throw new Error(`${url}${path} -> ${r.status}: ${await r.text()}`);
-  return r.json();
+  let last;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(`${url}${path}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          connection: "close",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(obj),
+      });
+      if (!r.ok) throw new Error(`${url}${path} -> ${r.status}: ${await r.text()}`);
+      return r.json();
+    } catch (e) {
+      last = e;
+      if (!String(e.cause?.code || "").startsWith("UND_ERR")) throw e;
+    }
+  }
+  throw last;
 }
 
 async function get(url, path, token) {
   const r = await fetch(`${url}${path}`, {
-    headers: token ? { authorization: `Bearer ${token}` } : {},
+    headers: { connection: "close", ...(token ? { authorization: `Bearer ${token}` } : {}) },
   });
   if (!r.ok) throw new Error(`${url}${path} -> ${r.status}`);
   return r.json();
