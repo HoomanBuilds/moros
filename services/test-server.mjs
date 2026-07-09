@@ -59,14 +59,19 @@ try {
     { amount: "5", side: "0", secret: "104", nullifier: "105" },
     { amount: "15", side: "0", secret: "106", nullifier: "107" },
   ];
+  const ORDER_TREE = resolve(REPO, "inspiration/zk/soroban-privacy-pools/target/release/order_tree");
+  const ordersPath = resolve(work, "orders.json");
+  writeFileSync(ordersPath, JSON.stringify(orders));
+  const tree = JSON.parse(sh(ORDER_TREE, [ordersPath, "16"]));
   const proofs = [];
   for (const [k, o] of orders.entries()) {
     const rnd = () => {
       const b = createHash("sha256").update(`sv-${k}-${Math.random()}`).digest("hex");
       return (BigInt("0x" + b) % 6554484396890773809930967563523245729705921265872317281365359162392183254199n).toString();
     };
+    const leaf = tree.orders[k];
     const inPath = resolve(work, `in${k}.json`);
-    writeFileSync(inPath, JSON.stringify({ ...o, ryes: rnd(), rno: rnd(), pk }));
+    writeFileSync(inPath, JSON.stringify({ orderRoot: tree.orderRoot, ...o, ryes: rnd(), rno: rnd(), pk, pathIndex: leaf.pathIndex, siblings: leaf.siblings }));
     sh("node", [resolve(CIRC, "build/encrypt_order_js/generate_witness.js"), resolve(CIRC, "build/encrypt_order_js/encrypt_order.wasm"), inPath, resolve(work, `w${k}.wtns`)]);
     sh(SNARKJS, ["groth16", "prove", resolve(CIRC, "build/encrypt_order_final.zkey"), resolve(work, `w${k}.wtns`), resolve(work, `p${k}.json`), resolve(work, `pub${k}.json`)]);
     proofs.push({
@@ -74,7 +79,7 @@ try {
       publicSignals: JSON.parse(readFileSync(resolve(work, `pub${k}.json`), "utf8")),
     });
   }
-  console.log("4 order proofs generated client-side (secrets never sent)");
+  console.log("4 order proofs generated client-side (membership + ciphertext; secrets never sent)");
 
   const un = await fetch(`${base}/order`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(proofs[0]) });
   if (un.status !== 401) throw new Error("unauthenticated order accepted");

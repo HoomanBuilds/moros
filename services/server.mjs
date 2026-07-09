@@ -6,7 +6,7 @@ import * as snarkjs from "snarkjs";
 import { cfg } from "./config.mjs";
 import { relay } from "./relayer.mjs";
 import { addCiphers } from "./committee/jubjub.mjs";
-import { runDKG, collectPartials, attestEntry } from "./committee/coordinator.mjs";
+import { ensureDKG, collectPartials, attestEntry } from "./committee/coordinator.mjs";
 import { submitCommitteeBatch } from "./committee/submit-multisig.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -53,9 +53,9 @@ async function bootstrap() {
       await new Promise((res) => setTimeout(res, 500));
     }
   }
-  dkg = await runDKG(members, THRESHOLD, MEMBER_TOKEN);
+  dkg = await ensureDKG(members, THRESHOLD, MEMBER_TOKEN);
   pkDec = [dkg.pk[0].toString(), dkg.pk[1].toString()];
-  console.log(`[server] committee DKG complete (${MEMBERS.length} members, t=${THRESHOLD}); epoch pk published at /pk`);
+  console.log(`[server] committee ${dkg.reused ? "epoch REUSED (members restored keys)" : "DKG complete"} (${MEMBERS.length} members, t=${THRESHOLD}); epoch pk at /pk`);
 }
 
 function authed(req) {
@@ -165,13 +165,13 @@ const server = http.createServer(async (req, res) => {
     if (req.url === "/order") {
       if (!pkDec) return send(503, { error: "committee not ready" });
       const o = await readBody(req);
-      if (!o.proof || !Array.isArray(o.publicSignals) || o.publicSignals.length !== 12) {
-        return send(400, { error: "need proof and 12 publicSignals" });
+      if (!o.proof || !Array.isArray(o.publicSignals) || o.publicSignals.length !== 13) {
+        return send(400, { error: "need proof and 13 publicSignals" });
       }
       for (const s of o.publicSignals) {
         if (typeof s !== "string" || !DEC.test(s)) return send(400, { error: "publicSignals must be decimal strings" });
       }
-      if (o.publicSignals[10] !== pkDec[0] || o.publicSignals[11] !== pkDec[1]) {
+      if (o.publicSignals[11] !== pkDec[0] || o.publicSignals[12] !== pkDec[1]) {
         return send(400, { error: "order not encrypted to the current committee pk (GET /pk)" });
       }
       const nullifierHash = o.publicSignals[1];

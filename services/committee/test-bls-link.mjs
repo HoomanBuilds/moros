@@ -10,7 +10,7 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
 const CIRC = resolve(REPO, "contracts/shielded-pool/circuits");
-const BIN = resolve(REPO, "inspiration/zk/soroban-privacy-pools/target/release/batch");
+const BIN = resolve(REPO, "inspiration/zk/soroban-privacy-pools/target/release/order_tree");
 const SNARKJS = resolve(REPO, "circuits/node_modules/.bin/snarkjs");
 const WITGEN = resolve(CIRC, "build/encrypt_order_js/generate_witness.js");
 const WASM = resolve(CIRC, "build/encrypt_order_js/encrypt_order.wasm");
@@ -33,13 +33,7 @@ const orders = [
 const work = mkdtempSync(resolve(tmpdir(), "bls-link-"));
 const ordersPath = resolve(work, "orders.json");
 writeFileSync(ordersPath, JSON.stringify(orders));
-const treeInput = JSON.parse(run(BIN, [ordersPath]).stdout);
-const leafFromSiblings = [
-  treeInput.siblings[1][0],
-  treeInput.siblings[0][0],
-  treeInput.siblings[3][0],
-  treeInput.siblings[2][0],
-];
+const treeInput = JSON.parse(run(BIN, [ordersPath, "16"]).stdout);
 
 const committee = dealerSetup(3, 2);
 const pkDec = [committee.pk[0].toString(), committee.pk[1].toString()];
@@ -54,15 +48,20 @@ try {
     const wtns = resolve(work, `w${k}.wtns`);
     const proofPath = resolve(work, `p${k}.json`);
     const pubPath = resolve(work, `pub${k}.json`);
-    writeFileSync(inputPath, JSON.stringify({ ...o, ryes: ryes.toString(), rno: rno.toString(), pk: pkDec }));
+    const leaf = treeInput.orders[k];
+    writeFileSync(inputPath, JSON.stringify({ orderRoot: treeInput.orderRoot, ...o, ryes: ryes.toString(), rno: rno.toString(), pk: pkDec, pathIndex: leaf.pathIndex, siblings: leaf.siblings }));
 
     run("node", [WITGEN, WASM, inputPath, wtns]);
     run(SNARKJS, ["groth16", "prove", ZKEY, wtns, proofPath, pubPath]);
     run(SNARKJS, ["groth16", "verify", VK, pubPath, proofPath]);
     const pub = JSON.parse(readFileSync(pubPath, "utf8"));
 
-    if (pub[0] !== leafFromSiblings[k]) {
-      console.error(`order ${k}: circuit commitment ${pub[0]} != on-chain-tree leaf ${leafFromSiblings[k]}`);
+    if (pub[0] !== leaf.commitment) {
+      console.error(`order ${k}: circuit commitment ${pub[0]} != on-chain-tree leaf ${leaf.commitment}`);
+      process.exit(1);
+    }
+    if (pub[10] !== treeInput.orderRoot) {
+      console.error(`order ${k}: proof orderRoot mismatch`);
       process.exit(1);
     }
 
