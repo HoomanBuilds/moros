@@ -531,8 +531,6 @@ fn imt_zeros(env: &Env, depth: u32) -> Vec<BytesN<32>> {
     zeros
 }
 
-/// Fixed-depth incremental Merkle tree with O(depth) inserts (frontier method).
-/// Root equals the zero-padded full tree; matches the fixed-depth circom MerkleProof.
 pub struct Imt {
     env: Env,
     depth: u32,
