@@ -1,20 +1,19 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { BRAND } from "@/lib/brand";
 
 const footerLinks = {
   Product: [
     { name: "Features", href: "#features" },
     { name: "How it works", href: "#how-it-works" },
-    { name: "Fees", href: "#pricing" },
+    { name: "Network", href: "#pricing" },
     { name: "Risk", href: "#security" },
   ],
-  App: [
-    { name: "Open app", href: "/app" },
-    { name: "Predict vault", href: "/app/deposit" },
-    { name: "Lend vault", href: "/app/lend" },
-    { name: "Borrow market", href: "/app/borrow" },
-    { name: "DeepBook", href: "#integrations" },
+  Resources: [
+    { name: "Launch app", href: "/app" },
+    { name: "Developers", href: "#developers" },
+    { name: "GitHub", href: BRAND.repoHref },
   ],
 };
 
@@ -90,7 +89,7 @@ export function FooterSection() {
         <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/40" />
       </div>
 
-      {/* Footer content — black background, white text */}
+      {/* Footer content - black background, white text */}
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12">
         {/* Main Footer */}
         <div className="py-16 lg:py-20">
@@ -98,17 +97,17 @@ export function FooterSection() {
             {/* Brand Column */}
             <div className="col-span-2">
               <a href="#" className="inline-flex items-center gap-2 mb-6">
-                <span className="text-2xl font-display text-white">Tethra</span>
+                <span className="text-2xl font-display text-white">{BRAND.name}</span>
                 <span className="text-xs text-white/40 font-mono">TM</span>
               </a>
 
               <p className="text-white/50 leading-relaxed mb-8 max-w-xs text-sm">
-                The safe, automated way to earn and borrow on DeepBook. Deposit once for net-of-fee yield from Predict or Margin, and borrow against your vault shares.
+                Private prediction markets on Stellar. Positions stay shielded from deposit to redemption.
               </p>
 
               <span className="inline-flex items-center gap-2 text-sm text-white/40">
                 <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
-                Live on Sui testnet
+                Stellar testnet - unaudited
               </span>
             </div>
 
@@ -136,13 +135,13 @@ export function FooterSection() {
         {/* Bottom Bar */}
         <div className="py-8 border-t border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-white/30">
-            &copy; 2026 Tethra. All rights reserved.
+            &copy; 2026 {BRAND.name}. All rights reserved.
           </p>
 
           <div className="flex items-center gap-4 text-sm text-white/30">
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
-              Keeper operational
+              Batcher operational
             </span>
           </div>
         </div>

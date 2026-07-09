@@ -1,23 +1,24 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { BRAND } from "@/lib/brand";
 
 const features = [
   {
-    title: "Move + TypeScript",
-    description: "On-chain vaults with a typed keeper and tooling."
+    title: "Circom circuits",
+    description: "Groth16 circuits proving deposit validity and private redemption."
   },
   {
-    title: "Three live markets",
-    description: "Predict, Margin, and tPLP borrowing on Sui testnet."
+    title: "Soroban contracts",
+    description: "Rust contracts enforcing outcome-gated, replay-safe settlement."
+  },
+  {
+    title: "Committee services",
+    description: "Threshold ElGamal decryption and batch relaying."
   },
   {
     title: "Verifiable on-chain",
-    description: "Read vault state and contracts on the Sui explorer."
-  },
-  {
-    title: "Reproducible backtests",
-    description: "Replay the Predict strategy on real historical BTC data."
+    description: "Read commitments and contract state on the Stellar explorer."
   },
 ];
 
@@ -40,7 +41,7 @@ export function DevelopersSection() {
   return (
     <section id="developers" ref={sectionRef} className="relative py-24 lg:py-32 overflow-hidden">
 
-      {/* Image — absolute, bottom-right, behind all content */}
+      {/* Image - absolute, bottom-right, behind all content */}
       <div
         className={`absolute bottom-0 right-0 w-[55%] h-[85%] pointer-events-none transition-all duration-1000 delay-300 ${
           isVisible ? "opacity-100" : "opacity-0"
@@ -60,7 +61,7 @@ export function DevelopersSection() {
 
       {/* All text content sits on top */}
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12">
-        {/* Header — Full width */}
+        {/* Header - Full width */}
         <div
           className={`mb-16 transition-all duration-700 ${
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
@@ -77,15 +78,14 @@ export function DevelopersSection() {
           </h2>
         </div>
 
-        {/* Description + Features — left half only */}
+        {/* Description + Features - left half only */}
         <div
           className={`max-w-[50%] transition-all duration-700 delay-100 ${
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
         >
           <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-md">
-            Move smart contracts with a TypeScript keeper and tooling.
-            Vault state is verifiable on-chain, and the Predict strategy is backed by reproducible backtests.
+            Open circuits and contracts. Inspect the circom sources, the Soroban contracts, and the committee services.
           </p>
           <div className="grid grid-cols-2 gap-6">
             {features.map((feature, index) => (
@@ -101,6 +101,14 @@ export function DevelopersSection() {
               </div>
             ))}
           </div>
+          <a
+            href={BRAND.repoHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 mt-10 text-sm underline underline-offset-4 hover:text-foreground transition-colors"
+          >
+            View the repo
+          </a>
         </div>
       </div>
     </section>

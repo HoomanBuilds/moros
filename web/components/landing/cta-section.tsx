@@ -39,26 +39,25 @@ export function CtaSection() {
           onMouseMove={handleMouseMove}
         >
           {/* Spotlight effect */}
-          <div 
+          <div
             className="absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-300"
             style={{
               background: `radial-gradient(600px circle at ${mousePosition.x}% ${mousePosition.y}%, rgba(0,0,0,0.15), transparent 40%)`
             }}
           />
-          
+
           <div className="relative z-10 px-8 lg:px-16 py-16 lg:py-24">
             <div className="flex flex-col lg:flex-row items-center justify-between gap-12">
               {/* Left content */}
               <div className="flex-1">
                 <h2 className="text-6xl md:text-7xl lg:text-[72px] font-display tracking-tight mb-8 leading-[0.95]">
-                  Ready to earn
+                  Trade without
                   <br />
-                  or borrow?
+                  being watched
                 </h2>
 
                 <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-xl">
-                  Supply liquidity on DeepBook Predict or Margin, or borrow dUSDC against your vault shares.
-                  Deposit once and let the protocol do the rest.
+                  Deposit privately, back an outcome, and redeem winnings without exposing your position to anyone, including us.
                 </p>
 
                 <div className="flex flex-col sm:flex-row items-start gap-4">
@@ -67,20 +66,12 @@ export function CtaSection() {
                     size="lg"
                     className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group"
                   >
-                    <Link href="/app">Make your first deposit</Link>
-                  </Button>
-                  <Button
-                    asChild
-                    size="lg"
-                    variant="outline"
-                    className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5"
-                  >
-                    <Link href="/app">Explore the markets</Link>
+                    <Link href="/app">Launch app</Link>
                   </Button>
                 </div>
 
                 <p className="text-sm text-muted-foreground mt-8 font-mono">
-                  Non-custodial vault on Sui testnet
+                  Testnet only, unaudited.
                 </p>
               </div>
 
