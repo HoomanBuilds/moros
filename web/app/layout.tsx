@@ -21,8 +21,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Tethra: earn, lend, and borrow on DeepBook Predict',
-  description: 'One deposit, three composable markets on DeepBook: earn PLP yield on Predict, lend SUI or DBUSDC on Margin, and borrow against your tokenized vault share. Non-custodial, with a profit-only fee.',
+  title: 'Umbra - Private prediction markets on Stellar',
+  description: 'Bet on binary outcomes with zero-knowledge privacy on Stellar. Your side and amount stay encrypted; only the market net settles on-chain.',
 }
 
 export default function RootLayout({
