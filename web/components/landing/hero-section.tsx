@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 
-const words = ["compounds", "lends", "earns", "redeems"];
+const words = ["private", "yours", "hidden", "encrypted"];
 
 function BlurWord({ word, trigger }: { word: string; trigger: number }) {
   const letters = word.split("");
@@ -174,25 +174,32 @@ export function HeroSection() {
         >
           <span className="inline-flex items-center gap-3 text-sm font-mono text-white/60">
             <span className="w-8 h-px bg-white/30" />
-            Earn and borrow on DeepBook
+            Zero-knowledge prediction markets
           </span>
         </div>
-        
+
         {/* Main headline */}
         <div className="mb-12">
-          <h1 
+          <h1
             className={`text-left text-[clamp(2rem,6vw,7rem)] font-display leading-[0.92] tracking-tight text-white transition-all duration-1000 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}
           >
-            <span className="block whitespace-nowrap">Deposit once,</span>
+            <span className="block whitespace-nowrap">Prediction markets</span>
             <span className="block whitespace-nowrap">
-              a vault that{" "}
+              where your position stays{" "}
               <span className="relative inline-block">
                 <BlurWord word={words[wordIndex]} trigger={wordIndex} />
               </span>
             </span>
           </h1>
+          <p
+            className={`mt-8 max-w-xl text-lg lg:text-xl text-white/70 leading-relaxed transition-all duration-1000 delay-200 ${
+              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+            }`}
+          >
+            Bet on binary outcomes with zero-knowledge privacy. Your side and amount are encrypted end to end; only the market's net ever settles on-chain.
+          </p>
         </div>
         </div>
       </div>
@@ -205,9 +212,9 @@ export function HeroSection() {
       >
         <div className="max-w-[1400px] mx-auto flex flex-wrap items-start gap-x-10 gap-y-6 lg:gap-20">
           {[
-            { value: "1 tx", label: "deposit to start earning" },
-            { value: "3", label: "markets: Predict, Margin, borrow" },
-            { value: "10%", label: "vault fee, on profit only" },
+            { value: "Live", label: "on Stellar testnet" },
+            { value: "t-of-n", label: "no-leak committee" },
+            { value: "LMSR", label: "on-chain odds" },
           ].map((stat) => (
             <div key={stat.label} className="flex flex-col gap-2">
               <span className="text-3xl lg:text-4xl font-display text-white">{stat.value}</span>

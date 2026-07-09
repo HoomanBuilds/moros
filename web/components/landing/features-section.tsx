@@ -5,31 +5,31 @@ import { useEffect, useRef, useState } from "react";
 const features = [
   {
     number: "01",
-    title: "Independently priced, to 1e-5",
+    title: "Private by construction",
     description:
-      "Every position is valued by Tethra's own SVI options engine and checked against DeepBook Predict's live on-chain ask to a 1e-5 median error, so your share price is verifiably honest, not asserted. The same engine renders the live volatility surface inside the app.",
-    stats: { value: "~1e-5", label: "median pricing error" },
+      "A Groth16 proof hides your side and amount. Nobody - not even the operator - sees your individual order.",
+    stats: { value: "Groth16", label: "proof hides your side and amount" },
   },
   {
     number: "02",
-    title: "Reclaimed referral yield",
+    title: "Fair LMSR odds",
     description:
-      "Tethra routes its margin deposits through a DeepBook supply referral, reclaiming the referral half of the pool spread the protocol would otherwise keep, and compounds it back to depositors.",
-    stats: { value: "50%", label: "of the spread, reclaimed" },
+      "A logarithmic market maker prices YES/NO continuously and settles the net on-chain.",
+    stats: { value: "LMSR", label: "prices YES/NO continuously" },
   },
   {
     number: "03",
-    title: "Risk you verify, not trust",
+    title: "No-leak committee",
     description:
-      "A live per-oracle exposure breakdown and an instant BTC stress test, read from on-chain state and repriced through the surface, so whether the pool is safe is something you check yourself.",
-    stats: { value: "live", label: "exposure + stress, on-chain" },
+      "A t-of-n threshold committee decrypts only the aggregate net, never any single trade.",
+    stats: { value: "t-of-n", label: "committee decrypts only the net" },
   },
   {
     number: "04",
-    title: "Hands-off, keeper-run",
+    title: "Self-custody",
     description:
-      "A keeper redeems settled Predict positions in real on-chain transactions, keeping every depositor's NAV current and compounding returns with zero manual steps. Withdraw to dUSDC any time.",
-    stats: { value: "0", label: "manual actions" },
+      "Your wallet signs every action; your order secrets stay in your browser.",
+    stats: { value: "Self-custody", label: "secrets stay in your browser" },
   },
 ];
 
@@ -171,9 +171,9 @@ export function FeaturesSection() {
                     : "opacity-0 translate-y-8"
                 }`}
               >
-                Liquidity
+                Provably
                 <br />
-                <span className="text-muted-foreground">on rails.</span>
+                <span className="text-muted-foreground">private.</span>
               </h2>
             </div>
             <div className="lg:col-span-5 lg:pb-4">
@@ -184,10 +184,9 @@ export function FeaturesSection() {
                     : "opacity-0 translate-y-4"
                 }`}
               >
-                Deposit once and Tethra puts it to work on DeepBook: PLP
-                liquidity on Predict, or lending on Margin. Your vault shares
-                double as collateral you can borrow against. No active
-                management.
+                Every order is proven valid before it's ever seen. A threshold
+                committee nets the batch, the LMSR sets fair odds, and your
+                keys never leave your wallet.
               </p>
             </div>
           </div>

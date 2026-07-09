@@ -5,9 +5,9 @@ import { useEffect, useRef, useState } from "react";
 const steps = [
   {
     number: "01",
-    title: "Deposit",
-    subtitle: "once",
-    description: "Send dUSDC, SUI, or DBUSDC to the vault a single time. You receive shares; no further action or active management is required.",
+    title: "Place an encrypted order",
+    subtitle: "",
+    description: "Pick a side and amount; your browser proves the order is valid without revealing it.",
     code: `const vault = new Vault({
   asset: ['SUI', 'dUSDC'],
   action: 'deposit',
@@ -17,9 +17,9 @@ const steps = [
   },
   {
     number: "02",
-    title: "Supply",
-    subtitle: "to DeepBook",
-    description: "The vault supplies PLP liquidity on DeepBook Predict, or lends on DeepBook Margin, and auto-compounds returns within conservative limits.",
+    title: "The committee nets the batch",
+    subtitle: "",
+    description: "A t-of-n committee sums everyone's encrypted orders and learns only the total.",
     code: `await vault.supply({
   venue: ['Predict', 'Margin'],
   asset: ['dUSDC', 'SUI'],
@@ -29,15 +29,26 @@ const steps = [
   },
   {
     number: "03",
-    title: "Redeem",
-    subtitle: "& withdraw",
-    description: "Withdraw any time at your share price, net of a profit-only fee, or keep your shares and borrow dUSDC against them. On Predict, a permissionless keeper clears settled positions.",
+    title: "Odds move on-chain",
+    subtitle: "",
+    description: "The LMSR market updates YES/NO prices from the verified net.",
     code: `keeper.redeem({
   vault: [settled],
   fields: ['shares', 'price', 'fee'],
   netOfFee: true
 })
 // 10% fee on profit`,
+  },
+  {
+    number: "04",
+    title: "Redeem privately",
+    subtitle: "",
+    description: "When the market resolves, prove your winning order and get paid - side and size still hidden.",
+    code: `keeper.redeem({
+  vault: [settled],
+  fields: ['shares', 'price', 'fee'],
+  netOfFee: true
+})`,
   },
 ];
 
