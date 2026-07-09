@@ -459,6 +459,7 @@ impl LmsrMarket {
 
         env.storage().instance().set(&DataKey::QYes, &qy2);
         env.storage().instance().set(&DataKey::QNo, &qn2);
+        Self::credit_shares(&env, &batcher, dqyes, dqno);
         Self::bump(&env);
         Batch {
             batcher,
@@ -470,6 +471,21 @@ impl LmsrMarket {
         }
         .publish(&env);
         Ok(net)
+    }
+
+    fn credit_shares(env: &Env, holder: &Address, dqyes: i128, dqno: i128) {
+        if dqyes > 0 {
+            let ky = DataKey::Shares(holder.clone(), Side::Yes);
+            let hy: i128 = env.storage().persistent().get(&ky).unwrap_or(0);
+            env.storage().persistent().set(&ky, &(hy + dqyes));
+            Self::bump_shares(env, &ky);
+        }
+        if dqno > 0 {
+            let kn = DataKey::Shares(holder.clone(), Side::No);
+            let hn: i128 = env.storage().persistent().get(&kn).unwrap_or(0);
+            env.storage().persistent().set(&kn, &(hn + dqno));
+            Self::bump_shares(env, &kn);
+        }
     }
 
     pub fn set_committee(
@@ -546,6 +562,7 @@ impl LmsrMarket {
 
         env.storage().instance().set(&DataKey::QYes, &qy2);
         env.storage().instance().set(&DataKey::QNo, &qn2);
+        Self::credit_shares(&env, &funder, dqyes, dqno);
         Self::bump(&env);
         CommitteeBatch {
             funder,
