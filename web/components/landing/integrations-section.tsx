@@ -3,19 +3,21 @@
 import { useEffect, useState, useRef } from "react";
 
 const logos: Record<string, React.ReactNode> = {
-  Network: <span className="font-mono text-sm">NET</span>,
-  Protocol: <span className="font-mono text-sm">PRO</span>,
-  Stablecoin: <span className="font-mono text-sm">USD</span>,
-  "Native Token": <span className="font-mono text-sm">TOK</span>,
-  Oracle: <span className="font-mono text-sm">ORC</span>,
+  Stellar: <span className="font-mono text-sm">XLM</span>,
+  Soroban: <span className="font-mono text-sm">SOR</span>,
+  Reflector: <span className="font-mono text-sm">RFL</span>,
+  circom: <span className="font-mono text-sm">CIR</span>,
+  snarkjs: <span className="font-mono text-sm">SNJ</span>,
+  "Groth16/BLS12-381": <span className="font-mono text-sm">G16</span>,
 };
 
 const integrations = [
-  { name: "Network", category: "Chain" },
-  { name: "Protocol", category: "Protocol" },
-  { name: "Stablecoin", category: "Asset" },
-  { name: "Native Token", category: "Asset" },
-  { name: "Oracle", category: "Oracle" },
+  { name: "Stellar", category: "Chain" },
+  { name: "Soroban", category: "Contracts" },
+  { name: "Reflector", category: "Oracle" },
+  { name: "circom", category: "Circuits" },
+  { name: "snarkjs", category: "Proving" },
+  { name: "Groth16/BLS12-381", category: "Curve" },
 ];
 
 export function IntegrationsSection() {
@@ -59,7 +61,7 @@ export function IntegrationsSection() {
         <p className={`mt-8 text-xl text-muted-foreground leading-relaxed max-w-lg mx-auto transition-all duration-1000 delay-100 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}>
-          Placeholder copy for the integrations section. Final content lands in a later phase.
+          Stellar Soroban for settlement, Reflector for price resolution, and a circom + Groth16 proving stack for private orders.
         </p>
       </div>
 
@@ -140,9 +142,9 @@ export function IntegrationsSection() {
         }`}>
           <div className="flex flex-wrap gap-12">
             {[
-              { value: "Placeholder", label: "Live markets" },
-              { value: "Placeholder", label: "Predict + Margin" },
-              { value: "Permissionless", label: "Non-custodial" },
+              { value: "Groth16", label: "proof system" },
+              { value: "t-of-n", label: "threshold committee" },
+              { value: "Self-custody", label: "wallet signs every order" },
             ].map((stat) => (
               <div key={stat.label} className="flex items-baseline gap-3">
                 <span className="text-3xl font-display">{stat.value}</span>

@@ -6,31 +6,31 @@ import { Shield, Lock, Eye, FileCheck } from "lucide-react";
 const securityFeatures = [
   {
     icon: Shield,
-    title: "Conservative caps",
-    description: "Exposure limits bound drawdown by design.",
+    title: "Zero-knowledge order validity",
+    description: "Each order proves it's well-formed and in-range before the committee ever sees it.",
     image: "/images/isolated.jpg",
   },
   {
     icon: Lock,
-    title: "Virtual shares",
-    description: "Guards against first-deposit share attacks.",
+    title: "Threshold decryption (Chaum-Pedersen verified partials)",
+    description: "Committee members submit verifiable partial decryptions; no single member holds the whole key.",
     image: "/images/encrypted.jpg",
   },
   {
     icon: Eye,
-    title: "Overflow-safe math",
-    description: "Share accounting that never silently rounds.",
+    title: "On-chain proof verification + t-of-n authorization",
+    description: "Soroban verifies the Groth16 proof and checks t-of-n committee signatures before funds move.",
     image: "/images/audit.jpg",
   },
   {
     icon: FileCheck,
-    title: "Self-redeeming liquidation",
-    description: "Bad loans redeem collateral through the vault, no oracle.",
+    title: "Self-run trusted-setup ceremony tooling",
+    description: "Anyone can rerun the trusted-setup ceremony to check the proving key.",
     image: "/images/permissions.jpg",
   },
 ];
 
-const certifications = ["Caps", "Stress-tested", "On-chain", "Tested math"];
+const certifications = ["Groth16", "circom", "t-of-n", "Testnet only"];
 
 export function SecuritySection() {
   const [isVisible, setIsVisible] = useState(false);
@@ -74,17 +74,17 @@ export function SecuritySection() {
           <h2 className={`text-6xl md:text-7xl lg:text-[128px] font-display tracking-tight leading-[0.9] mb-12 transition-all duration-1000 ${
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}>
-            Automated,
+            Verified,
             <br />
-            <span className="text-muted-foreground">not reckless.</span>
+            <span className="text-muted-foreground">not assumed.</span>
           </h2>
-          
-          {/* Description — below title */}
+
+          {/* Description - below title */}
           <div className={`transition-all duration-1000 delay-100 ${
             isVisible ? "opacity-100" : "opacity-0"
           }`}>
             <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl">
-              Your principal stays in trustless on-chain vaults. Conservative caps bound vault exposure, and the borrow market liquidates over-leveraged positions before they turn into bad debt.
+              Every order is proven valid with a Groth16 circuit before the committee ever decrypts anything, and a t-of-n threshold means no single party can move funds alone. Unaudited research prototype - testnet only.
             </p>
           </div>
         </div>
@@ -109,10 +109,10 @@ export function SecuritySection() {
             </div>
             
             <div className="relative z-10">
-              <span className="font-mono text-sm text-muted-foreground">Stress tested</span>
+              <span className="font-mono text-sm text-muted-foreground">On-chain guarantee</span>
               <div className="mt-8">
                 <span className="text-7xl lg:text-8xl font-display">0</span>
-                <span className="block text-muted-foreground mt-2">Cap breaches in BTC crash regimes</span>
+                <span className="block text-muted-foreground mt-2">Individual orders revealed on-chain</span>
               </div>
             </div>
             

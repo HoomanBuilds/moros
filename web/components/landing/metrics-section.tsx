@@ -4,25 +4,32 @@ import { useEffect, useState, useRef } from "react";
 
 const metrics = [
   {
-    value: 3,
-    suffix: "",
-    prefix: "",
-    label: "Markets live on Sui testnet",
-    sublabel: "Predict, Margin, and borrowing",
+    value: 30,
+    suffix: "k",
+    prefix: "~",
+    label: "Constraints per private order",
+    sublabel: "circom + Groth16 circuit",
   },
   {
-    value: 10,
+    value: 2,
+    suffix: " of 3",
+    prefix: "",
+    label: "Committee threshold (demo)",
+    sublabel: "threshold-ElGamal decrypt",
+  },
+  {
+    value: 100,
     suffix: "%",
     prefix: "",
-    label: "Performance fee",
-    sublabel: "on realized profit only",
+    label: "Net settled on-chain",
+    sublabel: "individual orders stay hidden",
   },
   {
     value: 0,
     suffix: "",
     prefix: "",
-    label: "Management & deposit fees",
-    sublabel: "withdraw any time",
+    label: "Individual orders revealed",
+    sublabel: "batched before settlement",
   },
 ];
 
@@ -326,11 +333,11 @@ export function MetricsSection() {
         <div className={`mt-16 pt-8 border-t border-foreground/10 flex flex-wrap items-center gap-x-12 gap-y-4 text-sm font-mono text-muted-foreground transition-all duration-1000 delay-500 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}>
-          <span>Live on Sui testnet</span>
-          <span>Predict, Margin, and borrowing</span>
-          <span>Keeper redeems Predict positions</span>
-          <span>No management fee</span>
-          <span className="text-foreground">90% kept by depositors</span>
+          <span>Live on Stellar testnet</span>
+          <span>circom + Groth16 order circuits</span>
+          <span>Reflector-oracle resolution</span>
+          <span>Threshold-decryption committee</span>
+          <span className="text-foreground">Testnet only</span>
         </div>
       </div>
     </section>

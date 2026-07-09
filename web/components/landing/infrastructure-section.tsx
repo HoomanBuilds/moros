@@ -3,11 +3,11 @@
 import { useEffect, useState, useRef } from "react";
 
 const regions = [
-  { name: "Predict vault", detail: "PLP supply / redeem", status: "live" },
-  { name: "Margin vault", detail: "SUI + DBUSDC lend", status: "live" },
-  { name: "Borrow market", detail: "tPLP collateral", status: "live" },
-  { name: "Keeper", detail: "auto-redeem", status: "live" },
-  { name: "Sui Testnet", detail: "live deploy", status: "live" },
+  { name: "Shielded pool", detail: "Soroban contract", status: "live" },
+  { name: "Order circuit", detail: "circom + Groth16", status: "live" },
+  { name: "Committee", detail: "Jubjub threshold-ElGamal", status: "live" },
+  { name: "Resolver", detail: "Reflector oracle", status: "live" },
+  { name: "Stellar Testnet", detail: "live deploy", status: "live" },
 ];
 
 export function InfrastructureSection() {
@@ -55,7 +55,7 @@ export function InfrastructureSection() {
             }`}>
               <img
                 src="/images/world.png"
-                alt="Sui network sphere"
+                alt="Stellar network sphere"
                 className="w-full h-full object-contain object-center"
               />
             </div>
@@ -65,7 +65,7 @@ export function InfrastructureSection() {
               <h2 className={`text-6xl md:text-7xl lg:text-[128px] font-display tracking-tight leading-[0.9] transition-all duration-1000 ${
                 isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
               }`}>
-                Trustless by
+                Verifiable by
                 <br />
                 <span className="text-muted-foreground">design.</span>
               </h2>
@@ -73,9 +73,8 @@ export function InfrastructureSection() {
               <p className={`mt-8 text-xl text-muted-foreground leading-relaxed max-w-lg transition-all duration-1000 delay-100 ${
                 isVisible ? "opacity-100" : "opacity-0"
               }`}>
-                Move vaults supply liquidity to DeepBook Predict and Margin on-chain.
-                A TypeScript keeper redeems settled Predict positions. Vault shares
-                double as collateral: borrow dUSDC against them in an isolated market.
+                Built on Stellar Soroban. Groth16 over BLS12-381, circom circuits,
+                a Jubjub threshold-ElGamal committee, and a Reflector-oracle resolver.
               </p>
             </div>
           </div>
@@ -146,11 +145,11 @@ export function InfrastructureSection() {
             
             <div className="relative z-10">
               <div className="flex items-baseline gap-2 mb-4">
-                <span className="text-8xl lg:text-[10rem] font-display leading-none">90%</span>
-                <span className="text-2xl text-muted-foreground">to you</span>
+                <span className="text-8xl lg:text-[10rem] font-display leading-none">100%</span>
+                <span className="text-2xl text-muted-foreground">net settled</span>
               </div>
               <p className="text-muted-foreground max-w-md">
-                Vault depositors keep 90% of yield, with the 10% performance fee on realized profit only. The borrow market takes no supply fee.
+                Only the committee-decrypted net order ever touches Soroban. Individual orders never appear on-chain.
               </p>
             </div>
           </div>
@@ -160,15 +159,15 @@ export function InfrastructureSection() {
             <div className={`p-8 border border-foreground/10 bg-foreground/[0.02] transition-all duration-700 delay-100 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}>
-              <span className="text-5xl lg:text-6xl font-display">3</span>
-              <span className="block text-sm text-muted-foreground mt-2">Live markets</span>
+              <span className="text-5xl lg:text-6xl font-display">2 of 3</span>
+              <span className="block text-sm text-muted-foreground mt-2">Committee threshold (demo)</span>
             </div>
-            
+
             <div className={`p-8 border border-foreground/10 bg-foreground/[0.02] transition-all duration-700 delay-200 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}>
-              <span className="text-5xl lg:text-6xl font-display">0</span>
-              <span className="block text-sm text-muted-foreground mt-2">Management fee</span>
+              <span className="text-5xl lg:text-6xl font-display">~30k</span>
+              <span className="block text-sm text-muted-foreground mt-2">Constraints per private order</span>
             </div>
           </div>
         </div>
