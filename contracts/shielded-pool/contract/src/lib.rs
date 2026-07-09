@@ -8,7 +8,7 @@ use soroban_sdk::{
     xdr::ToXdr, Address, Bytes, BytesN, Env, IntoVal, String, Symbol, Vec,
 };
 
-use lean_imt::{LeanIMT, TREE_DEPTH_KEY, TREE_LEAVES_KEY, TREE_ROOT_KEY};
+use lean_imt::{Imt, LeanIMT, TREE_DEPTH_KEY, TREE_LEAVES_KEY, TREE_ROOT_KEY};
 use zk::{Groth16Verifier, Proof, PublicSignals, VerificationKey};
 
 #[cfg(test)]
@@ -28,6 +28,8 @@ pub trait Market {
     fn outcome(env: Env) -> Option<Side>;
     fn quote_batch(env: Env, dqyes: i128, dqno: i128) -> i128;
     fn apply_batch(env: Env, batcher: Address, dqyes: i128, dqno: i128) -> i128;
+    fn price_yes(env: Env) -> i128;
+    fn redeem(env: Env, trader: Address, side: Side) -> i128;
 }
 
 // Contract errors
@@ -48,6 +50,11 @@ pub enum Error {
     BatchMismatch = 11,
     OrderRootMismatch = 12,
     InvalidStake = 13,
+    Unauthorized = 14,
+    NotIncluded = 15,
+    PriceMismatch = 16,
+    AlreadyClaimed = 17,
+    RedeemProofFailed = 18,
 }
 
 // Error messages for Vec<String> returns (legacy compatibility)
@@ -79,8 +86,16 @@ const ORDER_ROOT_KEY: Symbol = symbol_short!("oroot");
 const BATCH_NULL_KEY: Symbol = symbol_short!("bnull");
 const REDEEM_VK_KEY: Symbol = symbol_short!("rvk");
 const REDEEM_NULL_KEY: Symbol = symbol_short!("rnull");
-const ORDER_TREE_DEPTH: u32 = 2;
+const COMMITTEE_KEY: Symbol = symbol_short!("committee");
+const COMMITTEE_T_KEY: Symbol = symbol_short!("commit_t");
+const PRICE_KEY: Symbol = symbol_short!("pyes");
+const BATCH_INCL_KEY: Symbol = symbol_short!("bincl");
+const REDEEM_V2_VK_KEY: Symbol = symbol_short!("r2vk");
+const DECIMALS_KEY: Symbol = symbol_short!("decimals");
+const CLAIMED_KEY: Symbol = symbol_short!("claimed");
+const ORDER_TREE_DEPTH: u32 = 16;
 const BATCH_N: u32 = 4;
+const SCALE: i128 = 1 << 32;
 
 const FIXED_AMOUNT: i128 = 1000000000; // 1 XLM in stroops
 
@@ -106,6 +121,8 @@ impl PrivacyPoolsContract {
         env.storage().instance().set(&TOKEN_KEY, &token_address);
         env.storage().instance().set(&MARKET_KEY, &market);
         env.storage().instance().set(&CAP_KEY, &cap);
+        let decimals = token::Client::new(env, &token_address).decimals();
+        env.storage().instance().set(&DECIMALS_KEY, &decimals);
 
         // Initialize empty merkle tree with fixed depth
         let tree = LeanIMT::new(env, TREE_DEPTH);
@@ -114,11 +131,10 @@ impl PrivacyPoolsContract {
         env.storage().instance().set(&TREE_DEPTH_KEY, &depth);
         env.storage().instance().set(&TREE_ROOT_KEY, &root);
 
-        let order_tree = LeanIMT::new(env, ORDER_TREE_DEPTH);
-        let (oleaves, odepth, oroot) = order_tree.to_storage();
-        env.storage().instance().set(&ORDER_LEAVES_KEY, &oleaves);
-        env.storage().instance().set(&ORDER_DEPTH_KEY, &odepth);
-        env.storage().instance().set(&ORDER_ROOT_KEY, &oroot);
+        let order_tree = Imt::new(env, ORDER_TREE_DEPTH);
+        env.storage().instance().set(&ORDER_LEAVES_KEY, &order_tree.frontier());
+        env.storage().instance().set(&ORDER_DEPTH_KEY, &0u32);
+        env.storage().instance().set(&ORDER_ROOT_KEY, &order_tree.get_root());
     }
 
     /// Stores a commitment in the merkle tree and updates the tree state
@@ -160,23 +176,22 @@ impl PrivacyPoolsContract {
     }
 
     fn store_order(env: &Env, commitment: BytesN<32>) -> Result<(BytesN<32>, u32), Error> {
-        let leaves: Vec<BytesN<32>> = env
+        let count: u32 = env.storage().instance().get(&ORDER_DEPTH_KEY).unwrap_or(0);
+        let frontier: Vec<BytesN<32>> = env
             .storage()
             .instance()
             .get(&ORDER_LEAVES_KEY)
             .unwrap_or(vec![env]);
-        let depth: u32 = env.storage().instance().get(&ORDER_DEPTH_KEY).unwrap_or(0);
         let root: BytesN<32> = env
             .storage()
             .instance()
             .get(&ORDER_ROOT_KEY)
             .unwrap_or(BytesN::from_array(env, &[0u8; 32]));
-        let mut tree = LeanIMT::from_storage(env, leaves, depth, root);
-        tree.insert(commitment).map_err(|_| Error::TreeAtCapacity)?;
-        let leaf_index = tree.get_leaf_count() - 1;
-        let (new_leaves, new_depth, new_root) = tree.to_storage();
-        env.storage().instance().set(&ORDER_LEAVES_KEY, &new_leaves);
-        env.storage().instance().set(&ORDER_DEPTH_KEY, &new_depth);
+        let mut tree = Imt::from_storage(env, ORDER_TREE_DEPTH, count, frontier, root);
+        let leaf_index = tree.insert(commitment).map_err(|_| Error::TreeAtCapacity)?;
+        let new_root = tree.get_root();
+        env.storage().instance().set(&ORDER_LEAVES_KEY, &tree.frontier());
+        env.storage().instance().set(&ORDER_DEPTH_KEY, &tree.get_count());
         env.storage().instance().set(&ORDER_ROOT_KEY, &new_root);
         Ok((new_root, leaf_index))
     }
@@ -627,6 +642,215 @@ impl PrivacyPoolsContract {
         let mut bytes = [0u8; 32];
         bytes[16..].copy_from_slice(&n.to_be_bytes());
         BytesN::from_array(env, &bytes)
+    }
+
+    fn i128_of_field(fld: &BytesN<32>) -> i128 {
+        let arr = fld.to_array();
+        let mut b = [0u8; 16];
+        b.copy_from_slice(&arr[16..32]);
+        i128::from_be_bytes(b)
+    }
+
+    pub fn set_committee(
+        env: &Env,
+        caller: Address,
+        members: Vec<Address>,
+        threshold: u32,
+    ) -> Result<(), Error> {
+        caller.require_auth();
+        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
+        if caller != admin {
+            return Err(Error::OnlyAdmin);
+        }
+        if threshold == 0 || members.len() < threshold {
+            return Err(Error::InvalidStake);
+        }
+        env.storage().instance().set(&COMMITTEE_KEY, &members);
+        env.storage().instance().set(&COMMITTEE_T_KEY, &threshold);
+        Ok(())
+    }
+
+    pub fn submit_batch_committee(
+        env: &Env,
+        signers: Vec<Address>,
+        dqyes: i128,
+        dqno: i128,
+        null_hashes: Vec<BytesN<32>>,
+    ) -> Result<i128, Error> {
+        let members: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&COMMITTEE_KEY)
+            .ok_or(Error::Unauthorized)?;
+        let threshold: u32 = env
+            .storage()
+            .instance()
+            .get(&COMMITTEE_T_KEY)
+            .ok_or(Error::Unauthorized)?;
+        if signers.len() < threshold {
+            return Err(Error::Unauthorized);
+        }
+        let mut seen: Vec<Address> = vec![env];
+        for s in signers.iter() {
+            if !members.contains(&s) || seen.contains(&s) {
+                return Err(Error::Unauthorized);
+            }
+            s.require_auth();
+            seen.push_back(s);
+        }
+
+        let mut included: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&BATCH_INCL_KEY)
+            .unwrap_or(vec![env]);
+        for nh in null_hashes.iter() {
+            if included.contains(&nh) {
+                return Err(Error::NullifierUsed);
+            }
+            included.push_back(nh);
+        }
+        env.storage().instance().set(&BATCH_INCL_KEY, &included);
+
+        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
+        let token: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
+        let client = MarketClient::new(env, &market);
+        let net = client.quote_batch(&dqyes, &dqno);
+        let me = env.current_contract_address();
+        env.authorize_as_current_contract(vec![
+            env,
+            InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context: ContractContext {
+                    contract: token,
+                    fn_name: symbol_short!("transfer"),
+                    args: (me.clone(), market.clone(), net).into_val(env),
+                },
+                sub_invocations: vec![env],
+            }),
+        ]);
+        client.apply_batch(&me, &dqyes, &dqno);
+        let price = client.price_yes();
+        env.storage().instance().set(&PRICE_KEY, &price);
+        Ok(net)
+    }
+
+    pub fn get_price(env: &Env) -> i128 {
+        env.storage().instance().get(&PRICE_KEY).unwrap_or(0)
+    }
+
+    pub fn claim_winnings(env: &Env) -> Result<i128, Error> {
+        if env.storage().instance().has(&CLAIMED_KEY) {
+            return Err(Error::AlreadyClaimed);
+        }
+        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
+        let client = MarketClient::new(env, &market);
+        let side = match client.outcome() {
+            Some(s) => s,
+            None => return Err(Error::OrderRootMismatch),
+        };
+        let me = env.current_contract_address();
+        let got = client.redeem(&me, &side);
+        env.storage().instance().set(&CLAIMED_KEY, &true);
+        Ok(got)
+    }
+
+    pub fn set_redeem_v2_vk(env: &Env, caller: Address, vk_bytes: Bytes) -> Result<(), Error> {
+        caller.require_auth();
+        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
+        if caller != admin {
+            return Err(Error::OnlyAdmin);
+        }
+        env.storage().instance().set(&REDEEM_V2_VK_KEY, &vk_bytes);
+        Ok(())
+    }
+
+    fn to_atomic(env: &Env, fp: i128) -> i128 {
+        let decimals: u32 = env.storage().instance().get(&DECIMALS_KEY).unwrap_or(7);
+        let mut pow: i128 = 1;
+        let mut i = 0u32;
+        while i < decimals {
+            pow *= 10;
+            i += 1;
+        }
+        (fp * pow) / SCALE
+    }
+
+    pub fn redeem_order_v2(
+        env: &Env,
+        to: Address,
+        relayer: Address,
+        proof_bytes: Bytes,
+        pub_signals_bytes: Bytes,
+    ) -> Result<i128, Error> {
+        let rvk_bytes: Bytes = env.storage().instance().get(&REDEEM_V2_VK_KEY).unwrap();
+        let rvk = VerificationKey::from_bytes(env, &rvk_bytes).unwrap();
+        let proof = Proof::from_bytes(env, &proof_bytes);
+        let pub_signals = PublicSignals::from_bytes(env, &pub_signals_bytes);
+        let res = Groth16Verifier::verify_proof(env, rvk, proof, &pub_signals.pub_signals);
+        if res.is_err() || !res.unwrap() {
+            return Err(Error::RedeemProofFailed);
+        }
+
+        let nullifier = pub_signals.pub_signals.get(0).unwrap().to_bytes();
+        let payout_fp = Self::i128_of_field(&pub_signals.pub_signals.get(1).unwrap().to_bytes());
+        let proof_order_root = pub_signals.pub_signals.get(2).unwrap().to_bytes();
+        let proof_recipient = pub_signals.pub_signals.get(3).unwrap().to_bytes();
+        let proof_winning = pub_signals.pub_signals.get(4).unwrap().to_bytes();
+        let proof_price = Self::i128_of_field(&pub_signals.pub_signals.get(5).unwrap().to_bytes());
+        let fee_fp = Self::i128_of_field(&pub_signals.pub_signals.get(6).unwrap().to_bytes());
+
+        if Self::recipient_field(env, &to) != proof_recipient {
+            return Err(Error::CommitmentMismatch);
+        }
+        if proof_order_root != Self::get_order_root(env) {
+            return Err(Error::OrderRootMismatch);
+        }
+        let stored_price: i128 = env.storage().instance().get(&PRICE_KEY).ok_or(Error::PriceMismatch)?;
+        if proof_price != stored_price {
+            return Err(Error::PriceMismatch);
+        }
+
+        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
+        let winning: i128 = match MarketClient::new(env, &market).outcome() {
+            Some(Side::Yes) => 1,
+            Some(Side::No) => 0,
+            None => return Err(Error::OrderRootMismatch),
+        };
+        if proof_winning != Self::field_of_i128(env, winning) {
+            return Err(Error::OrderRootMismatch);
+        }
+
+        let included: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&BATCH_INCL_KEY)
+            .unwrap_or(vec![env]);
+        if !included.contains(&nullifier) {
+            return Err(Error::NotIncluded);
+        }
+        let mut redeem_nulls: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&REDEEM_NULL_KEY)
+            .unwrap_or(vec![env]);
+        if redeem_nulls.contains(&nullifier) {
+            return Err(Error::NullifierUsed);
+        }
+        redeem_nulls.push_back(nullifier);
+        env.storage().instance().set(&REDEEM_NULL_KEY, &redeem_nulls);
+
+        let token_address: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
+        let tok = token::Client::new(env, &token_address);
+        let me = env.current_contract_address();
+        let payout = Self::to_atomic(env, payout_fp);
+        let fee = Self::to_atomic(env, fee_fp);
+        if payout > 0 {
+            tok.transfer(&me, &to, &payout);
+        }
+        if fee > 0 {
+            tok.transfer(&me, &relayer, &fee);
+        }
+        Ok(payout)
     }
 
     pub fn set_redeem_vk(env: &Env, caller: Address, vk_bytes: Bytes) -> Result<(), Error> {
