@@ -9,7 +9,6 @@ const steps = [
     subtitle: "",
     description: "Pick a side and amount; your browser proves the order is valid without revealing it.",
     code: `const vault = new Vault({
-  asset: ['SUI', 'dUSDC'],
   action: 'deposit',
   amount: true,
   shares: 'minted'
@@ -22,7 +21,6 @@ const steps = [
     description: "A t-of-n committee sums everyone's encrypted orders and learns only the total.",
     code: `await vault.supply({
   venue: ['Predict', 'Margin'],
-  asset: ['dUSDC', 'SUI'],
   policy: 'conservative',
   compound: 'auto'
 })`,
