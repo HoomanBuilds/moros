@@ -9,9 +9,9 @@ import { Menu, X } from "lucide-react";
 const navLinks = [
   { name: "Features",      href: "#features"      },
   { name: "How it works",  href: "#how-it-works"  },
-  { name: "Vault",         href: "#infra"          },
-  { name: "DeepBook",      href: "#integrations"  },
-  { name: "Risk",          href: "#security"      },
+  { name: "Infrastructure", href: "#infra"        },
+  { name: "Ecosystem",     href: "#integrations"  },
+  { name: "Security",      href: "#security"      },
 ];
 
 export function Navigation() {
@@ -48,7 +48,7 @@ export function Navigation() {
         >
           {/* Logo */}
           <a href="#" className="flex items-center gap-2 group">
-            <span className={`font-display tracking-tight transition-all duration-500 ${isScrolled ? "text-xl text-foreground" : "text-2xl text-white"}`}>Tethra</span>
+            <span className={`font-display tracking-tight transition-all duration-500 ${isScrolled ? "text-xl text-foreground" : "text-2xl text-white"}`}>Umbra</span>
             <span className={`font-mono transition-all duration-500 ${isScrolled ? "text-[10px] mt-0.5 text-muted-foreground" : "text-xs mt-1 text-white/60"}`}>TM</span>
           </a>
 
