@@ -8,8 +8,10 @@ import { provePartial, verifyPartial } from "./chaum-pedersen.mjs";
 const PORT = Number(process.env.PORT || 9711);
 const INDEX = BigInt(process.env.INDEX || 1);
 const TOKEN = process.env.MEMBER_TOKEN || "";
-const MARKET = process.env.MARKET || "";
-const NET_BOUND = Number(process.env.NET_BOUND || 100000);
+const TARGET = process.env.ATTEST_TARGET || process.env.MARKET || "";
+const METHOD = process.env.ATTEST_METHOD || "apply_batch_committee";
+const DQ_OFFSET = Number(process.env.ATTEST_DQ_OFFSET || 2);
+const NET_BOUND = Number(process.env.NET_BOUND || 4294967296);
 const S = 1n << 32n;
 const kp = process.env.MEMBER_SK ? Keypair.fromSecret(process.env.MEMBER_SK) : null;
 
@@ -141,7 +143,7 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && req.url === "/attest") {
       if (!finalShare) return send(res, 409, { error: "dkg not complete" });
-      if (!kp || !MARKET) return send(res, 409, { error: "MEMBER_SK or MARKET not configured" });
+      if (!kp || !TARGET) return send(res, 409, { error: "MEMBER_SK or ATTEST_TARGET not configured" });
       const { entryXdr, validUntilLedger, cipherYes, cipherNo, partialsYes, partialsNo, dqyes, dqno } = await body(req);
 
       const allCms = [];
@@ -169,21 +171,21 @@ const server = createServer(async (req, res) => {
         return send(res, 400, { error: "not a contract invocation" });
       }
       const inv = fn.contractFn();
-      if (Address.fromScAddress(inv.contractAddress()).toString() !== MARKET) {
+      if (Address.fromScAddress(inv.contractAddress()).toString() !== TARGET) {
         return send(res, 400, { error: "entry targets a different contract" });
       }
-      if (inv.functionName().toString() !== "apply_batch_committee") {
+      if (inv.functionName().toString() !== METHOD) {
         return send(res, 400, { error: "entry calls a different function" });
       }
       const args = inv.args();
-      if (scValToNative(args[2]) !== BigInt(dqyes) * S || scValToNative(args[3]) !== BigInt(dqno) * S) {
+      if (scValToNative(args[DQ_OFFSET]) !== BigInt(dqyes) * S || scValToNative(args[DQ_OFFSET + 1]) !== BigInt(dqno) * S) {
         return send(res, 400, { error: "entry net does not match verified net" });
       }
       const cred = Address.fromScAddress(entry.credentials().address().address()).toString();
       if (cred !== kp.publicKey()) return send(res, 400, { error: "entry is not for this member" });
 
       const signed = await authorizeEntry(entry, kp, Number(validUntilLedger), Networks.TESTNET);
-      console.log(`[member ${INDEX}] attested net (${dqyes}, ${dqno}) for ${MARKET}`);
+      console.log(`[member ${INDEX}] attested net (${dqyes}, ${dqno}) for ${TARGET}`);
       return send(res, 200, { signedEntryXdr: signed.toXDR("base64") });
     }
 
