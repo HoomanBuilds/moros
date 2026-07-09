@@ -41,6 +41,7 @@ enum DataKey {
     Batcher,
     Committee,
     CommitteeT,
+    Resolver,
     Shares(Address, Side),
 }
 
@@ -337,7 +338,7 @@ impl LmsrMarket {
 
     /// Settle the market on `outcome`. Admin-only (the Resolver/Reflector wiring
     /// replaces this driver in a later phase). Cannot be resolved twice.
-    pub fn resolve(env: Env, admin: Address, outcome: Side) -> Result<(), Error> {
+    pub fn set_resolver(env: Env, admin: Address, resolver: Address) -> Result<(), Error> {
         admin.require_auth();
         let stored: Address = env
             .storage()
@@ -345,6 +346,22 @@ impl LmsrMarket {
             .get(&DataKey::Admin)
             .ok_or(Error::NotInitialized)?;
         if admin != stored {
+            return Err(Error::Unauthorized);
+        }
+        env.storage().instance().set(&DataKey::Resolver, &resolver);
+        Self::bump(&env);
+        Ok(())
+    }
+
+    pub fn resolve(env: Env, admin: Address, outcome: Side) -> Result<(), Error> {
+        admin.require_auth();
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        let resolver: Option<Address> = env.storage().instance().get(&DataKey::Resolver);
+        if admin != stored && resolver != Some(admin.clone()) {
             return Err(Error::Unauthorized);
         }
         if env.storage().instance().has(&DataKey::Outcome) {

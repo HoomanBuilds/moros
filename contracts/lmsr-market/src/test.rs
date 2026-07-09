@@ -265,6 +265,26 @@ fn resolve_rejects_non_admin() {
 }
 
 #[test]
+fn resolve_accepts_registered_resolver() {
+    let env = Env::default();
+    let (client, _token, _trader, admin) = setup(&env);
+    let resolver = Address::generate(&env);
+    client.set_resolver(&admin, &resolver);
+    client.resolve(&resolver, &Side::No);
+    assert_eq!(client.outcome(), Some(Side::No));
+}
+
+#[test]
+fn resolve_rejects_unregistered_resolver() {
+    let env = Env::default();
+    let (client, _token, _trader, admin) = setup(&env);
+    let resolver = Address::generate(&env);
+    let stranger = Address::generate(&env);
+    client.set_resolver(&admin, &resolver);
+    assert!(client.try_resolve(&stranger, &Side::Yes).is_err());
+}
+
+#[test]
 fn cannot_resolve_twice() {
     let env = Env::default();
     let (client, _token, _trader, admin) = setup(&env);
