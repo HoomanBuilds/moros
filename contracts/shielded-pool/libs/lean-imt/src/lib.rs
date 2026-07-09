@@ -503,5 +503,97 @@ impl LeanIMT {
     }
 }
 
+pub const IMT_FRONTIER_KEY: Symbol = symbol_short!("frontier");
+pub const IMT_COUNT_KEY: Symbol = symbol_short!("ocount");
+
+fn imt_hash(env: &Env, left: &BytesN<32>, right: &BytesN<32>) -> BytesN<32> {
+    let inputs = Vec::from_array(
+        env,
+        [
+            BlsScalar::from_bytes(left.clone()).to_u256(),
+            BlsScalar::from_bytes(right.clone()).to_u256(),
+        ],
+    );
+    let out = poseidon_hash::<3, BlsScalar>(env, &inputs);
+    BlsScalar::from_u256(out).to_bytes()
+}
+
+fn imt_zeros(env: &Env, depth: u32) -> Vec<BytesN<32>> {
+    let mut zeros = vec![env];
+    let mut z = BlsScalar::from_u256(U256::from_u32(env, 0)).to_bytes();
+    zeros.push_back(z.clone());
+    let mut i = 0u32;
+    while i < depth {
+        z = imt_hash(env, &z, &z);
+        zeros.push_back(z.clone());
+        i += 1;
+    }
+    zeros
+}
+
+/// Fixed-depth incremental Merkle tree with O(depth) inserts (frontier method).
+/// Root equals the zero-padded full tree; matches the fixed-depth circom MerkleProof.
+pub struct Imt {
+    env: Env,
+    depth: u32,
+    count: u32,
+    frontier: Vec<BytesN<32>>,
+    zeros: Vec<BytesN<32>>,
+    root: BytesN<32>,
+}
+
+impl Imt {
+    pub fn new(env: &Env, depth: u32) -> Self {
+        let zeros = imt_zeros(env, depth);
+        let mut frontier = vec![env];
+        let mut i = 0u32;
+        while i < depth {
+            frontier.push_back(zeros.get(i).unwrap());
+            i += 1;
+        }
+        let root = zeros.get(depth).unwrap();
+        Self { env: env.clone(), depth, count: 0, frontier, zeros, root }
+    }
+
+    pub fn from_storage(env: &Env, depth: u32, count: u32, frontier: Vec<BytesN<32>>, root: BytesN<32>) -> Self {
+        Self { env: env.clone(), depth, count, frontier, zeros: imt_zeros(env, depth), root }
+    }
+
+    pub fn insert(&mut self, leaf: BytesN<32>) -> Result<u32, &'static str> {
+        if self.count >= (1u32.checked_shl(self.depth).unwrap_or(u32::MAX)) {
+            return Err("Tree is at capacity");
+        }
+        let index = self.count;
+        let mut idx = index;
+        let mut cur = leaf;
+        let mut i = 0u32;
+        while i < self.depth {
+            if idx & 1 == 0 {
+                self.frontier.set(i, cur.clone());
+                cur = imt_hash(&self.env, &cur, &self.zeros.get(i).unwrap());
+            } else {
+                cur = imt_hash(&self.env, &self.frontier.get(i).unwrap(), &cur);
+            }
+            idx >>= 1;
+            i += 1;
+        }
+        self.root = cur;
+        self.count += 1;
+        Ok(index)
+    }
+
+    pub fn get_root(&self) -> BytesN<32> {
+        self.root.clone()
+    }
+
+    pub fn get_count(&self) -> u32 {
+        self.count
+    }
+
+    pub fn frontier(&self) -> Vec<BytesN<32>> {
+        self.frontier.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests;
