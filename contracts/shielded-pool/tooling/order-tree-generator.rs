@@ -1,5 +1,5 @@
 use coinutils::{bls_scalar_to_decimal_string, decimal_string_to_bls_scalar, poseidon_hash};
-use lean_imt::{bls_scalar_to_bytes, LeanIMT};
+use lean_imt::{bls_scalar_to_bytes, bytes_to_bls_scalar, Imt, LeanIMT};
 use soroban_sdk::{crypto::bls12_381::Fr as BlsScalar, Env};
 
 fn main() {
@@ -25,10 +25,16 @@ fn main() {
     }
 
     let mut tree = LeanIMT::new(&env, depth);
+    let mut imt = Imt::new(&env, depth);
     for c in &commitments {
         tree.insert(bls_scalar_to_bytes(c.clone())).unwrap();
+        imt.insert(bls_scalar_to_bytes(c.clone())).unwrap();
     }
     let root = tree.get_root_scalar();
+    let imt_root = bytes_to_bls_scalar(&imt.get_root());
+    if root != imt_root {
+        panic!("frontier IMT root != LeanIMT root: on-chain and tool would disagree");
+    }
     let dec = |s: &BlsScalar| bls_scalar_to_decimal_string(s);
 
     let mut entries = Vec::new();
