@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { ConnectButton } from "@/components/wallet/connect-button";
 import { Menu, X } from "lucide-react";
 
 const navLinks = [
@@ -67,6 +68,7 @@ export function Navigation() {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-4">
+            <ConnectButton />
             <Button
               asChild
               size="sm"
@@ -129,6 +131,7 @@ export function Navigation() {
           }`}
           style={{ transitionDelay: isMobileMenuOpen ? "300ms" : "0ms" }}
           >
+            <ConnectButton />
             <Button
               asChild
               className="flex-1 bg-foreground text-background rounded-full h-14 text-base"
