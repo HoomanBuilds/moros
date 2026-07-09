@@ -1,5 +1,6 @@
 import { createServer } from "http";
-import { timingSafeEqual } from "crypto";
+import { timingSafeEqual, createHash } from "crypto";
+import { writeFileSync, readFileSync, existsSync, renameSync } from "fs";
 import { Address, Keypair, Networks, authorizeEntry, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { G8, ID, R, add, mul, randScalar, thresholdDecrypt } from "./jubjub.mjs";
 import { feldmanCheck, memberVerifyKey } from "./dkg-jubjub.mjs";
@@ -14,6 +15,7 @@ const DQ_OFFSET = Number(process.env.ATTEST_DQ_OFFSET || 2);
 const NET_BOUND = Number(process.env.NET_BOUND || 4294967296);
 const S = 1n << 32n;
 const kp = process.env.MEMBER_SK ? Keypair.fromSecret(process.env.MEMBER_SK) : null;
+const SHARE_FILE = process.env.SHARE_FILE || "";
 
 const pt = (p) => [p[0].toString(), p[1].toString()];
 const unpt = (a) => [BigInt(a[0]), BigInt(a[1])];
@@ -25,6 +27,32 @@ let allCommitments = null;
 let received = new Map();
 let finalShare = null;
 let pk = null;
+
+function persist() {
+  if (!SHARE_FILE || !finalShare) return;
+  const data = {
+    index: INDEX.toString(),
+    share: finalShare.s.toString(),
+    pk: pt(pk),
+    roster,
+    commitments: allCommitments,
+  };
+  const tmp = `${SHARE_FILE}.tmp`;
+  writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 });
+  renameSync(tmp, SHARE_FILE);
+}
+
+function restore() {
+  if (!SHARE_FILE || !existsSync(SHARE_FILE)) return;
+  const d = JSON.parse(readFileSync(SHARE_FILE, "utf8"));
+  if (BigInt(d.index) !== INDEX) return;
+  finalShare = { i: INDEX, s: BigInt(d.share) };
+  pk = unpt(d.pk);
+  roster = d.roster;
+  allCommitments = {};
+  for (const [i, cms] of Object.entries(d.commitments)) allCommitments[Number(i)] = cms;
+  console.log(`[member ${INDEX}] restored persisted share; DKG epoch resumed`);
+}
 
 function evalPoly(x) {
   let y = 0n, xp = 1n;
@@ -42,6 +70,7 @@ function tryFinalize() {
   finalShare = { i: INDEX, s };
   pk = ID;
   for (let i = 1; i <= roster.n; i++) pk = add(pk, unpt(allCommitments[i][0]));
+  persist();
 }
 
 function authed(req) {
@@ -75,7 +104,10 @@ const server = createServer(async (req, res) => {
     }
     if (!authed(req)) return send(res, 401, { error: "unauthorized" });
 
-    if (req.method === "POST" && req.url === "/dkg/init") {
+    if (req.method === "POST" && req.url === "/dkg/commit") {
+      if (finalShare && SHARE_FILE) {
+        return send(res, 409, { error: "member already has a persisted key; refuse to re-key" });
+      }
       const { n, t } = await body(req);
       roster = { n, t };
       coeffs = Array.from({ length: t }, () => randScalar());
@@ -84,6 +116,12 @@ const server = createServer(async (req, res) => {
       allCommitments = null;
       finalShare = null;
       pk = null;
+      const hash = createHash("sha256").update(JSON.stringify(myCommitments)).digest("hex");
+      return send(res, 200, { index: INDEX.toString(), hash });
+    }
+
+    if (req.method === "POST" && req.url === "/dkg/reveal") {
+      if (!myCommitments) return send(res, 409, { error: "not in commit phase" });
       return send(res, 200, { index: INDEX.toString(), commitments: myCommitments });
     }
 
@@ -128,6 +166,11 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && req.url === "/dkg/status") {
       return send(res, 200, { ready: !!finalShare, pk: pk ? pt(pk) : null });
+    }
+
+    if (req.method === "GET" && req.url === "/dkg/transcript") {
+      if (!allCommitments) return send(res, 409, { error: "no transcript" });
+      return send(res, 200, { commitments: allCommitments[Number(INDEX)] });
     }
 
     if (req.method === "POST" && req.url === "/partial") {
@@ -195,6 +238,7 @@ const server = createServer(async (req, res) => {
   }
 });
 
+restore();
 server.listen(PORT, () => {
-  console.log(`[member ${INDEX}] listening on ${PORT}${TOKEN ? " (token auth)" : ""}`);
+  console.log(`[member ${INDEX}] listening on ${PORT}${TOKEN ? " (token auth)" : ""}${finalShare ? " (key restored)" : ""}`);
 });

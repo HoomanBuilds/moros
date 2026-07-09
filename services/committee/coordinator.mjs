@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { thresholdDecrypt } from "./jubjub.mjs";
 import { memberVerifyKey } from "./dkg-jubjub.mjs";
 import { verifyPartial } from "./chaum-pedersen.mjs";
@@ -35,11 +36,42 @@ async function get(url, path, token) {
   return r.json();
 }
 
+export async function ensureDKG(members, t, token) {
+  const statuses = {};
+  let allReady = true;
+  for (const [i, url] of Object.entries(members)) {
+    try {
+      const st = await get(url, "/dkg/status", token);
+      statuses[i] = st;
+      if (!st.ready) allReady = false;
+    } catch {
+      allReady = false;
+    }
+  }
+  if (allReady) {
+    const pks = Object.values(statuses).map((s) => JSON.stringify(s.pk));
+    if (new Set(pks).size === 1) {
+      const commitments = {};
+      for (const [i, url] of Object.entries(members)) {
+        commitments[i] = (await get(url, "/dkg/transcript", token)).commitments;
+      }
+      return { pk: unpt(statuses[Object.keys(statuses)[0]].pk), commitments, n: Object.keys(members).length, t, reused: true };
+    }
+  }
+  return runDKG(members, t, token);
+}
+
 export async function runDKG(members, t, token) {
   const n = Object.keys(members).length;
+  const hashes = {};
+  for (const [i, url] of Object.entries(members)) {
+    hashes[i] = (await post(url, "/dkg/commit", { n, t }, token)).hash;
+  }
   const all = {};
   for (const [i, url] of Object.entries(members)) {
-    const { commitments } = await post(url, "/dkg/init", { n, t }, token);
+    const { commitments } = await post(url, "/dkg/reveal", {}, token);
+    const h = createHash("sha256").update(JSON.stringify(commitments)).digest("hex");
+    if (h !== hashes[i]) throw new Error(`member ${i} revealed commitments that do not match its commit hash`);
     all[i] = commitments;
   }
   for (const url of Object.values(members)) await post(url, "/dkg/commitments", { all }, token);
