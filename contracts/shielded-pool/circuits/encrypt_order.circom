@@ -2,6 +2,7 @@ pragma circom 2.2.0;
 
 include "bitify.circom";
 include "order.circom";
+include "merkleProof.circom";
 
 template JubAdd() {
     signal input x1;
@@ -108,7 +109,8 @@ template JubEnc(nb) {
     c2[1] <== s.yout;
 }
 
-template EncryptOrder() {
+template EncryptOrder(depth) {
+    signal input orderRoot;
     signal input amount;
     signal input side;
     signal input secret;
@@ -116,6 +118,8 @@ template EncryptOrder() {
     signal input ryes;
     signal input rno;
     signal input pk[2];
+    signal input pathIndex;
+    signal input siblings[depth];
 
     signal output commitment;
     signal output nullifierHash;
@@ -135,7 +139,7 @@ template EncryptOrder() {
     pkxy2 <== pkxx * pkyy;
     pkyy - pkxx === 1 + d * pkxy2;
 
-    component ab = Num2Bits(64);
+    component ab = Num2Bits(20);
     ab.in <== amount;
 
     signal myes;
@@ -150,6 +154,12 @@ template EncryptOrder() {
     oc.nullifier <== nullifier;
     commitment <== oc.commitment;
     nullifierHash <== oc.nullifierHash;
+
+    component mp = MerkleProof(depth);
+    mp.leaf <== oc.commitment;
+    mp.leafIndex <== pathIndex;
+    mp.siblings <== siblings;
+    orderRoot === mp.out;
 
     component eyes = JubEnc(64);
     eyes.m <== myes;
@@ -172,4 +182,4 @@ template EncryptOrder() {
     c2no[1] <== eno.c2[1];
 }
 
-component main { public [ pk ] } = EncryptOrder();
+component main { public [ orderRoot, pk ] } = EncryptOrder(16);
