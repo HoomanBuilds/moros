@@ -7,8 +7,8 @@ const footerLinks = {
   Product: [
     { name: "Features", href: "#features" },
     { name: "How it works", href: "#how-it-works" },
-    { name: "Network", href: "#pricing" },
-    { name: "Risk", href: "#security" },
+    { name: "Ecosystem", href: "#integrations" },
+    { name: "Security", href: "#security" },
   ],
   Resources: [
     { name: "Launch app", href: "/app" },

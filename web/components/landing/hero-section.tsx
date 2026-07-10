@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 
-const words = ["private", "yours", "hidden", "encrypted"];
+const words = ["side", "size", "edge"];
 
 function BlurWord({ word, trigger }: { word: string; trigger: number }) {
   const letters = word.split("");
@@ -174,7 +174,7 @@ export function HeroSection() {
         >
           <span className="inline-flex items-center gap-3 text-sm font-mono text-white/60">
             <span className="w-8 h-px bg-white/30" />
-            Zero-knowledge prediction markets
+            Zero-knowledge prediction markets on Stellar
           </span>
         </div>
 
@@ -185,9 +185,9 @@ export function HeroSection() {
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}
           >
-            <span className="block whitespace-nowrap">Prediction markets</span>
-            <span className="block whitespace-nowrap">
-              where your position stays{" "}
+            <span className="block whitespace-nowrap">Bet privately.</span>
+            <span className="block">
+              Nobody sees your{" "}
               <span className="relative inline-block">
                 <BlurWord word={words[wordIndex]} trigger={wordIndex} />
               </span>
@@ -204,8 +204,7 @@ export function HeroSection() {
         </div>
       </div>
       
-      {/* Stats — 3 metrics static, no auto-scroll */}
-      <div 
+      <div
         className={`absolute bottom-12 left-0 right-0 px-6 lg:px-12 transition-all duration-700 delay-500 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}

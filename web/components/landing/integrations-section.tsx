@@ -77,7 +77,7 @@ export function IntegrationsSection() {
       </div>
 
       <div className="relative z-10 mt-0 lg:-mt-24 max-w-[1400px] mx-auto px-6 lg:px-12">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-16">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-16">
           {integrations.map((integration, index) => (
             <div
               key={integration.name}
