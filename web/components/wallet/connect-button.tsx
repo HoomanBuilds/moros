@@ -15,9 +15,13 @@ export function ConnectButton() {
   }, []);
 
   async function connect() {
-    const kit = getKit();
-    const { address } = await kit.authModal();
-    setAddress(address);
+    try {
+      const kit = getKit();
+      const { address } = await kit.authModal();
+      setAddress(address);
+    } catch {
+      return;
+    }
   }
 
   return (
