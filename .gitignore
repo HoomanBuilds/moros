@@ -46,3 +46,7 @@ deployments/*.local.json
 .idea/
 .vscode/
 circuits/build/
+
+# --- Web ZK artifacts (wasm tracked, zkey too large to track) ---
+!web/public/zk/*.wasm
+web/public/zk/*.zkey

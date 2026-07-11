@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "test:e2e": "playwright test",
     "test:unit": "tsx lib/wallet.test.ts && tsx lib/stellar/derive.test.ts && tsx components/markets/odds-chart.test.ts",
-    "test": "npm run test:unit && npm run test:e2e"
+    "test": "npm run test:unit && npm run test:e2e",
+    "zk:sync": "mkdir -p public/zk && cp ../contracts/shielded-pool/circuits/build/encrypt_order_js/encrypt_order.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/build/encrypt_order_final.zkey public/zk/ && cp ../contracts/shielded-pool/circuits/build/encrypt_order_vk.json public/zk/ && cp ../contracts/shielded-pool/circuits/build/order_commit_js/order_commit.wasm public/zk/"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^2.5.0",
@@ -64,6 +65,7 @@
     "react-hook-form": "^7.60.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.4",
+    "snarkjs": "^0.7.6",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
