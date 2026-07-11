@@ -3,6 +3,7 @@ import { useMarket } from "@/lib/stellar/use-market";
 import { PageHeader, Panel } from "@/components/app/app-kit";
 import { StatsStrip } from "@/components/markets/stats-strip";
 import { OddsChart } from "@/components/markets/odds-chart";
+import { BetPanel } from "@/components/markets/bet-panel";
 
 export default function MarketTerminal() {
   const { data } = useMarket();
@@ -11,12 +12,15 @@ export default function MarketTerminal() {
       <PageHeader
         label="Market"
         title={data?.question ?? "Market"}
-        description="Read-only - private betting arrives in the next release"
+        description="Your position stays hidden until you redeem"
       />
       <StatsStrip />
-      <Panel className="p-6">
-        <OddsChart />
-      </Panel>
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
+        <Panel className="p-6">
+          <OddsChart />
+        </Panel>
+        <BetPanel />
+      </div>
     </div>
   );
 }
