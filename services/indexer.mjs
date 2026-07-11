@@ -1,6 +1,7 @@
 import { spawnSync } from "child_process";
-import { writeFileSync } from "fs";
-import { resolve, dirname } from "path";
+import { writeFileSync, mkdtempSync, rmSync } from "fs";
+import { resolve, dirname, join } from "path";
+import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 import { rpc, xdr, scValToNative } from "@stellar/stellar-sdk";
 
@@ -37,15 +38,16 @@ export function createIndexer({ rpcUrl, poolId, depth = 16 }) {
     if (!indexByCommitment.has(commitment)) return null;
     const dense = [];
     for (let i = 0; i < leaves.length; i++) dense.push(leaves[i] ?? "0");
-    const out = JSON.parse(spawnSync(TREE_PROOF, [tmp(dense, depth)], { encoding: "utf8" }).stdout);
-    const idx = indexByCommitment.get(commitment);
-    return { pathIndex: String(idx), siblings: out.proofs[idx].siblings, orderRoot: out.orderRoot };
-  }
-
-  function tmp(dense, d) {
-    const p = resolve("/tmp", `tp-${dense.length}.json`);
-    writeFileSync(p, JSON.stringify({ depth: d, leaves: dense }));
-    return p;
+    const dir = mkdtempSync(join(tmpdir(), "tp-"));
+    const file = join(dir, "leaves.json");
+    try {
+      writeFileSync(file, JSON.stringify({ depth, leaves: dense }), { mode: 0o600 });
+      const out = JSON.parse(spawnSync(TREE_PROOF, [file], { encoding: "utf8" }).stdout);
+      const idx = indexByCommitment.get(commitment);
+      return { pathIndex: String(idx), siblings: out.proofs[idx].siblings, orderRoot: out.orderRoot };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   return { poll, proofFor, size: () => indexByCommitment.size };
