@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:e2e": "playwright test",
-    "test:unit": "tsx lib/wallet.test.ts",
+    "test:unit": "tsx lib/wallet.test.ts && tsx lib/stellar/derive.test.ts && tsx components/markets/odds-chart.test.ts",
     "test": "npm run test:unit && npm run test:e2e"
   },
   "dependencies": {

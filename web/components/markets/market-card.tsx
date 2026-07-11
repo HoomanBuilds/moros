@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { useMarket } from "@/lib/stellar/use-market";
 import { Panel, Tag } from "@/components/app/app-kit";
-import { formatCountdown } from "@/lib/stellar/derive";
 
 export function MarketCard() {
   const { data, isLoading } = useMarket();
@@ -13,11 +12,11 @@ export function MarketCard() {
         <div className="flex items-center justify-between">
           <Tag>{data ? data.outcome : "..."}</Tag>
           <span className="font-mono text-xs text-muted-foreground">
-            {data ? formatCountdown(data.secondsLeft) : ""}
+            {data ? data.resolutionLabel : ""}
           </span>
         </div>
         <h3 className="font-display text-2xl mt-4 min-h-[3.5rem]">
-          {isLoading ? "Loading market..." : data?.question}
+          {isLoading ? "Loading market..." : (data?.question ?? "Market unavailable")}
         </h3>
         <div className="flex items-end justify-between mt-6">
           <div>

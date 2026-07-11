@@ -15,7 +15,7 @@ export function OddsChart() {
     grid: { left: 40, right: 16, top: 20, bottom: 30 },
     xAxis: { type: "time", axisLabel: { color: CHART.muted } },
     yAxis: { type: "value", min: 0, max: 100, axisLabel: { color: CHART.muted, formatter: "{value}%" } },
-    series: [{ type: "line", showSymbol: false, smooth: true, data: series, lineStyle: { color: CHART.accent } }],
+    series: [{ type: "line", showSymbol: false, smooth: true, data: series, lineStyle: { color: "#16c784" } }],
   };
   return (
     <div>

@@ -1,7 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { getMarketState, getPriceYes, getOutcome, getMarketInfo, getPoolBalance } from "./read";
-import { probFromFixed, fixedToNumber, outcomeLabel, marketQuestion } from "./derive";
+import { probFromFixed, fixedToNumber, outcomeLabel, marketQuestion, formatCountdown } from "./derive";
 
 export function useMarket() {
   return useQuery({
@@ -13,15 +13,18 @@ export function useMarket() {
       ]);
       const now = Math.floor(Date.now() / 1000);
       const expiry = Number(info.expiry);
+      const secondsLeft = Math.max(0, expiry - now);
+      const outcomeVal = outcomeLabel(outcome);
       return {
         probYes: probFromFixed(priceYes),
         qYes: fixedToNumber(state[0]),
         qNo: fixedToNumber(state[1]),
-        outcome: outcomeLabel(outcome),
+        outcome: outcomeVal,
         question: marketQuestion(info),
         poolSizeXlm: Number(poolBal) / 1e7,
         expiry,
-        secondsLeft: Math.max(0, expiry - now),
+        secondsLeft,
+        resolutionLabel: outcomeVal === "LIVE" ? formatCountdown(secondsLeft) : "resolved",
       };
     },
   });
