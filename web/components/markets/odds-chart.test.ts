@@ -1,0 +1,11 @@
+import assert from "node:assert";
+import { appendSample } from "./odds-chart-util.ts";
+let s: [number, number][] = [];
+s = appendSample(s, 0.5, 1000, 3);
+s = appendSample(s, 0.52, 2000, 3);
+assert.equal(s.length, 2);
+s = appendSample(s, 0.53, 3000, 3);
+s = appendSample(s, 0.54, 4000, 3);
+assert.equal(s.length, 3);
+assert.equal(s[0][1], 0.52);
+console.log("odds util ok");
