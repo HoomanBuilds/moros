@@ -25,5 +25,12 @@ export function addPosition(p: Position) {
 export function listPositions(address: string): Position[] {
   return store()[address] ?? [];
 }
+export function updateStatus(address: string, commitment: string, status: Position["status"]) {
+  const s = store();
+  const p = (s[address] ?? []).find((x) => x.commitment === commitment);
+  if (!p) return;
+  p.status = status;
+  flush();
+}
 export function exportBook(): string { return JSON.stringify(store()); }
 export function importBook(json: string) { mem = JSON.parse(json); flush(); }
