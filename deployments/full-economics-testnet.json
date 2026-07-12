@@ -2,7 +2,7 @@
   "network": "testnet",
   "steps": {
     "batch": {
-      "tx": "541d616f38b8c3f6396c0e28127673bf8e5e67fd2f781c4aa8b21be533185352",
+      "tx": "280fcf399586fa1b4552e15de3d95ae92d1a1042b30e0fda15b4a91cb1f1cb46",
       "net_stroops": "251249474",
       "priceYes": "2254768441"
     },
@@ -13,8 +13,8 @@
   },
   "contracts": {
     "collateral_xlm_sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-    "lmsr_market": "CAXHSRTJ27IDL52ORR7S6KITEA6WP7AHNGOLPY3N76DOLOY4FSMKVKLB",
-    "shielded_pool": "CAPK7MR75OXODZ3PVRIZHFCSDWWUWBCV52VNDCXR6Q2LZLC7PLP26IIJ"
+    "lmsr_market": "CCWZCLGSOWISZPG47ZTDFVGANFC5SMR7NQNILMOTFB7IMR4JOOJZ75MI",
+    "shielded_pool": "CCCDIAGYDKMCJVV2LJTG3FXMWNEW5DHGNNVDJMJUGCFOPJWD5U4IVQ6V"
   },
   "description": "Full-fledged economics live on testnet: sealed-bid LMSR batch auction. On-chain orders with real collateral escrow -> membership+encryption proofs -> committee decrypts only the net -> pool funds the market and stores the clearing price -> resolve -> pool reclaims winning shares -> private redeems pay winners a real profit and losers a refund. No individual order revealed."
 }

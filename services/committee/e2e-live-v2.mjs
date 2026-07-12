@@ -9,6 +9,7 @@ import { Address, xdr } from "@stellar/stellar-sdk";
 import { addCiphers } from "./jubjub.mjs";
 import { runDKG, collectPartials, attestEntry } from "./coordinator.mjs";
 import { submitPoolBatch } from "./submit-multisig.mjs";
+import { relay } from "../relayer.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
@@ -164,10 +165,8 @@ try {
     writeFileSync(resolve(work, `r${k}.json`), JSON.stringify(inp));
     sh("node", [resolve(CIRC, "build/order_redeem_v2_js/generate_witness.js"), resolve(CIRC, "build/order_redeem_v2_js/order_redeem_v2.wasm"), resolve(work, `r${k}.json`), resolve(work, `rw${k}.wtns`)]);
     sh(SNARKJS, ["groth16", "prove", resolve(CIRC, "output/order_redeem_v2_final.zkey"), resolve(work, `rw${k}.wtns`), resolve(work, `rp${k}.json`), resolve(work, `rpub${k}.json`)]);
-    const proofHex = hexFrom("proof", resolve(work, `rp${k}.json`));
-    const pubHex = hexFrom("public", resolve(work, `rpub${k}.json`));
     const before = BigInt(invoke(XLM, "deployer", "balance", ["--id", to]).replace(/"/g, ""));
-    invoke(pool, "deployer", "redeem_order_v2", ["--to", to, "--relayer", DEPLOYER, "--proof_bytes", proofHex, "--pub_signals_bytes", pubHex]);
+    relay(resolve(work, `rp${k}.json`), resolve(work, `rpub${k}.json`), to, { poolId: pool, source: "deployer" });
     const after = BigInt(invoke(XLM, "deployer", "balance", ["--id", to]).replace(/"/g, ""));
     return after - before;
   };
