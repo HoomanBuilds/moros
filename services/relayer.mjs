@@ -14,16 +14,19 @@ function hexFrom(kind, jsonPath) {
   return lines[lines.length - 1].trim();
 }
 
-export function relay(proofPath, publicPath, recipient) {
+export function relay(proofPath, publicPath, recipient, opts = {}) {
+  const poolId = opts.poolId ?? cfg.poolId;
+  const source = opts.source ?? cfg.source;
   const proofHex = hexFrom("proof", proofPath);
   const pubHex = hexFrom("public", publicPath);
-  if (!cfg.poolId) {
+  if (!poolId) {
     return { dryRun: true, to: recipient, proofHex, pubHex };
   }
+  const relayerAddr = run("stellar", ["keys", "address", source]).stdout.trim();
   const r = run("stellar", [
-    "contract", "invoke", "--id", cfg.poolId,
-    "--source", cfg.source, "--network", cfg.network, "--send=yes", "--",
-    "redeem_order", "--to", recipient,
+    "contract", "invoke", "--id", poolId,
+    "--source", source, "--network", cfg.network, "--send=yes", "--",
+    "redeem_order_v2", "--to", recipient, "--relayer", relayerAddr,
     "--proof_bytes", proofHex, "--pub_signals_bytes", pubHex,
   ]);
   const line = (r.stdout + r.stderr).split("\n").find((l) => l.includes("transfer") || l.includes("Success"));

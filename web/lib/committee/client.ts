@@ -20,3 +20,13 @@ export async function postOrder(body: { proof: unknown; publicSignals: string[] 
   });
   if (!r.ok) throw new Error(`committee rejected order: ${await r.text()}`);
 }
+
+export async function postRedeem(body: { proof: unknown; publicSignals: string[]; recipient: string }): Promise<unknown> {
+  const r = await fetch(`${COMMITTEE_URL}/redeem`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ proof: body.proof, public: body.publicSignals, recipient: body.recipient }),
+  });
+  if (!r.ok) throw new Error(`committee rejected redeem: ${await r.text()}`);
+  return r.json();
+}
