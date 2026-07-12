@@ -4,8 +4,8 @@ extern crate alloc;
 
 use soroban_sdk::{
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
-    contract, contractclient, contractimpl, contracttype, log, symbol_short, token, vec,
-    xdr::ToXdr, Address, Bytes, BytesN, Env, IntoVal, String, Symbol, Vec,
+    contract, contractclient, contractevent, contractimpl, contracttype, log, symbol_short, token,
+    vec, xdr::ToXdr, Address, Bytes, BytesN, Env, IntoVal, String, Symbol, Vec,
 };
 
 use lean_imt::{Imt, LeanIMT, TREE_DEPTH_KEY, TREE_LEAVES_KEY, TREE_ROOT_KEY};
@@ -98,6 +98,13 @@ const BATCH_N: u32 = 4;
 const SCALE: i128 = 1 << 32;
 
 const FIXED_AMOUNT: i128 = 1000000000; // 1 XLM in stroops
+
+#[contractevent(topics = ["order_placed"], data_format = "vec")]
+pub struct OrderPlaced {
+    #[topic]
+    pub commitment: BytesN<32>,
+    pub index: u32,
+}
 
 #[contract]
 pub struct PrivacyPoolsContract;
@@ -212,7 +219,8 @@ impl PrivacyPoolsContract {
             &env.current_contract_address(),
             &stake,
         );
-        let (_, leaf_index) = Self::store_order(env, commitment)?;
+        let (_, leaf_index) = Self::store_order(env, commitment.clone())?;
+        OrderPlaced { commitment, index: leaf_index }.publish(env);
         Ok(leaf_index)
     }
 

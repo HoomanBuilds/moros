@@ -8,6 +8,7 @@ import { relay } from "./relayer.mjs";
 import { addCiphers } from "./committee/jubjub.mjs";
 import { ensureDKG, collectPartials, attestEntry } from "./committee/coordinator.mjs";
 import { submitCommitteeBatch } from "./committee/submit-multisig.mjs";
+import { createIndexer } from "./indexer.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
 const BATCH_N = Number(process.env.BATCH_N || 4);
@@ -20,6 +21,7 @@ const MEMBERS = (process.env.MEMBERS || "").split(",").filter(Boolean);
 const THRESHOLD = Number(process.env.THRESHOLD || 2);
 const MARKET = process.env.MARKET || "";
 const DRY = process.env.DRY_RUN === "1";
+const RPC_URL = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
 const S = 1n << 32n;
 if (!TOKEN) console.warn("[server] SERVICE_TOKEN unset - mutating endpoints are OPEN (dev only)");
 if (MEMBERS.length === 0) {
@@ -32,6 +34,7 @@ const DEC = /^[0-9]{1,78}$/;
 const VK = JSON.parse(readFileSync(resolve(cfg.repo, "contracts/shielded-pool/circuits/build/encrypt_order_vk.json"), "utf8"));
 
 const members = Object.fromEntries(MEMBERS.map((url, k) => [k + 1, url]));
+const indexer = createIndexer({ rpcUrl: RPC_URL, poolId: cfg.poolId });
 let dkg = null;
 let pkDec = null;
 const memberAddrs = {};
@@ -128,6 +131,10 @@ setInterval(async () => {
   if (r.batched || r.dryRun) console.log("[server] window:", JSON.stringify(r));
 }, WINDOW_MS);
 
+setInterval(() => {
+  indexer.poll().catch((e) => console.warn("[server] indexer poll failed:", String(e.message || e)));
+}, 20000);
+
 function readBody(req) {
   return new Promise((res, rej) => {
     let d = "", n = 0;
@@ -158,6 +165,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/pk") {
       if (!pkDec) return send(503, { error: "committee not ready" });
       return send(200, { pk: pkDec, note: "encrypt orders to this epoch key; prove with encrypt_order.circom" });
+    }
+    if (req.method === "GET" && req.url.startsWith("/proof/")) {
+      const commitment = req.url.slice("/proof/".length);
+      await indexer.poll().catch(() => {});
+      const p = indexer.proofFor(commitment);
+      return p ? send(200, p) : send(404, { error: "commitment not indexed yet" });
     }
     if (req.method !== "POST") return send(404, { error: "not found" });
     if (!authed(req)) return send(401, { error: "unauthorized" });
@@ -213,6 +226,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+await indexer.poll().catch((e) => console.warn("[server] indexer initial poll failed:", String(e.message || e)));
 await bootstrap();
 server.listen(PORT, () =>
   console.log(`[server] no-leak committee intake on :${PORT} (batchN=${BATCH_N}, window=${WINDOW_MS}ms, market=${DRY ? "dry-run" : MARKET || "dry-run"}, auth=${TOKEN ? "on" : "OFF"})`)
