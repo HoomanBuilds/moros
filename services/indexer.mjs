@@ -8,7 +8,7 @@ import { rpc, xdr, scValToNative } from "@stellar/stellar-sdk";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
 const TREE_PROOF = resolve(REPO, "inspiration/zk/soroban-privacy-pools/target/release/tree_proof");
-const LEDGER_WINDOW = 17000;
+const LEDGER_WINDOW = 9000;
 
 export function createIndexer({ rpcUrl, poolId, depth = 16 }) {
   const server = new rpc.Server(rpcUrl);
@@ -21,15 +21,13 @@ export function createIndexer({ rpcUrl, poolId, depth = 16 }) {
     const start = fromLedger || Math.max(latest.sequence - LEDGER_WINDOW, 1);
     const res = await server.getEvents({
       startLedger: start,
-      filters: [{ type: "contract", contractIds: [poolId], topics: [[xdr.ScVal.scvSymbol("order_placed").toXDR("base64")]] }],
+      filters: [{ type: "contract", contractIds: [poolId], topics: [[xdr.ScVal.scvSymbol("order_placed").toXDR("base64"), "*"]] }],
     });
     for (const ev of res.events || []) {
       const commitment = BigInt("0x" + Buffer.from(scValToNative(ev.topic[1])).toString("hex")).toString();
       const index = Number(scValToNative(ev.value)[0]);
-      if (!indexByCommitment.has(commitment)) {
-        leaves[index] = commitment;
-        indexByCommitment.set(commitment, index);
-      }
+      leaves[index] = commitment;
+      if (!indexByCommitment.has(commitment)) indexByCommitment.set(commitment, index);
     }
     return latest.sequence;
   }

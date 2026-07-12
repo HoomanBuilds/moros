@@ -1,0 +1,25 @@
+{
+  "network": "testnet",
+  "description": "Phase C private-bet stack validated live: a browser-equivalent flow computes an order commitment (order_commit wasm), places it on-chain (place_order, which now emits an OrderPlaced event), the committee-service indexer reads that event and serves the Merkle membership proof, the encrypt_order Groth16 proof verifies with those real siblings (commitment + orderRoot match on-chain), and the committee threshold-decrypts the ciphertext to the order amount. Openings never leave the client; only the proof + ciphertexts are submitted.",
+  "contracts": {
+    "collateral_xlm_sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+    "lmsr_market": "CBKR2OYQHNBYUSHQEFEHB4GI6BMZYXP35GPYYCBKFRTZBTR6NV3P3MXS",
+    "shielded_pool": "CDUYUZEZBIWRPXM3ITDQZBANHN3Q6B6KUKCBV7MP6BGLYRQCT6QSV23E"
+  },
+  "market_state": "LIVE (unresolved, far-future expiry) so the frontend can place bets",
+  "committee": { "members": 3, "threshold": 2, "intake_url_default": "http://127.0.0.1:8787" },
+  "validated": {
+    "harness": "services/committee/e2e-frontend.mjs",
+    "steps": "commitment -> place_order (OrderPlaced) -> indexer /proof -> encrypt_order proof (verifies, commitment+root == on-chain) -> committee decrypt = amount",
+    "bugs_caught_live": [
+      "indexer getEvents topic filter must be [symbol, '*'] to match the 2-topic OrderPlaced event",
+      "indexer must fill leaves by on-chain index (not dedup by commitment) or duplicate/identical leaves leave a 0-gap and the tree diverges from chain"
+    ]
+  },
+  "known_limitations": [
+    "in-browser BLS12-381 proving of encrypt_order (~30k constraints) is slow (minutes); the membership binding to the poseidon255/BLS tree forces the curve",
+    "indexer scans the last ~9000 ledgers per poll (fresh-pool orders are recent); a long-lived pool needs cursor-paged, persisted indexing",
+    "stake amount is public on-chain; side/amount privacy is via the ZK proof, not the stake transfer"
+  ],
+  "notes": "Fresh unresolved market/pool deployed 2026-07-02; web/lib/network.ts points at these. Unaudited research prototype, testnet only."
+}
