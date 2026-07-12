@@ -20,10 +20,11 @@ export function relay(proofPath, publicPath, recipient) {
   if (!cfg.poolId) {
     return { dryRun: true, to: recipient, proofHex, pubHex };
   }
+  const relayerAddr = run("stellar", ["keys", "address", cfg.source]).stdout.trim();
   const r = run("stellar", [
     "contract", "invoke", "--id", cfg.poolId,
     "--source", cfg.source, "--network", cfg.network, "--send=yes", "--",
-    "redeem_order", "--to", recipient,
+    "redeem_order_v2", "--to", recipient, "--relayer", relayerAddr,
     "--proof_bytes", proofHex, "--pub_signals_bytes", pubHex,
   ]);
   const line = (r.stdout + r.stderr).split("\n").find((l) => l.includes("transfer") || l.includes("Success"));
