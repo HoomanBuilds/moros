@@ -59,7 +59,7 @@ export async function POST(req: Request): Promise<Response> {
   const { error: createError } = await admin.auth.admin.createUser({
     email,
     email_confirm: true,
-    user_metadata: { wallet: address },
+    app_metadata: { wallet: address },
   });
   if (createError && !/already registered|already exists/i.test(createError.message)) {
     return Response.json({ error: createError.message }, { status: 500 });
