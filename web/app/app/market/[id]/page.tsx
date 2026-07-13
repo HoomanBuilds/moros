@@ -1,29 +1,23 @@
 "use client";
-import { useMarket } from "@/lib/stellar/use-market";
-import { PageHeader, Panel } from "@/components/app/app-kit";
-import { StatsStrip } from "@/components/markets/stats-strip";
+import { Panel } from "@/components/app/app-kit";
+import { MarketHeader } from "@/components/markets/market-header";
+import { MetricRow } from "@/components/markets/metric-row";
 import { OddsChart } from "@/components/markets/odds-chart";
 import { BetPanel } from "@/components/markets/bet-panel";
-import { Comments } from "@/components/social/comments";
-import { NETWORK } from "@/lib/network";
+import { MarketTabs } from "@/components/markets/market-tabs";
 
 export default function MarketTerminal() {
-  const { data } = useMarket();
   return (
     <div className="space-y-8">
-      <PageHeader
-        label="Market"
-        title={data?.question ?? "Market"}
-        description="Your position stays hidden until you redeem"
-      />
-      <StatsStrip />
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
+      <MarketHeader />
+      <MetricRow />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.9fr_1fr] lg:items-start">
         <Panel className="p-6">
           <OddsChart />
         </Panel>
         <BetPanel />
       </div>
-      <Comments marketId={NETWORK.marketId} />
+      <MarketTabs />
     </div>
   );
 }

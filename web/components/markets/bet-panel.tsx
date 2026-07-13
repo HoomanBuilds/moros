@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ConnectButton } from "@/components/wallet/connect-button";
+import { useMarket } from "@/lib/stellar/use-market";
 import { getKit } from "@/lib/wallet";
 import { runBet, type BetSide, type BetStage } from "@/lib/bet/flow";
 
@@ -16,13 +17,52 @@ const STAGES: { key: BetStage; label: string }[] = [
   { key: "done", label: "Position placed privately" },
 ];
 
+const YES = "#16c784";
+const NO = "#f0564a";
+
+function SideButton({
+  active,
+  disabled,
+  label,
+  price,
+  color,
+  onClick,
+}: {
+  active: boolean;
+  disabled: boolean;
+  label: string;
+  price: string;
+  color: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex h-16 flex-col items-center justify-center gap-1 rounded-md border font-mono uppercase tracking-wider transition-colors disabled:opacity-50"
+      style={active ? { backgroundColor: color, borderColor: color, color: "#0a0a0a" } : { borderColor: "rgba(255,255,255,0.1)" }}
+    >
+      <span className="text-sm">{label}</span>
+      <span className="text-xs opacity-80">{price}</span>
+    </button>
+  );
+}
+
 export function BetPanel() {
+  const { data } = useMarket();
   const [side, setSide] = useState<BetSide>("1");
   const [amount, setAmount] = useState("10");
   const [address, setAddress] = useState("");
   const [stage, setStage] = useState<BetStage | null>(null);
   const [error, setError] = useState("");
   const busy = stage !== null && stage !== "done";
+  const resolved = data ? data.outcome !== "LIVE" : false;
+
+  const yesCents = data ? Math.round(data.probYes * 100) : null;
+  const prob = side === "1" ? data?.probYes ?? null : data ? 1 - data.probYes : null;
+  const stake = Number(amount);
+  const estReturn = prob && prob > 0 && stake > 0 ? stake / prob : null;
 
   useEffect(() => {
     getKit().getAddress().then((r) => setAddress(r.address)).catch(() => {});
@@ -43,35 +83,30 @@ export function BetPanel() {
 
   return (
     <Panel className="p-6 space-y-6">
-      <Tag>Private bet</Tag>
+      <div className="flex items-center justify-between">
+        <Tag>Private bet</Tag>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          hidden until redeem
+        </span>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <button
-          type="button"
+        <SideButton
+          active={side === "1"}
+          disabled={busy || resolved}
+          label="Yes"
+          price={yesCents === null ? "--" : `${yesCents}c`}
+          color={YES}
           onClick={() => setSide("1")}
-          disabled={busy}
-          className="h-12 rounded-md font-mono text-sm uppercase tracking-wider border transition-colors disabled:opacity-50"
-          style={
-            side === "1"
-              ? { backgroundColor: "#16c784", borderColor: "#16c784", color: "#0a0a0a" }
-              : { borderColor: "rgba(255,255,255,0.1)" }
-          }
-        >
-          Yes
-        </button>
-        <button
-          type="button"
+        />
+        <SideButton
+          active={side === "0"}
+          disabled={busy || resolved}
+          label="No"
+          price={yesCents === null ? "--" : `${100 - yesCents}c`}
+          color={NO}
           onClick={() => setSide("0")}
-          disabled={busy}
-          className="h-12 rounded-md font-mono text-sm uppercase tracking-wider border transition-colors disabled:opacity-50"
-          style={
-            side === "0"
-              ? { backgroundColor: "#f0564a", borderColor: "#f0564a", color: "#0a0a0a" }
-              : { borderColor: "rgba(255,255,255,0.1)" }
-          }
-        >
-          No
-        </button>
+        />
       </div>
 
       <div className="space-y-2">
@@ -83,12 +118,20 @@ export function BetPanel() {
           min="1"
           step="1"
           value={amount}
-          disabled={busy}
+          disabled={busy || resolved}
           onChange={(e) => setAmount(e.target.value)}
         />
+        <div className="flex items-center justify-between pt-1 font-mono text-xs text-muted-foreground">
+          <span>Est. return if {side === "1" ? "YES" : "NO"} wins</span>
+          <span className="text-foreground">{estReturn ? `~${estReturn.toFixed(2)} XLM` : "--"}</span>
+        </div>
       </div>
 
-      {!address ? (
+      {resolved ? (
+        <p className="text-sm text-muted-foreground">
+          This market has resolved. Head to your positions to redeem.
+        </p>
+      ) : !address ? (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">Connect a wallet to place a private bet.</p>
           <ConnectButton />
@@ -109,7 +152,7 @@ export function BetPanel() {
               ) : (
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: i <= activeIndex ? "#16c784" : "rgba(255,255,255,0.15)" }}
+                  style={{ backgroundColor: i <= activeIndex ? YES : "rgba(255,255,255,0.15)" }}
                 />
               )}
               <span className={i <= activeIndex ? "" : "text-muted-foreground"}>{s.label}</span>
@@ -118,7 +161,7 @@ export function BetPanel() {
         </div>
       )}
 
-      {error && <p className="text-sm" style={{ color: "#f0564a" }}>{error}</p>}
+      {error && <p className="text-sm" style={{ color: NO }}>{error}</p>}
     </Panel>
   );
 }
