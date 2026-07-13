@@ -1,7 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { getMarketState, getPriceYes, getOutcome, getMarketInfo, getPoolBalance } from "./read";
-import { probFromFixed, fixedToNumber, outcomeLabel, marketQuestion, formatCountdown } from "./derive";
+import { probFromFixed, fixedToNumber, outcomeLabel, marketQuestion, marketStrike, formatCountdown } from "./derive";
 
 export function useMarket() {
   return useQuery({
@@ -21,6 +21,8 @@ export function useMarket() {
         qNo: fixedToNumber(state[1]),
         outcome: outcomeVal,
         question: marketQuestion(info),
+        asset: info.asset,
+        strike: marketStrike(info),
         poolSizeXlm: Number(poolBal) / 1e7,
         expiry,
         secondsLeft,
