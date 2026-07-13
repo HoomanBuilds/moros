@@ -1,24 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { getKit, truncate } from "@/lib/wallet";
+import { truncate } from "@/lib/wallet";
+import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 
 export function ConnectButton() {
-  const [address, setAddress] = useState("");
-
-  useEffect(() => {
-    getKit()
-      .getAddress()
-      .then((r) => setAddress(r.address))
-      .catch(() => {});
-  }, []);
+  const address = useWalletAddress();
 
   async function connect() {
     try {
-      const kit = getKit();
-      const { address } = await kit.authModal();
-      setAddress(address);
+      await connectWallet();
     } catch {
       return;
     }
