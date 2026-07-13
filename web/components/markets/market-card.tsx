@@ -1,22 +1,39 @@
 "use client";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useMarket } from "@/lib/stellar/use-market";
 import { Panel, Tag } from "@/components/app/app-kit";
+import { WatchButton } from "@/components/social/watch-button";
+import { getMarketMeta, type MarketMeta } from "@/lib/supabase/markets-meta";
+import { NETWORK } from "@/lib/network";
 
 export function MarketCard() {
   const { data, isLoading } = useMarket();
+  const [meta, setMeta] = useState<MarketMeta | null>(null);
   const yes = data ? Math.round(data.probYes * 100) : null;
+  const title = meta?.title || data?.question;
+
+  useEffect(() => {
+    getMarketMeta(NETWORK.marketId).then(setMeta);
+  }, []);
+
   return (
     <Link href="/app/market/main">
       <Panel className="p-6 hover:border-foreground/30 transition-colors">
+        {meta?.banner_url && (
+          <img src={meta.banner_url} alt="" className="w-full h-28 object-cover rounded mb-4" />
+        )}
         <div className="flex items-center justify-between">
           <Tag>{data ? data.outcome : "..."}</Tag>
-          <span className="font-mono text-xs text-muted-foreground">
-            {data ? data.resolutionLabel : ""}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-xs text-muted-foreground">
+              {data ? data.resolutionLabel : ""}
+            </span>
+            <WatchButton marketId={NETWORK.marketId} />
+          </div>
         </div>
         <h3 className="font-display text-2xl mt-4 min-h-[3.5rem]">
-          {isLoading ? "Loading market..." : (data?.question ?? "Market unavailable")}
+          {isLoading ? "Loading market..." : (title ?? "Market unavailable")}
         </h3>
         <div className="flex items-end justify-between mt-6">
           <div>
