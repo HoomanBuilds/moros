@@ -18,34 +18,36 @@ export function MarketCard() {
   }, []);
 
   return (
-    <Link href="/app/market/main">
-      <Panel className="p-6 hover:border-foreground/30 transition-colors">
-        {meta?.banner_url && (
-          <img src={meta.banner_url} alt="" className="w-full h-28 object-cover rounded mb-4" />
-        )}
-        <div className="flex items-center justify-between">
-          <Tag>{data ? data.outcome : "..."}</Tag>
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-xs text-muted-foreground">
+    <div className="relative">
+      <Link href="/app/market/main" className="block">
+        <Panel className="p-6 hover:border-foreground/30 transition-colors">
+          {meta?.banner_url && (
+            <img src={meta.banner_url} alt="" className="w-full h-28 object-cover rounded mb-4" />
+          )}
+          <div className="flex items-center justify-between">
+            <Tag>{data ? data.outcome : "..."}</Tag>
+            <span className="font-mono text-xs text-muted-foreground pr-8">
               {data ? data.resolutionLabel : ""}
             </span>
-            <WatchButton marketId={NETWORK.marketId} />
           </div>
-        </div>
-        <h3 className="font-display text-2xl mt-4 min-h-[3.5rem]">
-          {isLoading ? "Loading market..." : (title ?? "Market unavailable")}
-        </h3>
-        <div className="flex items-end justify-between mt-6">
-          <div>
-            <div className="font-mono text-xs text-muted-foreground">YES</div>
-            <div className="font-display text-4xl text-[#16c784]">{yes === null ? "--" : `${yes}c`}</div>
+          <h3 className="font-display text-2xl mt-4 min-h-[3.5rem]">
+            {isLoading ? "Loading market..." : (title ?? "Market unavailable")}
+          </h3>
+          <div className="flex items-end justify-between mt-6">
+            <div>
+              <div className="font-mono text-xs text-muted-foreground">YES</div>
+              <div className="font-display text-4xl text-[#16c784]">{yes === null ? "--" : `${yes}c`}</div>
+            </div>
+            <div className="text-right">
+              <div className="font-mono text-xs text-muted-foreground">pool</div>
+              <div className="font-mono text-sm">{data ? `${data.poolSizeXlm.toFixed(2)} XLM` : "--"}</div>
+            </div>
           </div>
-          <div className="text-right">
-            <div className="font-mono text-xs text-muted-foreground">pool</div>
-            <div className="font-mono text-sm">{data ? `${data.poolSizeXlm.toFixed(2)} XLM` : "--"}</div>
-          </div>
-        </div>
-      </Panel>
-    </Link>
+        </Panel>
+      </Link>
+      <div className="absolute top-6 right-6">
+        <WatchButton marketId={NETWORK.marketId} />
+      </div>
+    </div>
   );
 }
