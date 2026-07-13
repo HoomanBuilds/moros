@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { ACCENT, EmptyState, Panel, Tag } from "@/components/app/app-kit";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { getKit, truncate } from "@/lib/wallet";
+import { truncate } from "@/lib/wallet";
+import { useWalletAddress } from "@/lib/wallet-store";
 import { listPositions, updateStatus, type Position } from "@/lib/positions/book";
 import { useMarket } from "@/lib/stellar/use-market";
 import { runRedeem, type RedeemStage } from "@/lib/redeem/flow";
@@ -109,20 +110,14 @@ function RedeemRow({
 }
 
 export function PositionsList() {
-  const [address, setAddress] = useState("");
+  const address = useWalletAddress();
   const [positions, setPositions] = useState<Position[]>([]);
   const { data } = useMarket();
   const resolved = data ? data.outcome !== "LIVE" : false;
 
   useEffect(() => {
-    getKit()
-      .getAddress()
-      .then((r) => {
-        setAddress(r.address);
-        setPositions(listPositions(r.address));
-      })
-      .catch(() => {});
-  }, []);
+    setPositions(address ? listPositions(address) : []);
+  }, [address]);
 
   function handleRedeemed(commitment: string) {
     setPositions((prev) =>

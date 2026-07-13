@@ -1,12 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Panel, Tag } from "@/components/app/app-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { ConnectButton } from "@/components/wallet/connect-button";
 import { useMarket } from "@/lib/stellar/use-market";
-import { getKit } from "@/lib/wallet";
+import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 import { runBet, type BetSide, type BetStage } from "@/lib/bet/flow";
 
 const STAGES: { key: BetStage; label: string }[] = [
@@ -51,9 +50,9 @@ function SideButton({
 
 export function BetPanel() {
   const { data } = useMarket();
+  const address = useWalletAddress();
   const [side, setSide] = useState<BetSide>("1");
   const [amount, setAmount] = useState("10");
-  const [address, setAddress] = useState("");
   const [stage, setStage] = useState<BetStage | null>(null);
   const [error, setError] = useState("");
   const busy = stage !== null && stage !== "done";
@@ -64,9 +63,13 @@ export function BetPanel() {
   const stake = Number(amount);
   const estReturn = prob && prob > 0 && stake > 0 ? stake / prob : null;
 
-  useEffect(() => {
-    getKit().getAddress().then((r) => setAddress(r.address)).catch(() => {});
-  }, []);
+  async function connect() {
+    try {
+      await connectWallet();
+    } catch {
+      return;
+    }
+  }
 
   async function submit() {
     setError("");
@@ -132,10 +135,9 @@ export function BetPanel() {
           This market has resolved. Head to your positions to redeem.
         </p>
       ) : !address ? (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Connect a wallet to place a private bet.</p>
-          <ConnectButton />
-        </div>
+        <Button className="w-full" onClick={connect}>
+          Connect wallet to bet
+        </Button>
       ) : (
         <Button className="w-full" disabled={busy} onClick={submit}>
           {busy && <Spinner />}
