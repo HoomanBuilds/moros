@@ -53,7 +53,7 @@ export function Panel({
 }) {
   return (
     <div
-      className={`relative border border-foreground/10 bg-foreground/[0.02] ${className}`}
+      className={`relative rounded-lg border border-white/[0.08] bg-white/[0.03] ${className}`}
     >
       {children}
     </div>

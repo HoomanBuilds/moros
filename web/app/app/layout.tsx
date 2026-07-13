@@ -1,15 +1,11 @@
 import type { ReactNode } from "react";
-import { Sidebar } from "@/components/app/sidebar";
-import { Topbar } from "@/components/app/topbar";
+import { Navbar } from "@/components/app/navbar";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="relative min-h-screen bg-background text-foreground">
-      <Sidebar />
-      <div className="lg:pl-64">
-        <Topbar />
-        <main className="max-w-[1400px] mx-auto px-6 py-8">{children}</main>
-      </div>
+      <Navbar />
+      <main className="mx-auto max-w-[1500px] px-6 py-8 lg:px-10">{children}</main>
     </div>
   );
 }
