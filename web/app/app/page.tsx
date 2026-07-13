@@ -9,7 +9,7 @@ export default function MarketsPage() {
         title="Markets"
         description="Private prediction markets on Stellar testnet."
       />
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
+      <div className="flex flex-wrap gap-6 mt-8">
         <MarketCard />
       </div>
     </div>
