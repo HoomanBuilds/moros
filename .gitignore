@@ -36,6 +36,7 @@ proofgen/
 # --- Env / secrets / local deploy state ---
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 deployments/*.local.json

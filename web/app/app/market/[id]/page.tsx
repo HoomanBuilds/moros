@@ -4,6 +4,8 @@ import { PageHeader, Panel } from "@/components/app/app-kit";
 import { StatsStrip } from "@/components/markets/stats-strip";
 import { OddsChart } from "@/components/markets/odds-chart";
 import { BetPanel } from "@/components/markets/bet-panel";
+import { Comments } from "@/components/social/comments";
+import { NETWORK } from "@/lib/network";
 
 export default function MarketTerminal() {
   const { data } = useMarket();
@@ -21,6 +23,7 @@ export default function MarketTerminal() {
         </Panel>
         <BetPanel />
       </div>
+      <Comments marketId={NETWORK.marketId} />
     </div>
   );
 }
