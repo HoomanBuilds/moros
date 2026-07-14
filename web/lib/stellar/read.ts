@@ -18,6 +18,6 @@ export async function getClearingPrice(): Promise<bigint> {
   return readContract(NETWORK.poolId, "get_price");
 }
 export async function getPoolBalance(): Promise<bigint> {
-  const arg = nativeToScVal(Address.fromString(NETWORK.marketId), { type: "address" });
+  const arg = nativeToScVal(Address.fromString(NETWORK.poolId), { type: "address" });
   return readContract(NETWORK.xlmSac, "balance", [arg]);
 }
