@@ -5,7 +5,16 @@ const PAIR: Record<string, { binance: string; coinbase: string }> = {
   BTC: { binance: "BTCUSDT", coinbase: "BTC-USD" },
   ETH: { binance: "ETHUSDT", coinbase: "ETH-USD" },
   SOL: { binance: "SOLUSDT", coinbase: "SOL-USD" },
+  BNB: { binance: "BNBUSDT", coinbase: "BNB-USD" },
+  XRP: { binance: "XRPUSDT", coinbase: "XRP-USD" },
+  ADA: { binance: "ADAUSDT", coinbase: "ADA-USD" },
+  AVAX: { binance: "AVAXUSDT", coinbase: "AVAX-USD" },
+  LINK: { binance: "LINKUSDT", coinbase: "LINK-USD" },
+  DOGE: { binance: "DOGEUSDT", coinbase: "DOGE-USD" },
+  DOT: { binance: "DOTUSDT", coinbase: "DOT-USD" },
 };
+
+export const SUPPORTED_ASSETS = ["XLM", "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOGE", "DOT"];
 
 function pairFor(asset: string): { binance: string; coinbase: string } {
   const key = asset.toUpperCase();

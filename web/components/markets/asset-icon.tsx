@@ -5,6 +5,13 @@ const COLORS: Record<string, string> = {
   BTC: "#f7931a",
   ETH: "#8a92b2",
   SOL: "#14f195",
+  BNB: "#f3ba2f",
+  XRP: "#23292f",
+  ADA: "#0033ad",
+  AVAX: "#e84142",
+  LINK: "#2a5ada",
+  DOGE: "#c2a633",
+  DOT: "#e6007a",
 };
 
 const SIZES = { sm: "h-8 w-8 text-[10px]", md: "h-11 w-11 text-xs", lg: "h-14 w-14 text-sm" };
