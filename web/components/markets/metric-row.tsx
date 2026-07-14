@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import { useMarket } from "@/lib/stellar/use-market";
 import { useOrders } from "@/lib/stellar/use-orders";
+import { formatStrike } from "@/lib/stellar/derive";
 import { Panel } from "@/components/app/app-kit";
 
 const YES = "#16c784";
@@ -29,7 +30,7 @@ export function MetricRow() {
       <Metric label="Pool collateral" value={data ? `${data.poolSizeXlm.toFixed(2)}` : "--"} />
       <Metric label="Shielded orders" value={orders ? orders.length : "--"} />
       <Metric label="Settles in" value={data ? data.resolutionLabel : "--"} />
-      <Metric label="Settles at" value={data ? `${data.strike}` : "--"} />
+      <Metric label="Settles at" value={data ? formatStrike(Number(data.strike)) : "--"} />
     </Panel>
   );
 }
