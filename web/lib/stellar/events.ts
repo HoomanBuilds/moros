@@ -17,7 +17,7 @@ function bytesToHex(bytes: Uint8Array): string {
     .join("");
 }
 
-export async function getRecentOrders(limit = 30): Promise<ShieldedOrder[]> {
+export async function getRecentOrders(limit = 30, poolId: string = NETWORK.poolId): Promise<ShieldedOrder[]> {
   const latest = await server.getLatestLedger();
   const startLedger = Math.max(latest.sequence - LEDGER_WINDOW, 1);
   const res = await server.getEvents({
@@ -25,7 +25,7 @@ export async function getRecentOrders(limit = 30): Promise<ShieldedOrder[]> {
     filters: [
       {
         type: "contract",
-        contractIds: [NETWORK.poolId],
+        contractIds: [poolId],
         topics: [[xdr.ScVal.scvSymbol("order_placed").toXDR("base64"), "*"]],
       },
     ],
