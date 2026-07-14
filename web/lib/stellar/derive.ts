@@ -29,13 +29,19 @@ export function formatCountdown(secondsLeft: number): string {
   return `${m}m`;
 }
 
+export function formatStrike(n: number): string {
+  if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (n > 0) return n.toFixed(4);
+  return "0";
+}
+
 export function marketQuestion(info: { asset: string; threshold: bigint; expiry: bigint }): string {
-  const strike = (Number(info.threshold) / 1e14).toFixed(4);
+  const strike = formatStrike(Number(info.threshold) / 1e14);
   return `Will ${info.asset} be at or above ${strike} at settlement?`;
 }
 
 export function marketStrike(info: { asset: string; threshold: bigint; expiry: bigint }): string {
-  return (Number(info.threshold) / 1e14).toFixed(4);
+  return String(Number(info.threshold) / 1e14);
 }
 
 export function formatAgo(ms: number): string {
