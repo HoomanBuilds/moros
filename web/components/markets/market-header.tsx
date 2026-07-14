@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { useMarket } from "@/lib/stellar/use-market";
-import { WatchButton } from "@/components/social/watch-button";
+import { FavoriteStar } from "@/components/markets/favorite-star";
 import { NETWORK } from "@/lib/network";
 
 const YES = "#16c784";
@@ -53,7 +53,7 @@ export function MarketHeader() {
             Contract
             <ExternalLink className="h-3.5 w-3.5" />
           </a>
-          <WatchButton marketId={NETWORK.marketId} />
+          <FavoriteStar id={NETWORK.marketId} />
         </div>
       </div>
 
@@ -61,7 +61,7 @@ export function MarketHeader() {
         <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
           {data ? `${data.asset} · binary market` : "binary market"}
         </span>
-        <h1 className="max-w-3xl font-display text-3xl leading-tight tracking-tight md:text-4xl lg:text-5xl">
+        <h1 className="max-w-3xl font-display text-2xl leading-tight tracking-tight md:text-3xl">
           {data?.question ?? "Loading market"}
         </h1>
         <StatusPill outcome={data?.outcome} settles={data?.resolutionLabel} />
