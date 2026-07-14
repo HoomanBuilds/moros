@@ -10,6 +10,7 @@ const PORT = Number(process.env.PORT || 9711);
 const INDEX = BigInt(process.env.INDEX || 1);
 const TOKEN = process.env.MEMBER_TOKEN || "";
 const TARGET = process.env.ATTEST_TARGET || process.env.MARKET || "";
+const TARGETS = new Set((process.env.ATTEST_TARGETS || TARGET).split(",").map((s) => s.trim()).filter(Boolean));
 const METHOD = process.env.ATTEST_METHOD || "apply_batch_committee";
 const DQ_OFFSET = Number(process.env.ATTEST_DQ_OFFSET || 2);
 const NET_BOUND = Number(process.env.NET_BOUND || 4294967296);
@@ -186,7 +187,7 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && req.url === "/attest") {
       if (!finalShare) return send(res, 409, { error: "dkg not complete" });
-      if (!kp || !TARGET) return send(res, 409, { error: "MEMBER_SK or ATTEST_TARGET not configured" });
+      if (!kp || TARGETS.size === 0) return send(res, 409, { error: "MEMBER_SK or ATTEST_TARGET not configured" });
       const { entryXdr, validUntilLedger, cipherYes, cipherNo, partialsYes, partialsNo, dqyes, dqno } = await body(req);
 
       const allCms = [];
@@ -214,8 +215,9 @@ const server = createServer(async (req, res) => {
         return send(res, 400, { error: "not a contract invocation" });
       }
       const inv = fn.contractFn();
-      if (Address.fromScAddress(inv.contractAddress()).toString() !== TARGET) {
-        return send(res, 400, { error: "entry targets a different contract" });
+      const entryTarget = Address.fromScAddress(inv.contractAddress()).toString();
+      if (!TARGETS.has(entryTarget)) {
+        return send(res, 400, { error: "entry targets a contract not in this member's allowed set" });
       }
       if (inv.functionName().toString() !== METHOD) {
         return send(res, 400, { error: "entry calls a different function" });
@@ -228,7 +230,7 @@ const server = createServer(async (req, res) => {
       if (cred !== kp.publicKey()) return send(res, 400, { error: "entry is not for this member" });
 
       const signed = await authorizeEntry(entry, kp, Number(validUntilLedger), Networks.TESTNET);
-      console.log(`[member ${INDEX}] attested net (${dqyes}, ${dqno}) for ${TARGET}`);
+      console.log(`[member ${INDEX}] attested net (${dqyes}, ${dqno}) for ${entryTarget}`);
       return send(res, 200, { signedEntryXdr: signed.toXDR("base64") });
     }
 
