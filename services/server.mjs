@@ -7,7 +7,7 @@ import { cfg } from "./config.mjs";
 import { relay } from "./relayer.mjs";
 import { addCiphers } from "./committee/jubjub.mjs";
 import { ensureDKG, collectPartials, attestEntry } from "./committee/coordinator.mjs";
-import { submitCommitteeBatch } from "./committee/submit-multisig.mjs";
+import { submitPoolBatch } from "./committee/submit-multisig.mjs";
 import { createIndexer } from "./indexer.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -129,13 +129,14 @@ async function batchPool(pool) {
       dqyes: yes.net.toString(),
       dqno: no.net.toString(),
     };
-    const out = await submitCommitteeBatch({
-      market: pool.marketId,
-      poolId: pool.poolId,
-      dqyes: (yes.net * S).toString(),
-      dqno: (no.net * S).toString(),
-      funderSk: process.env.FUNDER_SK,
+    const nullHashes = window.map((o) => BigInt(o.nullifierHash).toString(16).padStart(64, "0"));
+    const out = await submitPoolBatch({
+      pool: pool.poolId,
+      dqyesFp: (yes.net * S).toString(),
+      dqnoFp: (no.net * S).toString(),
+      nullHashes,
       signerAddrs: Object.keys(memberAddrs).slice(0, THRESHOLD),
+      sourceSk: process.env.FUNDER_SK,
       attest: async ({ address, entryXdr, validUntilLedger }) => {
         const url = memberAddrs[address];
         if (!url) throw new Error(`no member service for signer ${address}`);
@@ -157,7 +158,7 @@ async function runAllWindows() {
   const out = {};
   for (const pool of pools.values()) {
     const r = await batchPool(pool);
-    if (r.batched || r.dryRun) out[pool.poolId] = r;
+    if (r.batched || r.dryRun || r.error) out[pool.poolId] = r;
   }
   return out;
 }
@@ -185,11 +186,21 @@ function readBody(req) {
   });
 }
 
+const CORS = {
+  "access-control-allow-origin": process.env.CORS_ORIGIN || "*",
+  "access-control-allow-headers": "content-type, authorization",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+};
+
 const server = http.createServer(async (req, res) => {
   const send = (code, obj) => {
-    res.writeHead(code, { "content-type": "application/json" });
+    res.writeHead(code, { "content-type": "application/json", ...CORS });
     res.end(JSON.stringify(obj));
   };
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, CORS);
+    return res.end();
+  }
   try {
     if (req.method === "GET" && req.url === "/status") {
       return send(200, {
