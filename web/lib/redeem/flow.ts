@@ -8,15 +8,15 @@ import { proveRedeem } from "@/lib/zk/redeem";
 export type RedeemStage = "preparing" | "proving" | "submitting" | "done";
 
 export async function runRedeem(
-  { position, address, onStage }:
-  { position: { amount: string; side: string; secret: string; nullifier: string; commitment: string }; address: string; onStage: (s: RedeemStage) => void }
+  { position, address, marketId, poolId, onStage }:
+  { position: { amount: string; side: string; secret: string; nullifier: string; commitment: string }; address: string; marketId?: string; poolId?: string; onStage: (s: RedeemStage) => void }
 ) {
   onStage("preparing");
   const { pathIndex, siblings, orderRoot } = await getProof(position.commitment);
-  const outcome = outcomeLabel(await getOutcome());
+  const outcome = outcomeLabel(await getOutcome(marketId));
   if (outcome === "LIVE") throw new Error("market not resolved yet");
   const winningOutcome = outcome === "YES" ? "1" : "0";
-  const priceYes = (await getClearingPrice()).toString();
+  const priceYes = (await getClearingPrice(poolId)).toString();
   const recipient = recipientField(address);
   const input = {
     orderRoot, recipient, winningOutcome, priceYes, fee: "0",
@@ -26,7 +26,7 @@ export async function runRedeem(
   onStage("proving");
   const { proof, publicSignals } = await proveRedeem(input);
   onStage("submitting");
-  const res = await postRedeem({ proof, publicSignals, recipient: address });
+  const res = await postRedeem({ proof, publicSignals, recipient: address, poolId: poolId ?? "" });
   onStage("done");
   return { res };
 }
