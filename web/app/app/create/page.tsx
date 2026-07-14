@@ -13,6 +13,7 @@ import { useAssetPrice } from "@/lib/prices/use-asset-price";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 import { deployShieldedMarket, type DeployStep } from "@/lib/markets/deploy";
 import { addMarket } from "@/lib/markets/registry";
+import { registerPool } from "@/lib/committee/client";
 import { cn } from "@/lib/utils";
 
 const STEPS: { key: DeployStep; label: string }[] = [
@@ -78,6 +79,7 @@ export default function CreatePage() {
         onStep: setStage,
       });
       addMarket({ marketId, poolId, asset, kind: "shielded", createdAt: Date.now() });
+      await registerPool(marketId, poolId);
       setResult({ marketId });
     } catch (e) {
       setError(e instanceof Error ? e.message : "deploy failed");

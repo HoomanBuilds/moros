@@ -4,12 +4,12 @@ import { getKit } from "@/lib/wallet";
 
 const server = new rpc.Server(NETWORK.rpcUrl);
 
-export async function placeOrder(commitmentDec: string, stakeAtomic: bigint): Promise<string> {
+export async function placeOrder(commitmentDec: string, stakeAtomic: bigint, poolId: string = NETWORK.poolId): Promise<string> {
   const kit = getKit();
   const { address } = await kit.getAddress();
   const account = await server.getAccount(address);
   const commitmentBytes = Buffer.from(BigInt(commitmentDec).toString(16).padStart(64, "0"), "hex");
-  const contract = new Contract(NETWORK.poolId);
+  const contract = new Contract(poolId);
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: NETWORK.passphrase })
     .addOperation(contract.call(
       "place_order",

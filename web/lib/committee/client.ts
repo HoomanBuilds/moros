@@ -12,7 +12,7 @@ export async function getProof(commitment: string): Promise<{ pathIndex: string;
   return r.json();
 }
 
-export async function postOrder(body: { proof: unknown; publicSignals: string[] }, token?: string): Promise<void> {
+export async function postOrder(body: { proof: unknown; publicSignals: string[]; poolId: string }, token?: string): Promise<void> {
   const r = await fetch(`${COMMITTEE_URL}/order`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
@@ -21,12 +21,25 @@ export async function postOrder(body: { proof: unknown; publicSignals: string[] 
   if (!r.ok) throw new Error(`committee rejected order: ${await r.text()}`);
 }
 
-export async function postRedeem(body: { proof: unknown; publicSignals: string[]; recipient: string }): Promise<unknown> {
+export async function postRedeem(body: { proof: unknown; publicSignals: string[]; recipient: string; poolId: string }): Promise<unknown> {
   const r = await fetch(`${COMMITTEE_URL}/redeem`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ proof: body.proof, public: body.publicSignals, recipient: body.recipient }),
+    body: JSON.stringify({ proof: body.proof, public: body.publicSignals, recipient: body.recipient, poolId: body.poolId }),
   });
   if (!r.ok) throw new Error(`committee rejected redeem: ${await r.text()}`);
   return r.json();
+}
+
+export async function registerPool(marketId: string, poolId: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${COMMITTEE_URL}/register-pool`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ marketId, poolId }),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }

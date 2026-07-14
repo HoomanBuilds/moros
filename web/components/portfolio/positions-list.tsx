@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { truncate } from "@/lib/wallet";
 import { useWalletAddress } from "@/lib/wallet-store";
 import { listPositions, updateStatus, type Position } from "@/lib/positions/book";
+import { findMarket } from "@/lib/markets/registry";
 import { useMarket } from "@/lib/stellar/use-market";
 import { runRedeem, type RedeemStage } from "@/lib/redeem/flow";
 import { NETWORK } from "@/lib/network";
@@ -52,7 +53,8 @@ function RedeemRow({
     setError("");
     setStage(null);
     try {
-      await runRedeem({ position, address, onStage: setStage });
+      const entry = findMarket(position.market);
+      await runRedeem({ position, address, marketId: position.market, poolId: entry?.poolId, onStage: setStage });
       updateStatus(address, position.commitment, "redeemed");
       onRedeemed(position.commitment);
     } catch (e) {
