@@ -3,6 +3,7 @@ import { ExternalLink } from "lucide-react";
 import { useOrders } from "@/lib/stellar/use-orders";
 import { formatAgo } from "@/lib/stellar/derive";
 import { Panel } from "@/components/app/app-kit";
+import { useActiveMarket } from "@/lib/markets/market-context";
 import { NETWORK } from "@/lib/network";
 
 function shortHash(hex: string): string {
@@ -12,6 +13,7 @@ function shortHash(hex: string): string {
 
 export function ActivityFeed() {
   const { data: orders, isLoading, isError } = useOrders();
+  const { poolId } = useActiveMarket();
 
   return (
     <Panel className="p-6 space-y-5">
@@ -35,7 +37,7 @@ export function ActivityFeed() {
           {orders.map((o) => (
             <a
               key={o.index}
-              href={NETWORK.explorer(NETWORK.poolId)}
+              href={NETWORK.explorer(poolId)}
               target="_blank"
               rel="noreferrer"
               className="group flex items-center justify-between gap-4 py-3 transition-colors hover:bg-foreground/[0.03]"

@@ -5,7 +5,7 @@ import { ActivityFeed } from "./activity-feed";
 import { AboutPanel } from "./about-panel";
 import { PositionsList } from "@/components/portfolio/positions-list";
 import { Comments } from "@/components/social/comments";
-import { NETWORK } from "@/lib/network";
+import { useActiveMarket } from "@/lib/markets/market-context";
 import { cn } from "@/lib/utils";
 
 type TabKey = "activity" | "positions" | "about" | "comments";
@@ -13,6 +13,7 @@ type TabKey = "activity" | "positions" | "about" | "comments";
 export function MarketTabs() {
   const [tab, setTab] = useState<TabKey>("activity");
   const { data: orders } = useOrders();
+  const { marketId } = useActiveMarket();
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: "activity", label: `Activity${orders ? ` (${orders.length})` : ""}` },
@@ -44,7 +45,7 @@ export function MarketTabs() {
       {tab === "activity" && <ActivityFeed />}
       {tab === "positions" && <PositionsList />}
       {tab === "about" && <AboutPanel />}
-      {tab === "comments" && <Comments marketId={NETWORK.marketId} />}
+      {tab === "comments" && <Comments marketId={marketId} />}
     </div>
   );
 }
