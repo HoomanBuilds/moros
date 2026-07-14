@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { useMarket } from "@/lib/stellar/use-market";
 import { FavoriteStar } from "@/components/markets/favorite-star";
+import { useActiveMarket } from "@/lib/markets/market-context";
 import { NETWORK } from "@/lib/network";
 
 const YES = "#16c784";
@@ -33,6 +34,7 @@ function StatusPill({ outcome, settles }: { outcome?: string; settles?: string }
 
 export function MarketHeader() {
   const { data } = useMarket();
+  const { marketId } = useActiveMarket();
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -45,7 +47,7 @@ export function MarketHeader() {
         </Link>
         <div className="flex items-center gap-4">
           <a
-            href={NETWORK.explorer(NETWORK.marketId)}
+            href={NETWORK.explorer(marketId)}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -53,7 +55,7 @@ export function MarketHeader() {
             Contract
             <ExternalLink className="h-3.5 w-3.5" />
           </a>
-          <FavoriteStar id={NETWORK.marketId} />
+          <FavoriteStar id={marketId} />
         </div>
       </div>
 

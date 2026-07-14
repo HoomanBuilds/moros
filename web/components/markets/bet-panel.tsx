@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useMarket } from "@/lib/stellar/use-market";
+import { useActiveMarket } from "@/lib/markets/market-context";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
+import { NETWORK } from "@/lib/network";
 import { runBet, type BetSide, type BetStage } from "@/lib/bet/flow";
 
 const STAGES: { key: BetStage; label: string }[] = [
@@ -50,6 +52,8 @@ function SideButton({
 
 export function BetPanel() {
   const { data } = useMarket();
+  const { marketId } = useActiveMarket();
+  const isFlagship = marketId === NETWORK.marketId;
   const address = useWalletAddress();
   const [side, setSide] = useState<BetSide>("1");
   const [amount, setAmount] = useState("10");
@@ -130,7 +134,11 @@ export function BetPanel() {
         </div>
       </div>
 
-      {resolved ? (
+      {!isFlagship ? (
+        <p className="text-sm text-muted-foreground">
+          This shielded market is deployed and live. Private betting activates once a committee node indexes its pool.
+        </p>
+      ) : resolved ? (
         <p className="text-sm text-muted-foreground">
           This market has resolved. Head to your positions to redeem.
         </p>

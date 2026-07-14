@@ -4,6 +4,7 @@ import { ExternalLink } from "lucide-react";
 import { useMarket } from "@/lib/stellar/use-market";
 import { Panel } from "@/components/app/app-kit";
 import { truncate } from "@/lib/wallet";
+import { useActiveMarket } from "@/lib/markets/market-context";
 import { NETWORK } from "@/lib/network";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -31,6 +32,7 @@ function ContractLink({ id }: { id: string }) {
 
 export function AboutPanel() {
   const { data } = useMarket();
+  const { marketId, poolId } = useActiveMarket();
   const asset = data?.asset ?? "the asset";
   const strike = data?.strike ?? "--";
 
@@ -59,8 +61,8 @@ export function AboutPanel() {
         <Row label="Settlement">{data ? data.resolutionLabel : "--"}</Row>
         <Row label="Pool collateral">{data ? `${data.poolSizeXlm.toFixed(2)} XLM` : "--"}</Row>
         <Row label="Privacy">Groth16 · BLS12-381 · t-of-n committee</Row>
-        <Row label="Market contract"><ContractLink id={NETWORK.marketId} /></Row>
-        <Row label="Shielded pool"><ContractLink id={NETWORK.poolId} /></Row>
+        <Row label="Market contract"><ContractLink id={marketId} /></Row>
+        <Row label="Shielded pool"><ContractLink id={poolId} /></Row>
       </div>
     </Panel>
   );
