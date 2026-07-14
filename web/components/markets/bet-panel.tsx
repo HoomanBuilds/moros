@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import { Panel, Tag } from "@/components/app/app-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,6 +85,12 @@ export function BetPanel() {
     }
   }
 
+  function reset() {
+    setStage(null);
+    setError("");
+    setAmount("10");
+  }
+
   const activeIndex = stage ? STAGES.findIndex((s) => s.key === stage) : -1;
 
   return (
@@ -125,10 +132,22 @@ export function BetPanel() {
           value={amount}
           disabled={busy || resolved}
           onChange={(e) => setAmount(e.target.value)}
+          className="h-11 border-white/15 bg-white/[0.04] text-base focus-visible:border-white/30"
         />
-        <div className="flex items-center justify-between pt-1 font-mono text-xs text-muted-foreground">
-          <span>Est. return if {side === "1" ? "YES" : "NO"} wins</span>
-          <span className="text-foreground">{estReturn ? `~${estReturn.toFixed(2)} XLM` : "--"}</span>
+        <div className="space-y-1.5 pt-1 font-mono text-xs text-muted-foreground">
+          <div className="flex items-center justify-between">
+            <span>Shares (est.)</span>
+            <span className="text-foreground">
+              {estReturn ? `≈ ${estReturn.toFixed(2)} ${side === "1" ? "YES" : "NO"}` : "--"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>Max payout if {side === "1" ? "YES" : "NO"} wins</span>
+            <span className="text-foreground">{estReturn ? `~${estReturn.toFixed(2)} XLM` : "--"}</span>
+          </div>
+          <p className="text-[10px] leading-snug text-muted-foreground/70">
+            Each share redeems for 1 XLM if it wins. Final count is set at the batch clearing price.
+          </p>
         </div>
       </div>
 
@@ -136,6 +155,17 @@ export function BetPanel() {
         <p className="text-sm text-muted-foreground">
           This market has resolved. Head to your positions to redeem.
         </p>
+      ) : stage === "done" ? (
+        <div className="space-y-3 rounded-md border p-4" style={{ borderColor: `${YES}44`, backgroundColor: `${YES}0f` }}>
+          <div className="flex items-center gap-2 text-sm font-medium" style={{ color: YES }}>
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            Position placed privately
+          </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Your side and size are hidden on-chain. Track it under Portfolio and redeem once the market resolves.
+          </p>
+          <Button className="w-full" onClick={reset}>Place another bet</Button>
+        </div>
       ) : !address ? (
         <Button className="w-full" onClick={connect}>
           Connect wallet to bet
@@ -147,7 +177,7 @@ export function BetPanel() {
         </Button>
       )}
 
-      {stage && (
+      {busy && stage && (
         <div className="space-y-2 border-t border-foreground/10 pt-4">
           {STAGES.map((s, i) => (
             <div key={s.key} className="flex items-center gap-3 text-sm">
