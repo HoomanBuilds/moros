@@ -39,7 +39,7 @@ export function MobileNav() {
       <div className="absolute inset-y-0 left-0 w-72 max-w-[80vw] bg-background border-r border-foreground/10 shadow-2xl flex flex-col">
         <div className="flex items-center justify-between h-16 px-6 border-b border-foreground/10">
           <span className="flex items-center gap-2">
-            <span className="font-display text-2xl tracking-tight text-foreground">Umbra</span>
+            <span className="font-display text-2xl tracking-tight text-foreground">Moros</span>
             <span className="font-mono text-[10px] mt-1 text-muted-foreground">TM</span>
           </span>
           <button

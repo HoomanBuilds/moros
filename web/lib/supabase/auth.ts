@@ -3,7 +3,7 @@
 import { getKit } from "@/lib/wallet";
 import { getBrowserClient } from "./client";
 
-const MESSAGE_PREFIX = "Sign in to Umbra social - ";
+const MESSAGE_PREFIX = "Sign in to Moros social - ";
 
 async function resolveAddress(kit: ReturnType<typeof getKit>): Promise<string> {
   try {

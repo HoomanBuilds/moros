@@ -18,7 +18,7 @@ export function Navbar() {
           <div className="flex items-center gap-2">
             <MobileNav />
             <Link href="/" className="flex items-center gap-2">
-              <span className="font-display text-2xl tracking-tight text-foreground">Umbra</span>
+              <span className="font-display text-2xl tracking-tight text-foreground">Moros</span>
               <span className="mt-1 font-mono text-[10px] text-muted-foreground">TM</span>
             </Link>
           </div>

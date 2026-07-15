@@ -3,7 +3,7 @@ import { Keypair } from "@stellar/stellar-sdk";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-const MESSAGE_PREFIX = "Sign in to Umbra social - ";
+const MESSAGE_PREFIX = "Sign in to Moros social - ";
 const MAX_MESSAGE_AGE_MS = 5 * 60 * 1000;
 
 function walletEmail(address: string): string {

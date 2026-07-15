@@ -11,7 +11,7 @@ export function Topbar() {
         <div className="flex items-center gap-2">
           <MobileNav />
           <Link href="/" className="flex items-center gap-2 lg:hidden">
-            <span className="font-display text-xl tracking-tight text-foreground">Umbra</span>
+            <span className="font-display text-xl tracking-tight text-foreground">Moros</span>
             <span className="font-mono text-[10px] mt-0.5 text-muted-foreground">TM</span>
           </Link>
         </div>

@@ -7,7 +7,7 @@ export default function MarketsPage() {
   return (
     <div className="space-y-12">
       <PageHeader
-        label="Umbra"
+        label="Moros"
         title="Markets"
         description="Private prediction markets on Stellar testnet."
       />

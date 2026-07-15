@@ -11,7 +11,7 @@ export function Sidebar() {
   return (
     <aside className="hidden lg:flex fixed inset-y-0 left-0 z-40 w-64 flex-col border-r border-foreground/10 bg-background">
       <Link href="/" className="flex items-center gap-2 h-16 px-6 border-b border-foreground/10">
-        <span className="font-display text-2xl tracking-tight text-foreground">Umbra</span>
+        <span className="font-display text-2xl tracking-tight text-foreground">Moros</span>
         <span className="font-mono text-[10px] mt-1 text-muted-foreground">TM</span>
       </Link>
 

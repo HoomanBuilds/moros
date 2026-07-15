@@ -69,7 +69,7 @@ export default function ProfilePage() {
   return (
     <div>
       <PageHeader
-        label="Umbra"
+        label="Moros"
         title="Profile"
         description="Your public display name and avatar - separate from your private bets."
       />
