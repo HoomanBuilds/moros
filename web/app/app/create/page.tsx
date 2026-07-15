@@ -12,7 +12,8 @@ import { SUPPORTED_ASSETS } from "@/lib/prices/asset-price";
 import { useAssetPrice } from "@/lib/prices/use-asset-price";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 import { deployShieldedMarket, type DeployStep } from "@/lib/markets/deploy";
-import { addMarket } from "@/lib/markets/registry";
+import { addMarket, refreshMarkets } from "@/lib/markets/registry";
+import { saveMarketToRegistry } from "@/lib/supabase/markets-meta";
 import { registerPool } from "@/lib/committee/client";
 import { cn } from "@/lib/utils";
 
@@ -80,6 +81,12 @@ export default function CreatePage() {
       });
       addMarket({ marketId, poolId, asset, kind: "shielded", createdAt: Date.now() });
       await registerPool(marketId, poolId);
+      try {
+        await saveMarketToRegistry({ marketId, poolId, asset, creator: address, title: question, category: "Crypto price" });
+        await refreshMarkets();
+      } catch {
+        setError("Market is live but could not be listed for others. It is saved locally.");
+      }
       setResult({ marketId });
     } catch (e) {
       setError(e instanceof Error ? e.message : "deploy failed");

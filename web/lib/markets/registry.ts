@@ -1,15 +1,10 @@
 "use client";
 import { useSyncExternalStore } from "react";
 import { NETWORK } from "@/lib/network";
+import { fetchMarketRegistry } from "@/lib/supabase/markets-meta";
+import { dedupeMarkets, type MarketEntry } from "./dedupe";
 
-export type MarketEntry = {
-  marketId: string;
-  poolId: string;
-  asset: string;
-  kind: "shielded";
-  flagship?: boolean;
-  createdAt?: number;
-};
+export { dedupeMarkets, type MarketEntry };
 
 const SEEDS: MarketEntry[] = [
   {
@@ -28,25 +23,30 @@ const SEEDS: MarketEntry[] = [
 ];
 
 const KEY = "umbra.markets.v1";
-let created: MarketEntry[] | null = null;
+let localCreated: MarketEntry[] | null = null;
+let remote: MarketEntry[] = [];
 const listeners = new Set<() => void>();
 
-function load(): MarketEntry[] {
-  if (created) return created;
-  if (typeof localStorage === "undefined") {
-    created = [];
-    return created;
+function loadLocal(): MarketEntry[] {
+  if (localCreated) return localCreated;
+  let list: MarketEntry[] = [];
+  if (typeof localStorage !== "undefined") {
+    try {
+      list = JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    } catch {
+      list = [];
+    }
   }
-  try {
-    created = JSON.parse(localStorage.getItem(KEY) ?? "[]");
-  } catch {
-    created = [];
-  }
-  return created;
+  localCreated = list;
+  return list;
 }
 
 function persist() {
-  if (typeof localStorage !== "undefined" && created) localStorage.setItem(KEY, JSON.stringify(created));
+  if (typeof localStorage !== "undefined" && localCreated) localStorage.setItem(KEY, JSON.stringify(localCreated));
+}
+
+function build(): MarketEntry[] {
+  return dedupeMarkets([...SEEDS, ...remote, ...(localCreated ?? [])]);
 }
 
 function emit() {
@@ -54,7 +54,10 @@ function emit() {
 }
 
 let snapshot: MarketEntry[] = [...SEEDS];
-if (typeof window !== "undefined") snapshot = [...SEEDS, ...load()];
+if (typeof window !== "undefined") {
+  loadLocal();
+  snapshot = build();
+}
 
 function subscribe(cb: () => void): () => void {
   listeners.add(cb);
@@ -76,9 +79,27 @@ export function findMarket(marketId: string): MarketEntry | undefined {
 }
 
 export function addMarket(entry: MarketEntry) {
-  const c = load();
-  c.unshift(entry);
+  const c = loadLocal();
+  if (!c.some((m) => m.marketId === entry.marketId)) c.unshift(entry);
   persist();
-  snapshot = [...SEEDS, ...c];
+  snapshot = build();
   emit();
 }
+
+export async function refreshMarkets(): Promise<void> {
+  try {
+    remote = (await fetchMarketRegistry()).map((r) => ({
+      marketId: r.marketId,
+      poolId: r.poolId,
+      asset: r.asset || "?",
+      kind: "shielded" as const,
+      createdAt: r.createdAt,
+    }));
+    snapshot = build();
+    emit();
+  } catch {
+    return;
+  }
+}
+
+if (typeof window !== "undefined") refreshMarkets();
