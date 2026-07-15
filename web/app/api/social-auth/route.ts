@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { Keypair } from "@stellar/stellar-sdk";
+import { verifyWalletSignature } from "@/lib/social/verify";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
@@ -38,16 +38,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "stale message" }, { status: 401 });
   }
 
-  let verified = false;
-  try {
-    verified = Keypair.fromPublicKey(address).verify(
-      Buffer.from(message),
-      Buffer.from(signatureBase64, "base64"),
-    );
-  } catch {
-    verified = false;
-  }
-  if (!verified) {
+  if (!verifyWalletSignature(address, message, signatureBase64)) {
     return Response.json({ error: "invalid signature" }, { status: 401 });
   }
 
