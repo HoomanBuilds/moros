@@ -6,10 +6,22 @@ export async function getPk(): Promise<string[]> {
   return (await r.json()).pk;
 }
 
-export async function getProof(commitment: string): Promise<{ pathIndex: string; siblings: string[]; orderRoot: string }> {
-  const r = await fetch(`${COMMITTEE_URL}/proof/${commitment}`);
-  if (!r.ok) throw new Error("membership proof not ready");
-  return r.json();
+export async function getProof(
+  commitment: string,
+  opts: { attempts?: number; delayMs?: number } = {},
+): Promise<{ pathIndex: string; siblings: string[]; orderRoot: string }> {
+  const attempts = opts.attempts ?? 24;
+  const delayMs = opts.delayMs ?? 2500;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const r = await fetch(`${COMMITTEE_URL}/proof/${commitment}`);
+      if (r.ok) return r.json();
+    } catch {
+      // network blip - fall through to retry
+    }
+    if (i < attempts - 1) await new Promise((res) => setTimeout(res, delayMs));
+  }
+  throw new Error("membership proof not ready - the committee indexer has not seen this order yet");
 }
 
 export async function postOrder(body: { proof: unknown; publicSignals: string[]; poolId: string }, token?: string): Promise<void> {
