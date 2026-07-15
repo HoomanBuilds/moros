@@ -22,7 +22,12 @@ export async function runBet(
   { side, amount, address, marketId = NETWORK.marketId, poolId = NETWORK.poolId, onStage }:
   { side: BetSide; amount: string; address: string; marketId?: string; poolId?: string; onStage: (s: BetStage) => void }
 ) {
-  await registerPool(marketId, poolId);
+  const registered = await registerPool(marketId, poolId);
+  const pk = await getPk();
+  if (!registered) {
+    throw new Error("committee could not register this market - it may be offline; nothing was placed");
+  }
+
   const secret = rand();
   const nullifier = rand();
   onStage("hashing");
@@ -32,7 +37,6 @@ export async function runBet(
   const txHash = await placeOrder(commitment, stake, poolId);
   addPosition({ address, market: marketId, side, amount, secret, nullifier, commitment, txHash, status: "placed" });
   onStage("proving");
-  const pk = await getPk();
   const { pathIndex, siblings, orderRoot } = await getProof(commitment);
   const input = { orderRoot, amount, side, secret, nullifier, ryes: rand(), rno: rand(), pk, pathIndex, siblings };
   const { proof, publicSignals } = await proveEncryptOrder(input);
