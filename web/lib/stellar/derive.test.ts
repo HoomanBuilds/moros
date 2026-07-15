@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { probFromFixed, fixedToNumber, formatCountdown, outcomeLabel, marketQuestion } from "./derive.ts";
+import { probFromFixed, fixedToNumber, formatCountdown, outcomeLabel, marketQuestion, centsLabel } from "./derive.ts";
 
 const SCALE = 4294967296n;
 assert.equal(Math.round(probFromFixed(SCALE / 2n) * 100), 50);
@@ -13,4 +13,10 @@ assert.equal(outcomeLabel(["No"]), "NO");
 assert.equal(formatCountdown(0), "resolved");
 assert.ok(formatCountdown(90000).includes("d"));
 assert.ok(marketQuestion({ asset: "XLM", threshold: 25000000000000n, expiry: 2000000000n }).length > 0);
+assert.equal(centsLabel(0.998), ">99c");
+assert.equal(centsLabel(0.002), "<1c");
+assert.equal(centsLabel(0.5), "50c");
+assert.equal(centsLabel(0), "0c");
+assert.equal(centsLabel(1), "100c");
+assert.equal(centsLabel(null), "--");
 console.log("derive ok");

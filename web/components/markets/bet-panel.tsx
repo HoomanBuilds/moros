@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useMarket } from "@/lib/stellar/use-market";
+import { centsLabel } from "@/lib/stellar/derive";
 import { useActiveMarket } from "@/lib/markets/market-context";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 import { runBet, type BetSide, type BetStage } from "@/lib/bet/flow";
@@ -61,7 +62,6 @@ export function BetPanel() {
   const busy = stage !== null && stage !== "done";
   const resolved = data ? data.outcome !== "LIVE" : false;
 
-  const yesCents = data ? Math.round(data.probYes * 100) : null;
   const prob = side === "1" ? data?.probYes ?? null : data ? 1 - data.probYes : null;
   const stake = Number(amount);
   const estReturn = prob && prob > 0 && stake > 0 ? stake / prob : null;
@@ -107,7 +107,7 @@ export function BetPanel() {
           active={side === "1"}
           disabled={busy || resolved}
           label="Yes"
-          price={yesCents === null ? "--" : `${yesCents}c`}
+          price={centsLabel(data ? data.probYes : null)}
           color={YES}
           onClick={() => setSide("1")}
         />
@@ -115,7 +115,7 @@ export function BetPanel() {
           active={side === "0"}
           disabled={busy || resolved}
           label="No"
-          price={yesCents === null ? "--" : `${100 - yesCents}c`}
+          price={centsLabel(data ? 1 - data.probYes : null)}
           color={NO}
           onClick={() => setSide("0")}
         />

@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { useMarket } from "@/lib/stellar/use-market";
 import { useOrders } from "@/lib/stellar/use-orders";
-import { formatStrike } from "@/lib/stellar/derive";
+import { formatStrike, centsLabel } from "@/lib/stellar/derive";
 import { Panel } from "@/components/app/app-kit";
 
 const YES = "#16c784";
@@ -22,11 +22,11 @@ function Metric({ label, value, color }: { label: string; value: ReactNode; colo
 export function MetricRow() {
   const { data } = useMarket();
   const { data: orders } = useOrders();
-  const yes = data ? Math.round(data.probYes * 100) : null;
+  const py = data ? data.probYes : null;
   return (
     <Panel className="grid grid-cols-2 divide-x divide-y divide-foreground/10 sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
-      <Metric label="Yes price" value={yes === null ? "--" : `${yes}c`} color={YES} />
-      <Metric label="No price" value={yes === null ? "--" : `${100 - yes}c`} color={NO} />
+      <Metric label="Yes price" value={centsLabel(py)} color={YES} />
+      <Metric label="No price" value={centsLabel(py === null ? null : 1 - py)} color={NO} />
       <Metric label="Pool collateral" value={data ? `${data.poolSizeXlm.toFixed(2)}` : "--"} />
       <Metric label="Shielded orders" value={orders ? orders.length : "--"} />
       <Metric label="Settles in" value={data ? data.resolutionLabel : "--"} />

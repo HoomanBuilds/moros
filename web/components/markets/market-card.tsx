@@ -5,6 +5,7 @@ import { Panel, Tag } from "@/components/app/app-kit";
 import { ProbabilityBar } from "@/components/markets/probability-bar";
 import { FavoriteStar } from "@/components/markets/favorite-star";
 import { getMarketMeta, type MarketMeta } from "@/lib/supabase/markets-meta";
+import { centsLabel } from "@/lib/stellar/derive";
 import type { MarketRow } from "@/lib/markets/catalog";
 
 export function MarketCard({ row }: { row: MarketRow }) {
@@ -29,7 +30,7 @@ export function MarketCard({ row }: { row: MarketRow }) {
           <div className="flex items-end justify-between border-t border-white/[0.08] pt-5">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Yes</div>
-              <div className="font-display text-4xl text-[#16c784]">{row.yesCents === null ? "--" : `${row.yesCents}c`}</div>
+              <div className="font-display text-4xl text-[#16c784]">{centsLabel(row.probYes)}</div>
             </div>
             <div className="text-right font-mono text-xs text-muted-foreground">
               <div>{row.orders} shielded</div>

@@ -8,6 +8,16 @@ export function probFromFixed(fp: bigint): number {
   return Number(fp) / SCALE;
 }
 
+export function centsLabel(prob: number | null): string {
+  if (prob === null || !Number.isFinite(prob)) return "--";
+  const c = prob * 100;
+  if (c <= 0) return "0c";
+  if (c < 1) return "<1c";
+  if (c >= 100) return "100c";
+  if (c > 99) return ">99c";
+  return `${Math.round(c)}c`;
+}
+
 export function outcomeLabel(o: unknown): "YES" | "NO" | "LIVE" {
   if (o === null || o === undefined) return "LIVE";
   let s: string | undefined;
