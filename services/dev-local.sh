@@ -38,7 +38,7 @@ echo "[dev] members healthy"
 echo "[dev] starting committee intake server (open, indexes flagship + registered pools)"
 SERVICE_TOKEN= POOL_ID="$FLAGSHIP_POOL" MARKET="$FLAGSHIP_MARKET" \
   MEMBERS="$MEMBERS" MEMBER_TOKEN="$MEMBER_TOKEN" THRESHOLD=2 \
-  BATCH_N=2 WINDOW_MS=15000 CORS_ORIGIN="*" PORT=8787 \
+  BATCH_N=2 WINDOW_MS=5000 CORS_ORIGIN="*" PORT=8787 \
   nohup node "$here/server.mjs" > "$log/server.log" 2>&1 &
 
 echo "[dev] waiting for committee DKG + /pk (can take ~20-40s)"
