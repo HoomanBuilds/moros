@@ -51,3 +51,6 @@ circuits/build/
 # --- Web ZK artifacts (wasm tracked, zkey too large to track) ---
 !web/public/zk/*.wasm
 web/public/zk/*.zkey
+
+# committee runtime state (registered pools)
+services/pools.json
