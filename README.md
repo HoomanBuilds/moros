@@ -5,7 +5,7 @@
 <h1 align="center">Moros</h1>
 
 <p align="center">
-  <b>Bet on anything. Nobody sees your side, your size, or your payout. Zero-knowledge prediction markets on Stellar.</b>
+  <b>Bet on anything. Your side, your position, and your payout stay private. Zero-knowledge prediction markets on Stellar.</b>
 </p>
 
 > Pick YES or NO on a real-world question, stake XLM, and your position becomes a zero-knowledge commitment. Your side and size are encrypted, the price only ever moves on the net of a whole batch of orders, and winners redeem without any link back to the wallet that bet. A threshold committee can decrypt the aggregate of a batch but never a single order. Anyone can spin up a new market straight from their wallet.
@@ -68,12 +68,12 @@ The design leans on batching for exactly this reason. A single-order "batch" wou
 
 ### Creating a Market
 
-A market is two contracts. From `/app/create` you pick an underlying asset, a strike price, and an expiry; the browser then signs a short sequence of transactions that deploy an `lmsr-market` instance (with the asset, threshold, LMSR liquidity `b`, and expiry baked into its constructor), deploy a paired `privacy_pools` instance (carrying the circuit verifying keys), and wire them together (`set_batcher`, `set_committee`, `set_redeem_v2_vk`). The new pool then registers itself with the committee so it starts being indexed and settled. Deploying the full shielded stack takes a few wallet signatures because Soroban executes one contract call per transaction. A factory contract to collapse it into a single click is a planned improvement.
+A market is two contracts. From `/app/create` you pick an underlying asset (one of the assets the Reflector oracle prices), a strike price, and an expiry; the browser then signs a short sequence of transactions that deploy an `lmsr-market` instance (with the asset, threshold, LMSR liquidity `b`, and expiry baked into its constructor), deploy a paired `privacy_pools` instance (carrying the circuit verifying keys), and wire them together (`set_batcher`, `set_committee`, `set_redeem_v2_vk`, and `set_resolver`, which points the market at the Reflector-oracle resolver so it settles itself at expiry with no admin deciding the outcome). The new pool then registers itself with the committee so it starts being indexed and settled. Deploying the full shielded stack takes a few wallet signatures because Soroban executes one contract call per transaction. A factory contract to collapse it into a single click is a planned improvement.
 
 ### Placing a Private Bet
 
 1. **Commit.** The browser hashes your `{amount, side, secret, nullifier}` into a Poseidon255 commitment (`order_commit` circuit).
-2. **Place on-chain.** `place_order` deposits your stake into the shielded pool and inserts the commitment into an incremental Merkle order tree. The chain now holds an opaque leaf and some XLM, and nothing about your side or size.
+2. **Place on-chain.** `place_order` deposits your stake into the shielded pool and inserts the commitment into an incremental Merkle order tree. The chain now holds an opaque commitment leaf and your staked XLM, but **not which side you took**: no observer can tell whether that stake is a YES or a NO. Your individual size is never revealed to the committee either, which only ever decrypts the net of a whole batch.
 3. **Prove privately (in your browser).** The `encrypt_order` circuit proves your commitment is a real member of the on-chain order tree at its root, and binds an ElGamal ciphertext of your YES/NO amounts to the committee's public key. This is a Groth16 proof over BLS12-381 (~30k constraints), and it is the slow step, on the order of a minute or two.
 4. **Submit.** The ciphertext and proof go to the committee's intake, which verifies the encryption-validity proof and queues the order. The chain never sees the plaintext; the committee holds only ciphertext.
 
@@ -85,7 +85,7 @@ The committee runs a batching window. When it has a batch of queued orders it **
 
 ### Resolution and Private Redeem
 
-At expiry the market resolves its outcome from the on-chain oracle (YES if the asset is at or above the strike). To claim, a winner runs the `order_redeem_v2` circuit in the browser: it proves ownership of a winning position and its clearing-price payout, and burns a nullifier so it cannot be double-spent, all bound to a recipient address derived inside the proof. A relayer submits that proof on-chain, and the pool pays the recipient. Because the recipient is fixed by the proof, **no signature ties the payout to the wallet that bet**, so the winner's identity stays private end to end.
+At expiry the market resolves itself from the **Reflector** price oracle (YES if the asset is at or above the strike). Markets created from the app are wired to a `resolver` contract at deploy time, and a keeper (`services/resolve-keeper.mjs`) watches for expired markets and calls it, so the outcome is oracle-set with no admin deciding it. To claim, a winner runs the `order_redeem_v2` circuit in the browser: it proves ownership of a winning position and its clearing-price payout, and burns a nullifier so it cannot be double-spent, all bound to a recipient address derived inside the proof. A relayer submits that proof on-chain, and the pool pays the recipient. Because the recipient is fixed by the proof, **no signature ties the payout to the wallet that bet**, so the winner's identity stays private end to end.
 
 ### The Contracts
 
@@ -93,7 +93,7 @@ Rust workspace in `contracts/`, built to `wasm32v1-none` with the Stellar CLI:
 
 - **`lmsr-market`**: the binary LMSR market maker. Holds `(qYes, qNo, b)`, exposes `price_yes`, `get_state`, `market_info`, direct `buy`/`sell`, `fund`, `resolve`, and `apply_batch_committee` (the entry the committee's batch is applied through). Its constructor fixes the asset, threshold, expiry, and liquidity.
 - **`privacy_pools` (shielded-pool)**: the privacy layer. `place_order` (commitment plus staked collateral into an incremental Merkle tree), `deposit`/`withdraw`, `submit_batch_committee` (threshold-multisig-gated net application), `redeem_order_v2` (verifies a redeem proof and pays a proof-bound recipient), plus `set_committee`, `set_batcher`, and the verifying-key setters. Uses a lean incremental Merkle tree (`libs/lean-imt`) and an in-contract Groth16 / BLS12-381 verifier (`libs/zk`).
-- **`resolver`**: oracle-driven outcome resolution.
+- **`resolver`**: oracle-driven outcome resolution. Reads a market's asset/threshold/expiry, pulls the price from the **Reflector** CEX/DEX oracle at expiry, and settles YES/NO on-chain. Created markets are wired to it (`set_resolver`) so no admin decides the outcome; the `services/resolve-keeper.mjs` keeper auto-triggers it once a market expires.
 
 ### The Circuits
 
@@ -144,10 +144,19 @@ Everything runs on **Stellar testnet**. Explorer: https://stellar.expert/explore
 
 | WASM | Hash |
 | ---- | ---- |
-| `lmsr_market` | `4d938d18a2e4db3561fa5547c9d9910158fc4fe23514c9beab70df45e738be2b` |
+| `lmsr_market` (with `set_resolver`) | `31ee0533ab43101b0495e7c45086d3a608e0ab7302e09e8685db3650f5791dbd` |
 | `privacy_pools` | `c92565b46904b6aa79bbadbb49c66d0b37367a5e39b97eebbff5be0dd81a3655` |
 
 The market and pool WASM are installed on testnet, so the `/app/create` flow deploys new instances by hash directly from the user's wallet. Every user-created market is a real on-chain deployment.
+
+### Oracle resolution
+
+| Contract | ID |
+| -------- | -- |
+| `resolver` (Reflector-driven) | `CBBS7NE75FTFO7TPTKGC5MLTZXQAU75MX3BEGVWI4GIIB6W3V4OXRDR4` |
+| Reflector oracle (CEX/DEX, testnet) | `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63` |
+
+Created markets are wired to the `resolver` at deploy, and a keeper settles them from Reflector once they expire. Resolvable assets are the ones Reflector prices: XLM, BTC, ETH, SOL, XRP, ADA, AVAX, LINK, DOT.
 
 ### Committee (2-of-3 threshold)
 
@@ -167,6 +176,7 @@ Two end-to-end runs on testnet, recorded under `deployments/`:
 
 - **Full economics** ([`full-economics-testnet.json`](deployments/full-economics-testnet.json)): the complete private lifecycle, from on-chain orders with real collateral, through membership and encryption proofs and the committee decrypting *only* the net, to the pool funding the market at the stored clearing price, resolution, and private redeems that paid a winner **+14.75 XLM** (real profit) and refunded a loser **+2.62 XLM**. No individual order was ever revealed.
 - **Multi-pool committee** ([`multipool-testnet.json`](deployments/multipool-testnet.json)): two independent markets sharing one committee. Each pool batched **only its own orders** (nets `30/20` and `8/3`, no cross-leak), members attested for both distinct pools, and a private redeem paid a winner out of a freshly-created market. This proves markets settle in isolation under a single committee.
+- **Oracle auto-resolution** ([`resolver-testnet.json`](deployments/resolver-testnet.json)): a market wired to the `resolver` at deploy, then settled straight from the **Reflector** oracle with no admin. The resolver read XLM at ~$0.21 against a $0.25 strike and set the outcome to **NO** on-chain, and the keeper resolved an ETH market to **YES** the moment it expired. The outcome is the oracle's, not ours.
 
 ---
 
@@ -192,6 +202,7 @@ moros/
 │   │   ├── coordinator.mjs            DKG + partial collection
 │   │   └── submit-multisig.mjs        threshold-attested batch submission
 │   ├── indexer.mjs / relayer.mjs      event indexer + private-redeem relayer
+│   ├── resolve-keeper.mjs             auto-settles expired markets from the Reflector oracle
 │   └── dev-local.sh                   bring the whole committee up locally
 │
 ├── web/                               Next.js 16 app + landing
@@ -240,7 +251,7 @@ The optional social layer needs a Supabase project (see `web/SUPABASE.md` and `w
 | Layer | Tools |
 | ----- | ----- |
 | Smart contracts | Rust, Soroban (Stellar CLI 23.x), `wasm32v1-none`, in-contract Groth16 / BLS12-381 verifier |
-| Market making | on-chain LMSR (binary YES/NO), oracle resolution |
+| Market making | on-chain LMSR (binary YES/NO), Reflector oracle resolution + auto-settle keeper |
 | Circuits | Circom, Groth16 over BLS12-381, Poseidon255, Jubjub (embedded curve) ElGamal |
 | Committee | Node.js, threshold ElGamal, Feldman-VSS DKG, Chaum-Pedersen proofs, `t`-of-`n` multisig attestation |
 | In-browser proving | snarkjs 0.7 |
