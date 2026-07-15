@@ -48,9 +48,9 @@ deployments/*.local.json
 .vscode/
 circuits/build/
 
-# --- Web ZK artifacts (wasm tracked, zkey too large to track) ---
+# --- Web ZK artifacts (proving keys are public; tracked so Vercel serves them) ---
 !web/public/zk/*.wasm
-web/public/zk/*.zkey
+!web/public/zk/*.zkey
 
 # committee runtime state (registered pools)
 services/pools.json
