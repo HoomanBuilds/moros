@@ -1,7 +1,7 @@
 "use client";
 import { computeCommitment } from "@/lib/zk/commit";
 import { proveEncryptOrder } from "@/lib/zk/prove";
-import { getPk, getProof, postOrder } from "@/lib/committee/client";
+import { getPk, getProof, postOrder, registerPool } from "@/lib/committee/client";
 import { placeOrder } from "@/lib/stellar/write";
 import { addPosition } from "@/lib/positions/book";
 import { NETWORK } from "@/lib/network";
@@ -22,6 +22,7 @@ export async function runBet(
   { side, amount, address, marketId = NETWORK.marketId, poolId = NETWORK.poolId, onStage }:
   { side: BetSide; amount: string; address: string; marketId?: string; poolId?: string; onStage: (s: BetStage) => void }
 ) {
+  await registerPool(marketId, poolId);
   const secret = rand();
   const nullifier = rand();
   onStage("hashing");
