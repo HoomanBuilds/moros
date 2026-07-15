@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { useMarket } from "@/lib/stellar/use-market";
 import { FavoriteStar } from "@/components/markets/favorite-star";
+import { AssetIcon } from "@/components/markets/asset-icon";
 import { useActiveMarket } from "@/lib/markets/market-context";
 import { NETWORK } from "@/lib/network";
 
@@ -59,14 +60,17 @@ export function MarketHeader() {
         </div>
       </div>
 
-      <div className="space-y-4">
-        <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          {data ? `${data.asset} · binary market` : "binary market"}
-        </span>
-        <h1 className="max-w-3xl font-display text-2xl leading-tight tracking-tight md:text-3xl">
-          {data?.question ?? "Loading market"}
-        </h1>
-        <StatusPill outcome={data?.outcome} settles={data?.resolutionLabel} />
+      <div className="flex items-start gap-4">
+        <AssetIcon asset={data?.asset} size="lg" />
+        <div className="space-y-4">
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            {data ? `${data.asset} · binary market` : "binary market"}
+          </span>
+          <h1 className="max-w-3xl font-display text-2xl leading-tight tracking-tight md:text-3xl">
+            {data?.question ?? "Loading market"}
+          </h1>
+          <StatusPill outcome={data?.outcome} settles={data?.resolutionLabel} />
+        </div>
       </div>
     </div>
   );

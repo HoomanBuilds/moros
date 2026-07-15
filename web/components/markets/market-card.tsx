@@ -6,6 +6,7 @@ import { ProbabilityBar } from "@/components/markets/probability-bar";
 import { FavoriteStar } from "@/components/markets/favorite-star";
 import { getMarketMeta, type MarketMeta } from "@/lib/supabase/markets-meta";
 import { centsLabel } from "@/lib/stellar/derive";
+import { AssetIcon } from "@/components/markets/asset-icon";
 import type { MarketRow } from "@/lib/markets/catalog";
 
 export function MarketCard({ row }: { row: MarketRow }) {
@@ -22,7 +23,10 @@ export function MarketCard({ row }: { row: MarketRow }) {
         <Panel className="space-y-5 p-6 transition-colors hover:border-white/20">
           {meta?.banner_url && <img src={meta.banner_url} alt="" className="h-28 w-full rounded object-cover" />}
           <div className="flex items-center justify-between">
-            <Tag>{row.outcome}</Tag>
+            <div className="flex items-center gap-2.5">
+              <AssetIcon asset={row.asset} size="sm" />
+              <Tag>{row.outcome}</Tag>
+            </div>
             <span className="pr-8 font-mono text-xs text-muted-foreground">{row.resolutionLabel}</span>
           </div>
           <h3 className="min-h-[3.5rem] font-display text-2xl leading-snug">{title}</h3>
