@@ -162,7 +162,7 @@ export function BetPanel() {
             Position placed privately
           </div>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Your side and size are hidden on-chain. Track it under Portfolio and redeem once the market resolves.
+            Your side is hidden on-chain and the committee only ever sees the batch net. Track it under Portfolio and redeem once the market resolves.
           </p>
           <Button className="w-full" onClick={reset}>Place another bet</Button>
         </div>

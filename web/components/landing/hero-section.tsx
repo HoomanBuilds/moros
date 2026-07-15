@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 
-const words = ["side", "size", "edge"];
+const words = ["side", "position", "edge"];
 
 function BlurWord({ word, trigger }: { word: string; trigger: number }) {
   const letters = word.split("");

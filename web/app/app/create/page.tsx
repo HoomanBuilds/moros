@@ -97,7 +97,7 @@ export default function CreatePage() {
 
   return (
     <div className="space-y-10">
-      <PageHeader label="Moros" title="Create a prediction" description="Deploy your own private, shielded prediction market on Stellar. Anyone can bet; nobody sees the side or size." />
+      <PageHeader label="Moros" title="Create a prediction" description="Deploy your own private, shielded prediction market on Stellar. Anyone can bet; nobody sees which side you took." />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr] lg:items-start">
         <Panel className="space-y-7 p-6">

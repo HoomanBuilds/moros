@@ -82,7 +82,7 @@ export function FeaturedMarket({ row }: { row: MarketRow }) {
             <SideBet href={row.href} label="No" cents={row.yesCents === null ? null : 100 - row.yesCents} mult={noMult} color={NO} />
             <div className="mt-auto rounded-md border border-white/[0.08] p-4">
               <p className="font-mono text-xs text-muted-foreground">{row.orders} shielded orders</p>
-              <p className="mt-1 text-xs text-muted-foreground">Sides and sizes stay private until redeem.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Which way you bet stays private.</p>
             </div>
           </div>
           <AssetSpotChart asset={row.asset} strike={row.strikeNum} height={240} />
