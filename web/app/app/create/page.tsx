@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { AssetIcon } from "@/components/markets/asset-icon";
 import { AssetSpotChart } from "@/components/markets/asset-spot-chart";
-import { SUPPORTED_ASSETS } from "@/lib/prices/asset-price";
+import { RESOLVABLE_ASSETS } from "@/lib/markets/deploy-constants";
 import { useAssetPrice } from "@/lib/prices/use-asset-price";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 import { deployShieldedMarket, type DeployStep } from "@/lib/markets/deploy";
@@ -23,6 +23,7 @@ const STEPS: { key: DeployStep; label: string }[] = [
   { key: "batcher", label: "Linking pool as batcher" },
   { key: "committee", label: "Configuring threshold committee" },
   { key: "redeemvk", label: "Installing redeem verifying key" },
+  { key: "resolver", label: "Wiring Reflector oracle auto-resolution" },
   { key: "done", label: "Shielded market live" },
 ];
 
@@ -50,7 +51,7 @@ export default function CreatePage() {
   const { spot } = useAssetPrice(asset);
   const strikeNum = Number(strike);
   const busy = stage !== null && stage !== "done";
-  const valid = strikeNum > 0 && SUPPORTED_ASSETS.includes(asset);
+  const valid = strikeNum > 0 && RESOLVABLE_ASSETS.includes(asset);
   const activeIndex = stage ? STEPS.findIndex((s) => s.key === stage) : -1;
 
   const question = useMemo(
@@ -103,7 +104,7 @@ export default function CreatePage() {
           <div className="space-y-3">
             <Tag>Underlying asset</Tag>
             <div className="flex flex-wrap gap-2">
-              {SUPPORTED_ASSETS.map((a) => (
+              {RESOLVABLE_ASSETS.map((a) => (
                 <button
                   key={a}
                   type="button"
@@ -218,7 +219,7 @@ export default function CreatePage() {
           <Panel className="space-y-2 p-6">
             <Tag>What gets deployed</Tag>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              An LMSR market contract plus a paired shielded pool wired to a threshold committee, deployed from your wallet in a few signatures. Bets are zero-knowledge commitments; settlement runs once a committee node indexes your pool.
+              An LMSR market plus a paired shielded pool and threshold committee, deployed from your wallet in a few signatures. Bets are zero-knowledge commitments, netted by the committee. At expiry the market resolves automatically from the Reflector oracle, so there is no trusted admin deciding the outcome.
             </p>
           </Panel>
         </div>

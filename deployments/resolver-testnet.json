@@ -1,0 +1,19 @@
+{
+  "network": "testnet",
+  "description": "Reflector-oracle auto-resolution for prediction markets. The resolver reads the market's asset/threshold/expiry, pulls the price from the Reflector CEX/DEX oracle at expiry, and settles YES/NO on-chain. Created markets are wired to the resolver at deploy time via set_resolver, so the outcome is oracle-set, not admin-set.",
+  "resolver": "CBBS7NE75FTFO7TPTKGC5MLTZXQAU75MX3BEGVWI4GIIB6W3V4OXRDR4",
+  "reflector_oracle_cex_dex": "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63",
+  "oracle_decimals": 14,
+  "oracle_resolution_seconds": 300,
+  "market_wasm_hash_with_set_resolver": "31ee0533ab43101b0495e7c45086d3a608e0ab7302e09e8685db3650f5791dbd",
+  "resolvable_assets": ["XLM", "BTC", "ETH", "SOL", "XRP", "ADA", "AVAX", "LINK", "DOT"],
+  "unsupported_by_reflector": ["BNB", "DOGE"],
+  "e2e": {
+    "market": "CC34OXU6BL4ULRIZQ5N3PZYEPP54JT3U3U7F47T6PWTN3W5TUCGZY2KA",
+    "asset": "XLM",
+    "strike_usd": 0.25,
+    "flow": "deploy market (new wasm) -> set_resolver(creator, resolver) -> resolver.resolve_market -> reads Reflector XLM ~$0.21 < $0.25 -> outcome No",
+    "result": "No"
+  },
+  "notes": "Existing markets (flagship XLM, ETH, BNB) run the older market wasm without set_resolver, so they stay admin-resolved. New markets created via the app use the new wasm and auto-resolve. Triggering resolve_market after expiry is permissionless (anyone can call it); a keeper is the hands-off option. Unaudited research prototype, testnet only."
+}

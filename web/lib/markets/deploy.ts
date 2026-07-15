@@ -21,11 +21,13 @@ import {
   MAIN_VK,
   DEPOSIT_VK,
   REDEEMV2_VK,
+  RESOLVER_ID,
+  RESOLVABLE_ASSETS,
 } from "./deploy-constants";
 
 const server = new rpc.Server(NETWORK.rpcUrl);
 
-export type DeployStep = "market" | "pool" | "batcher" | "committee" | "redeemvk" | "done";
+export type DeployStep = "market" | "pool" | "batcher" | "committee" | "redeemvk" | "resolver" | "done";
 
 function bytesArg(hex: string): xdr.ScVal {
   return xdr.ScVal.scvBytes(Buffer.from(hex, "hex"));
@@ -145,6 +147,11 @@ export async function deployShieldedMarket({
 
   onStep("redeemvk");
   await invokeSigned(poolId, "set_redeem_v2_vk", [addr(address), bytesArg(REDEEMV2_VK)], address);
+
+  if (RESOLVABLE_ASSETS.includes(asset.toUpperCase())) {
+    onStep("resolver");
+    await invokeSigned(marketId, "set_resolver", [addr(address), addr(RESOLVER_ID)], address);
+  }
 
   onStep("done");
   return { marketId, poolId };
