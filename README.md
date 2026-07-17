@@ -136,8 +136,8 @@ Everything runs on **Stellar testnet**. Explorer: https://stellar.expert/explore
 
 | Contract | ID |
 | -------- | -- |
-| LMSR market (`lmsr-market`) | `CBKR2OYQHNBYUSHQEFEHB4GI6BMZYXP35GPYYCBKFRTZBTR6NV3P3MXS` |
-| Shielded pool (`privacy_pools`) | `CDUYUZEZBIWRPXM3ITDQZBANHN3Q6B6KUKCBV7MP6BGLYRQCT6QSV23E` |
+| LMSR market (`lmsr-market`) | `CBCFLHWJY37QIFFLGA5KQVTPXZQW5MD32EKHL5A6A5HSYFHOKJHRGG4N` |
+| Shielded pool (`privacy_pools`) | `CAJFPQUSDRICY627OZU2FVNQVAIL653CAAWVEE4VBDWLZIUMO5H33UAZ` |
 | Collateral (XLM SAC) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
 
 ### Installed WASM (browser-deployable by anyone)

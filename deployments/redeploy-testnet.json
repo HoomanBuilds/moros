@@ -1,0 +1,14 @@
+{
+  "network": "testnet",
+  "deployed": "2026-07-17",
+  "description": "Fresh full-stack redeploy of the Moros market contracts. Flagship XLM plus ETH, SOL, BNB demo markets, each a paired lmsr-market + privacy_pools instance wired to the threshold committee and (for Reflector-priced assets) the resolver, funded and seeded with shielded orders so pools carry balance and odds are live.",
+  "collateral_xlm_sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "resolver": "CBBS7NE75FTFO7TPTKGC5MLTZXQAU75MX3BEGVWI4GIIB6W3V4OXRDR4",
+  "reflector_oracle": "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63",
+  "markets": {
+    "XLM": { "flagship": true, "strike_usd": 0.25, "market": "CBCFLHWJY37QIFFLGA5KQVTPXZQW5MD32EKHL5A6A5HSYFHOKJHRGG4N", "pool": "CAJFPQUSDRICY627OZU2FVNQVAIL653CAAWVEE4VBDWLZIUMO5H33UAZ", "resolvable": true },
+    "ETH": { "strike_usd": 3000, "market": "CDEQRY2APGMW6T3PWBUJB2HFBVVFNFBNMHTYTALZO4SDECM4Z6SZXIZI", "pool": "CCIGDYFQTK5Y43HNRGNYM5B4FQIUZE3J46T6O3D5BYVVQVA6JMTTXUZF", "resolvable": true },
+    "SOL": { "strike_usd": 83, "market": "CDZWZYN2ZFGJAML2EN7M6C6AW7CGCG3MUH443CGSS2NFLIHV5LEUSFJZ", "pool": "CABN2LLL64NQ6U4VLD3TWE7P5V4BLD55MONQV3D6RC5PDWFCUFFKNDCM", "resolvable": true },
+    "BNB": { "strike_usd": 520, "market": "CAJ2YZW4OERUDWY6MRB72T73AD7SMM2BVMVADNBVTYP3DEQF75DXTOYC", "pool": "CDFBFJ26I3LT7S3NGPXOYCMEUX3TOCCWK76WCWBJCWT3OHTT4ODN5ANS", "resolvable": false }
+  }
+}
