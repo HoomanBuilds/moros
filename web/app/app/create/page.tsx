@@ -33,7 +33,7 @@ import {
   MarketCategoryIcon,
 } from "@/components/markets/market-category-icon";
 import { MarketBanner, MarketVisual } from "@/components/markets/market-visual";
-import { MARKET_SUBSIDY, ORACLE_MODE } from "@/lib/markets/deploy-constants";
+import { EVENT_MARKETS_ENABLED, MARKET_SUBSIDY, ORACLE_MODE } from "@/lib/markets/deploy-constants";
 import { useAssetPrice } from "@/lib/prices/use-asset-price";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 import {
@@ -57,6 +57,13 @@ import {
 import { formatTokenAmount } from "@/lib/stellar/amount";
 import { eventRulesHashHex } from "@/lib/markets/rules";
 import {
+  MIN_MARKET_LEAD_SECONDS,
+  marketExpiryError,
+  parseMarketExpiry,
+  presetExpiryLocal,
+  toLocalDateTimeValue,
+} from "@/lib/markets/expiry";
+import {
   MARKET_CATEGORIES,
   assetsForCategory,
   eventGuidance,
@@ -76,10 +83,11 @@ const STEPS: { key: DeployStep; label: string }[] = [
   { key: "done", label: "Shielded market live" },
 ];
 
-const EXPIRIES = [
-  { label: "7 days", detail: "Short-term", days: 7 },
-  { label: "30 days", detail: "Most popular", days: 30 },
-  { label: "90 days", detail: "Long-term", days: 90 },
+const EXPIRY_PRESETS = [
+  { key: "1h", label: "1 hour", detail: "Intraday", seconds: 60 * 60 },
+  { key: "1d", label: "1 day", detail: "Tomorrow", seconds: 24 * 60 * 60 },
+  { key: "7d", label: "7 days", detail: "This week", seconds: 7 * 24 * 60 * 60 },
+  { key: "30d", label: "30 days", detail: "This month", seconds: 30 * 24 * 60 * 60 },
 ];
 
 const PRICE_CATEGORIES = MARKET_CATEGORIES.filter(isPriceCategory);
@@ -184,7 +192,10 @@ export default function CreatePage() {
   const [backupSources, setBackupSources] = useState("");
   const [resolutionRules, setResolutionRules] = useState("");
   const [voidRules, setVoidRules] = useState("");
-  const [days, setDays] = useState(30);
+  const [expiryLocal, setExpiryLocal] = useState("");
+  const [selectedExpiryPreset, setSelectedExpiryPreset] = useState("30d");
+  const [minimumExpiry, setMinimumExpiry] = useState("");
+  const [timeZone, setTimeZone] = useState("");
   const [stage, setStage] = useState<DeployStep | null>(null);
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ marketId: string } | null>(null);
@@ -213,7 +224,7 @@ export default function CreatePage() {
   const yesRuleComplete = isPriceMarket || resolutionRules.trim().length >= 20;
   const voidRuleComplete = isPriceMarket || voidRules.trim().length >= 20;
   const strikeComplete = !isPriceMarket || (strikeNum > 0 && priceAssets.includes(asset));
-  const valid = isPriceMarket
+  const detailsValid = isPriceMarket
     ? strikeComplete
     : subjectComplete
       && questionComplete
@@ -221,6 +232,10 @@ export default function CreatePage() {
       && backupSourcesComplete
       && yesRuleComplete
       && voidRuleComplete;
+  const expiryValidationError = marketExpiryError(expiryLocal);
+  const timingComplete = expiryValidationError === "";
+  const settlementDate = timingComplete ? new Date(parseMarketExpiry(expiryLocal) * 1000) : null;
+  const valid = detailsValid && timingComplete;
   const subsidy = BigInt(MARKET_SUBSIDY);
   const hasSubsidy = !!accountState?.hasTrustline && accountState.balanceAtomic >= subsidy;
   const canFundDeployment = pendingDeployment?.funded || hasSubsidy;
@@ -238,7 +253,7 @@ export default function CreatePage() {
   const totalRequirements = isPriceMarket ? 1 : 6;
   const feedName = category === "Crypto price" ? "Reflector CEX" : "Reflector fiat";
 
-  const firstInvalidField = isPriceMarket
+  const detailsFirstInvalidField = isPriceMarket
     ? "strike-price"
     : !subjectComplete
       ? "event-subject"
@@ -251,6 +266,7 @@ export default function CreatePage() {
           : !yesRuleComplete
             ? "yes-rule"
             : "void-rule";
+  const firstInvalidField = detailsValid ? "settlement-time" : detailsFirstInvalidField;
 
   const question = useMemo(() => {
     if (!isPriceMarket) return eventQuestion.trim() || (subject.trim() ? `Create a question about ${subject.trim()}` : "Enter a clear YES or NO question");
@@ -260,6 +276,13 @@ export default function CreatePage() {
   useEffect(() => () => {
     if (selectedImage?.kind === "upload") URL.revokeObjectURL(selectedImage.previewUrl);
   }, [selectedImage]);
+
+  useEffect(() => {
+    const now = Date.now();
+    setExpiryLocal(presetExpiryLocal(30 * 24 * 60 * 60, now));
+    setMinimumExpiry(presetExpiryLocal(MIN_MARKET_LEAD_SECONDS, now));
+    setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }, []);
 
   function selectCategory(nextCategory: MarketCategory) {
     setCategory(nextCategory);
@@ -271,6 +294,7 @@ export default function CreatePage() {
 
   function selectCategoryMode(mode: "price" | "event") {
     if (mode === categoryMode) return;
+    if (mode === "event" && !EVENT_MARKETS_ENABLED) return;
     selectCategory(mode === "price" ? PRICE_CATEGORIES[0] : EVENT_CATEGORIES[0]);
   }
 
@@ -295,7 +319,12 @@ export default function CreatePage() {
   }, [address]);
 
   useEffect(() => {
-    setPendingDeployment(address ? getPendingDeployment(address) : null);
+    const pending = address ? getPendingDeployment(address) : null;
+    setPendingDeployment(pending);
+    if (pending) {
+      setExpiryLocal(toLocalDateTimeValue(new Date(pending.expiryUnix * 1000)));
+      setSelectedExpiryPreset("");
+    }
   }, [address]);
 
   async function connect() {
@@ -306,6 +335,12 @@ export default function CreatePage() {
     }
   }
 
+  function applyExpiryPreset(key: string, seconds: number) {
+    setExpiryLocal(presetExpiryLocal(seconds));
+    setSelectedExpiryPreset(key);
+    setError("");
+  }
+
   async function create() {
     setError("");
     setResult(null);
@@ -314,11 +349,14 @@ export default function CreatePage() {
     try {
       if (!pendingDeployment && !valid) {
         requestAnimationFrame(() => document.getElementById(firstInvalidField)?.focus());
-        throw new Error(isPriceMarket ? "Enter a valid strike price" : "Complete every outcome and resolution requirement");
+        if (!detailsValid) {
+          throw new Error(isPriceMarket ? "Enter a valid strike price" : "Complete every outcome and resolution requirement");
+        }
+        throw new Error(expiryValidationError);
       }
       if (!accountState?.hasTrustline) throw new Error("Enable USDC before creating a market");
       if (!canFundDeployment) throw new Error("Insufficient USDC for the required market subsidy");
-      const expiryUnix = Math.floor(Date.now() / 1000) + days * 86400;
+      const expiryUnix = pendingDeployment?.expiryUnix ?? parseMarketExpiry(expiryLocal);
       const marketAsset = isPriceMarket ? asset : category.toUpperCase();
       const rulesHash = isPriceMarket ? undefined : eventRulesHashHex({
         title: question,
@@ -365,7 +403,6 @@ export default function CreatePage() {
         collateralSac: collateral.sac,
         collateralDecimals: collateral.decimals,
         createdAt: Date.now(),
-        protocolVersion: 3,
         title: marketMetadata.title,
         category: marketMetadata.category,
         subject: marketMetadata.subject,
@@ -380,7 +417,7 @@ export default function CreatePage() {
         voidRules: marketMetadata.voidRules,
         rulesHash: deployment.rulesHash,
       });
-      await registerPool(marketId, poolId, 3);
+      await registerPool(marketId, poolId);
       clearPendingDeployment(address);
       setPendingDeployment(null);
       try {
@@ -400,7 +437,6 @@ export default function CreatePage() {
           bannerAttribution: marketMetadata.bannerAttribution,
           bannerLicense: marketMetadata.bannerLicense,
           bannerLicenseUrl: marketMetadata.bannerLicenseUrl,
-          protocolVersion: 3,
           resolverType: deployment.resolverType,
           resolutionSource: marketMetadata.resolutionSource,
           backupResolutionSources: marketMetadata.backupResolutionSources,
@@ -500,7 +536,7 @@ export default function CreatePage() {
               <SectionHeading
                 number={1}
                 title="Choose a market type"
-                description="Price markets resolve from public feeds. Event markets resolve from explicit evidence and rules."
+                description="Price markets resolve from verified public feeds. Other market categories open only after their full resolution operations are ready."
                 complete
               />
 
@@ -519,17 +555,27 @@ export default function CreatePage() {
                 </button>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !EVENT_MARKETS_ENABLED}
                   aria-pressed={categoryMode === "event"}
+                  aria-describedby={!EVENT_MARKETS_ENABLED ? "event-market-status" : undefined}
                   onClick={() => selectCategoryMode("event")}
                   className={cn(
                     "min-h-11 rounded-md px-3 text-sm font-medium transition-[background-color,color,box-shadow] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:opacity-50 motion-reduce:transition-none",
                     categoryMode === "event" ? "bg-white/[0.09] text-foreground shadow-sm" : "text-foreground/50 hover:text-foreground/80",
                   )}
                 >
-                  Event outcomes
+                  Event outcomes{EVENT_MARKETS_ENABLED ? "" : " - Soon"}
                 </button>
               </div>
+
+              {!EVENT_MARKETS_ENABLED && (
+                <div id="event-market-status" className="flex items-start gap-3 rounded-lg border border-amber-300/20 bg-amber-300/[0.04] p-4 text-sm text-foreground/60">
+                  <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-200" aria-hidden="true" />
+                  <p>
+                    Sports, politics, weather, economics, and other event markets stay unavailable during this testnet release. They will open only after their evidence observers, challenges, arbitration, and refund monitoring are running.
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label={`${categoryMode === "price" ? "Price" : "Event"} categories`}>
                 {(categoryMode === "price" ? PRICE_CATEGORIES : EVENT_CATEGORIES).map((item) => {
@@ -815,18 +861,18 @@ export default function CreatePage() {
               />
 
               <fieldset className="space-y-3">
-                <legend className="text-sm font-medium text-foreground">Settlement window</legend>
-                <div className="grid grid-cols-3 gap-2">
-                  {EXPIRIES.map((expiry) => {
-                    const selected = days === expiry.days;
+                <legend className="text-sm font-medium text-foreground">Settlement date and time</legend>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {EXPIRY_PRESETS.map((expiry) => {
+                    const selected = selectedExpiryPreset === expiry.key;
                     return (
                       <button
-                        key={expiry.days}
+                        key={expiry.key}
                         type="button"
                         aria-label={expiry.label}
                         aria-pressed={selected}
-                        disabled={busy}
-                        onClick={() => setDays(expiry.days)}
+                        disabled={busy || !!pendingDeployment}
+                        onClick={() => applyExpiryPreset(expiry.key, expiry.seconds)}
                         className={cn(
                           "min-h-16 rounded-lg border px-2 py-3 text-center transition-[border-color,background-color,color] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:opacity-50 motion-reduce:transition-none",
                           selected ? "border-[#eca8d6]/45 bg-[#eca8d6]/[0.07]" : "border-white/10 bg-white/[0.018] hover:border-white/20 hover:bg-white/[0.04]",
@@ -837,6 +883,39 @@ export default function CreatePage() {
                       </button>
                     );
                   })}
+                </div>
+                <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.02] p-4">
+                  <FieldLabel
+                    htmlFor="settlement-time"
+                    description="Choose any exact future date and minute. The value is entered in your local time."
+                  >
+                    Exact settlement time
+                  </FieldLabel>
+                  <Input
+                    id="settlement-time"
+                    type="datetime-local"
+                    step={60}
+                    min={minimumExpiry || undefined}
+                    value={expiryLocal}
+                    disabled={busy || !!pendingDeployment}
+                    aria-describedby="settlement-time-description settlement-time-conversion"
+                    aria-invalid={attempted && !timingComplete}
+                    onChange={(event) => {
+                      setExpiryLocal(event.target.value);
+                      setSelectedExpiryPreset("");
+                    }}
+                    className="h-12 font-mono"
+                  />
+                  <div id="settlement-time-conversion" className="space-y-1 text-xs text-foreground/55" aria-live="polite">
+                    {settlementDate ? (
+                      <>
+                        <p>Local: {settlementDate.toLocaleString()} {timeZone ? `(${timeZone})` : ""}</p>
+                        <p className="font-mono">UTC: {settlementDate.toISOString().replace("T", " ").replace(".000Z", " UTC")}</p>
+                      </>
+                    ) : (
+                      <p className="text-red-300">{expiryValidationError}</p>
+                    )}
+                  </div>
                 </div>
               </fieldset>
 
@@ -1020,7 +1099,13 @@ export default function CreatePage() {
               <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.08]">
                 {[
                   { icon: CircleDollarSign, label: "Collateral", value: "USDC" },
-                  { icon: CalendarDays, label: "Settles in", value: `${days} days` },
+                  {
+                    icon: CalendarDays,
+                    label: "Settlement time",
+                    value: settlementDate
+                      ? settlementDate.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      : "Choose time",
+                  },
                   { icon: Database, label: "Resolution", value: isPriceMarket ? feedName : "Evidence" },
                   { icon: LockKeyhole, label: "Position sides", value: "Shielded" },
                 ].map(({ icon: Icon, label, value }) => (

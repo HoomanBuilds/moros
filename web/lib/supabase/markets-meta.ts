@@ -31,7 +31,6 @@ export type RegistryMarket = {
   collateralSac?: string;
   collateralDecimals?: number;
   createdAt?: number;
-  protocolVersion?: 2 | 3;
   title?: string;
   category?: string;
   subject?: string;
@@ -120,7 +119,7 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
 
   const primary = await client
     .from("markets_meta")
-    .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, protocol_version, title, category, subject, banner_url, banner_source_url, banner_attribution, banner_license, banner_license_url, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
+    .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, title, category, subject, banner_url, banner_source_url, banner_attribution, banner_license, banner_license_url, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
     .not("pool_id", "is", null)
     .order("created_at", { ascending: false });
   let data = primary.data as Record<string, unknown>[] | null;
@@ -129,7 +128,7 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
   if (error) {
     const fallback = await client
       .from("markets_meta")
-      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, protocol_version, title, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
+      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, title, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
       .not("pool_id", "is", null)
       .order("created_at", { ascending: false });
     data = fallback.data as Record<string, unknown>[] | null;
@@ -139,7 +138,7 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
   if (error) {
     const fallback = await client
       .from("markets_meta")
-      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, protocol_version, title, category, resolver_type, resolution_source, resolution_rules, void_rules, rules_hash, created_at")
+      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, title, category, resolver_type, resolution_source, resolution_rules, void_rules, rules_hash, created_at")
       .not("pool_id", "is", null)
       .order("created_at", { ascending: false });
     data = fallback.data as Record<string, unknown>[] | null;
@@ -169,7 +168,6 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
       collateralSac: r.collateral_sac ? String(r.collateral_sac) : undefined,
       collateralDecimals: typeof r.collateral_decimals === "number" ? r.collateral_decimals : undefined,
       createdAt: r.created_at ? Date.parse(r.created_at as string) : undefined,
-      protocolVersion: r.protocol_version === 3 ? 3 : 2,
       title: r.title ? String(r.title) : undefined,
       category: r.category ? String(r.category) : undefined,
       subject: r.subject ? String(r.subject) : undefined,
@@ -178,7 +176,7 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
       bannerAttribution: r.banner_attribution ? String(r.banner_attribution) : undefined,
       bannerLicense: r.banner_license ? String(r.banner_license) : undefined,
       bannerLicenseUrl: r.banner_license_url ? String(r.banner_license_url) : undefined,
-      resolverType: r.resolver_type === "event" ? "event" : "price",
+      resolverType: r.resolver_type === "event" ? "event" : r.resolver_type === "price" ? "price" : undefined,
       resolutionSource: r.resolution_source ? String(r.resolution_source) : undefined,
       backupResolutionSources: Array.isArray(r.resolution_backup_sources)
         ? r.resolution_backup_sources.map(String)
@@ -205,7 +203,6 @@ export async function saveMarketToRegistry(entry: {
   bannerAttribution?: string;
   bannerLicense?: string;
   bannerLicenseUrl?: string;
-  protocolVersion?: 2 | 3;
   description?: string;
   resolverType?: "price" | "event";
   resolutionSource?: string;
@@ -233,7 +230,6 @@ export async function saveMarketToRegistry(entry: {
       collateral_issuer: entry.collateralIssuer,
       collateral_sac: entry.collateralSac,
       collateral_decimals: entry.collateralDecimals,
-      protocol_version: entry.protocolVersion ?? 2,
       creator: entry.creator,
       title: entry.title ?? null,
       description: entry.description ?? null,

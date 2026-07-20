@@ -11,7 +11,7 @@ const rules = {
 
 assert.equal(
   canonicalEventRules(rules),
-  '{"version":1,"title":"Will Team A win?","category":"Sports","resolutionSource":"https://league.example/results","resolutionRules":"Team A is listed as the official winner.","voidRules":"The match is cancelled and not replayed by the cutoff."}',
+  '{"title":"Will Team A win?","category":"Sports","resolutionSource":"https://league.example/results","resolutionRules":"Team A is listed as the official winner.","voidRules":"The match is cancelled and not replayed by the cutoff."}',
 );
 assert.equal(eventRulesHashHex(rules).length, 64);
 assert.equal(eventRulesHashHex(rules), eventRulesHashHex({ ...rules, title: "Will Team A win?" }));
@@ -29,7 +29,7 @@ const rulesWithBackups = {
 };
 assert.equal(
   canonicalEventRules(rulesWithBackups),
-  '{"version":2,"title":"Will Team A win?","category":"Sports","resolutionSource":"https://league.example/results","resolutionRules":"Team A is listed as the official winner.","voidRules":"The match is cancelled and not replayed by the cutoff.","backupResolutionSources":["https://backup-one.example/result","https://backup-two.example/result"]}',
+  '{"title":"Will Team A win?","category":"Sports","resolutionSource":"https://league.example/results","resolutionRules":"Team A is listed as the official winner.","voidRules":"The match is cancelled and not replayed by the cutoff.","backupResolutionSources":["https://backup-one.example/result","https://backup-two.example/result"]}',
 );
 assert.notEqual(eventRulesHashHex(rules), eventRulesHashHex(rulesWithBackups));
 assert.notEqual(

@@ -17,7 +17,6 @@ Object.defineProperty(globalThis, "localStorage", {
 
 const address = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 const deployment: PendingDeployment = {
-  version: 3,
   address,
   asset: "BTC",
   strikeUsd: 100_000,
@@ -31,14 +30,14 @@ const deployment: PendingDeployment = {
   funded: true,
 };
 
-localStorage.setItem(`moros.pending-market.v3.${address}`, JSON.stringify(deployment));
+localStorage.setItem(`moros.pending-market.${address}`, JSON.stringify(deployment));
 assert.deepEqual(getPendingDeployment(address), deployment);
 assert.equal(getPendingDeployment("GOTHER"), null);
 
-localStorage.setItem(`moros.pending-market.v3.${address}`, "not-json");
+localStorage.setItem(`moros.pending-market.${address}`, "not-json");
 assert.equal(getPendingDeployment(address), null);
 
-localStorage.setItem(`moros.pending-market.v3.${address}`, JSON.stringify(deployment));
+localStorage.setItem(`moros.pending-market.${address}`, JSON.stringify(deployment));
 clearPendingDeployment(address);
 assert.equal(getPendingDeployment(address), null);
 

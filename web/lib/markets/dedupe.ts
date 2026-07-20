@@ -9,7 +9,6 @@ export type MarketEntry = {
   collateralDecimals?: number;
   flagship?: boolean;
   createdAt?: number;
-  protocolVersion?: 2 | 3;
   title?: string;
   category?: string;
   subject?: string;

@@ -53,6 +53,7 @@ export function AboutPanel() {
     .filter((value): value is string => value !== null);
   const bannerSourceUrl = safeHttpUrl(data?.bannerSourceUrl);
   const bannerLicenseUrl = safeHttpUrl(data?.bannerLicenseUrl);
+  const feeLabel = data ? `${data.feeBps / 100}% of winning profit only` : "--";
 
   return (
     <Panel className="p-6 space-y-6">
@@ -78,7 +79,7 @@ export function AboutPanel() {
           Your side and exact position amount are encrypted inside a public collateral bucket. A threshold
           committee decrypts only the net across a batch of at least two orders. A lone final order is
           refunded after the deadline instead of being decrypted by itself. Redemption is proof-bound and
-          relayer-submittable, but the current v3 claim identifies the winning order commitment on-chain.
+          relayer-submittable, but a claim still identifies the winning order commitment on-chain.
         </p>
       </div>
 
@@ -130,7 +131,7 @@ export function AboutPanel() {
         )}
         <Row label="Settlement">{data ? data.resolutionLabel : "--"}</Row>
         <Row label="Pool collateral">{data ? `${data.poolSize.toFixed(2)} ${data.collateral.code}` : "--"}</Row>
-        <Row label="Platform fee">2% of winning profit only</Row>
+        <Row label="Platform fee">{feeLabel}</Row>
         {isEvent && <Row label="Rules integrity">{data?.rulesVerified ? "Verified against on-chain hash" : "Verification failed"}</Row>}
         <Row label="Privacy">Encrypted side and amount · public stake bucket · t-of-n committee</Row>
         <Row label="Market contract"><ContractLink id={marketId} /></Row>

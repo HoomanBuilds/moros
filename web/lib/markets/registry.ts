@@ -2,35 +2,15 @@
 import { useSyncExternalStore } from "react";
 import { NETWORK } from "@/lib/network";
 import { fetchMarketRegistry } from "@/lib/supabase/markets-meta";
+import { EVENT_MARKETS_ENABLED, RESOLVABLE_ASSETS } from "./deploy-constants";
 import { dedupeMarkets, type MarketEntry } from "./dedupe";
 
 export { dedupeMarkets, type MarketEntry };
 
-const SEEDS: MarketEntry[] = [
-  {
-    marketId: NETWORK.marketId,
-    poolId: NETWORK.poolId,
-    asset: "XLM",
-    kind: "shielded" as const,
-    collateralCode: NETWORK.legacyCollateral.code,
-    collateralIssuer: NETWORK.legacyCollateral.issuer,
-    collateralSac: NETWORK.legacyCollateral.sac,
-    collateralDecimals: NETWORK.legacyCollateral.decimals,
-    flagship: true,
-  },
-  {
-    marketId: "CDEQRY2APGMW6T3PWBUJB2HFBVVFNFBNMHTYTALZO4SDECM4Z6SZXIZI",
-    poolId: "CCIGDYFQTK5Y43HNRGNYM5B4FQIUZE3J46T6O3D5BYVVQVA6JMTTXUZF",
-    asset: "ETH",
-    kind: "shielded" as const,
-    collateralCode: NETWORK.legacyCollateral.code,
-    collateralIssuer: NETWORK.legacyCollateral.issuer,
-    collateralSac: NETWORK.legacyCollateral.sac,
-    collateralDecimals: NETWORK.legacyCollateral.decimals,
-  },
-].filter((market) => market.marketId && market.poolId);
+const SEEDS: MarketEntry[] = [];
 
-const KEY = "umbra.markets.v1";
+const KEY = "moros.markets";
+const LEGACY_KEY = "umbra.markets.v1";
 let localCreated: MarketEntry[] | null = null;
 let remote: MarketEntry[] = [];
 let refreshComplete = false;
@@ -41,7 +21,9 @@ function loadLocal(): MarketEntry[] {
   let list: MarketEntry[] = [];
   if (typeof localStorage !== "undefined") {
     try {
-      list = JSON.parse(localStorage.getItem(KEY) ?? "[]");
+      const current = localStorage.getItem(KEY);
+      list = JSON.parse(current ?? localStorage.getItem(LEGACY_KEY) ?? "[]");
+      if (!current && list.length > 0) localStorage.setItem(KEY, JSON.stringify(list));
     } catch {
       list = [];
     }
@@ -55,7 +37,14 @@ function persist() {
 }
 
 function build(): MarketEntry[] {
-  return dedupeMarkets([...SEEDS, ...remote, ...(localCreated ?? [])]);
+  return dedupeMarkets([...SEEDS, ...remote, ...(localCreated ?? [])]).filter(
+    (market) => market.collateralCode === NETWORK.collateral.code
+      && market.collateralIssuer === NETWORK.collateral.issuer
+      && market.collateralSac === NETWORK.collateral.sac
+      && market.collateralDecimals === NETWORK.collateral.decimals
+      && (market.resolverType === "price" || (EVENT_MARKETS_ENABLED && market.resolverType === "event"))
+      && (market.resolverType !== "price" || RESOLVABLE_ASSETS.includes(market.asset.toUpperCase())),
+  );
 }
 
 function emit() {
@@ -111,7 +100,6 @@ export async function refreshMarkets(): Promise<void> {
       collateralSac: r.collateralSac,
       collateralDecimals: r.collateralDecimals,
       createdAt: r.createdAt,
-      protocolVersion: r.protocolVersion,
       title: r.title,
       category: r.category,
       subject: r.subject,

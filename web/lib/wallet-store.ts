@@ -2,14 +2,18 @@
 import { useSyncExternalStore } from "react";
 import { getKit } from "./wallet";
 
-const OFF_KEY = "umbra.wallet.off";
+const OFF_KEY = "moros.wallet.off";
+const LEGACY_OFF_KEY = "umbra.wallet.off";
 let address = "";
 let hydrated = false;
 const listeners = new Set<() => void>();
 
 function isOff(): boolean {
   try {
-    return typeof localStorage !== "undefined" && localStorage.getItem(OFF_KEY) === "1";
+    if (typeof localStorage === "undefined") return false;
+    const value = localStorage.getItem(OFF_KEY) ?? localStorage.getItem(LEGACY_OFF_KEY);
+    if (value === "1") localStorage.setItem(OFF_KEY, "1");
+    return value === "1";
   } catch {
     return false;
   }
@@ -20,6 +24,7 @@ function setOff(v: boolean) {
     if (typeof localStorage === "undefined") return;
     if (v) localStorage.setItem(OFF_KEY, "1");
     else localStorage.removeItem(OFF_KEY);
+    localStorage.removeItem(LEGACY_OFF_KEY);
   } catch {
     return;
   }

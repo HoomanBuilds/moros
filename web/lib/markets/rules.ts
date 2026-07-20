@@ -26,9 +26,7 @@ export function normalizeEventRules(input: EventRules): EventRules {
 }
 
 export function canonicalEventRules(input: EventRules): string {
-  const rules = normalizeEventRules(input);
-  const version = rules.backupResolutionSources?.length ? 2 : 1;
-  return JSON.stringify({ version, ...rules });
+  return JSON.stringify(normalizeEventRules(input));
 }
 
 export function sha256Hex(value: string): string {

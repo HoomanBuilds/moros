@@ -19,13 +19,13 @@ export type MarketDescriptor = {
   rulesHash?: string;
 };
 
-type Ids = { marketId: string; poolId: string; collateral?: CollateralAsset; protocolVersion?: 2 | 3; descriptor?: MarketDescriptor };
-type ActiveMarket = { marketId: string; poolId: string; collateral: CollateralAsset; protocolVersion: 2 | 3; descriptor?: MarketDescriptor };
+type Ids = { marketId: string; poolId: string; collateral?: CollateralAsset; descriptor?: MarketDescriptor };
+type ActiveMarket = { marketId: string; poolId: string; collateral: CollateralAsset; descriptor?: MarketDescriptor };
 
-const Ctx = createContext<ActiveMarket>({ marketId: NETWORK.marketId, poolId: NETWORK.poolId, collateral: NETWORK.legacyCollateral, protocolVersion: 2 });
+const Ctx = createContext<ActiveMarket>({ marketId: NETWORK.marketId, poolId: NETWORK.poolId, collateral: NETWORK.collateral });
 
-export function MarketProvider({ marketId, poolId, collateral, protocolVersion, descriptor, children }: Ids & { children: ReactNode }) {
-  return <Ctx.Provider value={{ marketId, poolId, collateral: collateral ?? NETWORK.legacyCollateral, protocolVersion: protocolVersion ?? 2, descriptor }}>{children}</Ctx.Provider>;
+export function MarketProvider({ marketId, poolId, collateral, descriptor, children }: Ids & { children: ReactNode }) {
+  return <Ctx.Provider value={{ marketId, poolId, collateral: collateral ?? NETWORK.collateral, descriptor }}>{children}</Ctx.Provider>;
 }
 
 export function useActiveMarket(): ActiveMarket {
@@ -38,5 +38,7 @@ export function collateralForEntry(entry: {
   collateralSac?: string;
   collateralDecimals?: number;
 }): CollateralAsset {
-  return collateralFromRecord(entry);
+  const collateral = collateralFromRecord(entry);
+  if (!collateral) throw new Error("This market does not use supported Stellar USDC collateral");
+  return collateral;
 }

@@ -10,7 +10,7 @@ export type CollateralAsset = {
 
 const NETWORK_ID: NetworkId = process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
 
-const ASSETS: Record<NetworkId, { usdc: CollateralAsset; xlm: CollateralAsset }> = {
+const ASSETS: Record<NetworkId, { usdc: CollateralAsset }> = {
   testnet: {
     usdc: {
       code: "USDC",
@@ -18,13 +18,6 @@ const ASSETS: Record<NetworkId, { usdc: CollateralAsset; xlm: CollateralAsset }>
       sac: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
       decimals: 7,
       native: false,
-    },
-    xlm: {
-      code: "XLM",
-      issuer: null,
-      sac: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-      decimals: 7,
-      native: true,
     },
   },
   mainnet: {
@@ -34,13 +27,6 @@ const ASSETS: Record<NetworkId, { usdc: CollateralAsset; xlm: CollateralAsset }>
       sac: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
       decimals: 7,
       native: false,
-    },
-    xlm: {
-      code: "XLM",
-      issuer: null,
-      sac: "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
-      decimals: 7,
-      native: true,
     },
   },
 };
@@ -52,8 +38,8 @@ const DEFAULTS = {
     horizonUrl: "https://horizon-testnet.stellar.org",
     passphrase: "Test SDF Network ; September 2015",
     explorerNetwork: "testnet",
-    marketId: "CBCFLHWJY37QIFFLGA5KQVTPXZQW5MD32EKHL5A6A5HSYFHOKJHRGG4N",
-    poolId: "CAJFPQUSDRICY627OZU2FVNQVAIL653CAAWVEE4VBDWLZIUMO5H33UAZ",
+    marketId: "CAXGT3SHUEVWLHA7PZKPNZCVGMEWLWCZTK6EQZWQABOL4NDBEPLRCU64",
+    poolId: "CADIVW7SHMAFKTVU2P7IZ6UONFJWDXNQJFB4RRBE7KZFGXVSXWJEPKKP",
   },
   mainnet: {
     name: "Stellar mainnet",
@@ -77,7 +63,6 @@ export const NETWORK = {
   marketId: process.env.NEXT_PUBLIC_SEED_MARKET_ID || selected.marketId,
   poolId: process.env.NEXT_PUBLIC_SEED_POOL_ID || selected.poolId,
   collateral: ASSETS[NETWORK_ID].usdc,
-  legacyCollateral: ASSETS[NETWORK_ID].xlm,
   explorer: (id: string) => `https://stellar.expert/explorer/${selected.explorerNetwork}/contract/${id}`,
   transactionExplorer: (hash: string) => `https://stellar.expert/explorer/${selected.explorerNetwork}/tx/${hash}`,
 };
@@ -87,14 +72,11 @@ export function collateralFromRecord(record?: {
   collateralIssuer?: string | null;
   collateralSac?: string | null;
   collateralDecimals?: number | null;
-}): CollateralAsset {
-  if (!record?.collateralCode || !record.collateralSac) return NETWORK.legacyCollateral;
+}): CollateralAsset | null {
+  if (!record?.collateralCode || !record.collateralSac) return null;
   const code = record.collateralCode.toUpperCase();
   if (code === NETWORK.collateral.code && record.collateralSac === NETWORK.collateral.sac) {
     return NETWORK.collateral;
   }
-  if (code === NETWORK.legacyCollateral.code && record.collateralSac === NETWORK.legacyCollateral.sac) {
-    return NETWORK.legacyCollateral;
-  }
-  return NETWORK.legacyCollateral;
+  return null;
 }

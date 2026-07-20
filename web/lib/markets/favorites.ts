@@ -1,7 +1,8 @@
 "use client";
 import { useSyncExternalStore } from "react";
 
-const KEY = "umbra.favorites.v1";
+const KEY = "moros.favorites";
+const LEGACY_KEY = "umbra.favorites.v1";
 let set: Set<string> | null = null;
 const listeners = new Set<() => void>();
 
@@ -12,7 +13,9 @@ function load(): Set<string> {
     return set;
   }
   try {
-    set = new Set(JSON.parse(localStorage.getItem(KEY) ?? "[]"));
+    const current = localStorage.getItem(KEY);
+    set = new Set(JSON.parse(current ?? localStorage.getItem(LEGACY_KEY) ?? "[]"));
+    if (!current && set.size > 0) localStorage.setItem(KEY, JSON.stringify([...set]));
   } catch {
     set = new Set();
   }

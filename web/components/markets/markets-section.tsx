@@ -34,11 +34,12 @@ export function MarketsSection() {
   const [category, setCategory] = useState<"All" | MarketCategory>("All");
 
   useEffect(() => {
-    const v = localStorage.getItem("umbra.marketview");
+    const v = localStorage.getItem("moros.marketview") ?? localStorage.getItem("umbra.marketview");
     if (v === "list" || v === "grid") setView(v);
   }, []);
   useEffect(() => {
-    localStorage.setItem("umbra.marketview", view);
+    localStorage.setItem("moros.marketview", view);
+    localStorage.removeItem("umbra.marketview");
   }, [view]);
 
   const counts = {

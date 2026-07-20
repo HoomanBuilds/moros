@@ -17,17 +17,15 @@ import {
   COMMITTEE_MEMBERS,
   COMMITTEE_THRESHOLD,
   LMSR_B,
-  POOL_CAP,
   MARKET_SUBSIDY,
-  MAIN_VK,
-  DEPOSIT_VK,
-  REDEEMV3_VK,
+  REDEEM_VK,
   PRICE_RESOLVER_ID,
   EVENT_RESOLVER_ID,
   RESOLVABLE_ASSETS,
   PLATFORM_TREASURY,
   PLATFORM_FEE_BPS,
   BATCH_GRACE_SECONDS,
+  EVENT_MARKETS_ENABLED,
 } from "./deploy-constants";
 
 const server = new rpc.Server(NETWORK.rpcUrl);
@@ -50,7 +48,6 @@ export type DeploymentMetadata = {
 };
 
 export type PendingDeployment = {
-  version: 3;
   address: string;
   asset: string;
   strikeUsd: number;
@@ -72,7 +69,7 @@ export type PendingDeployment = {
   complete?: boolean;
 };
 
-const PENDING_DEPLOYMENT_KEY = "moros.pending-market.v3";
+const PENDING_DEPLOYMENT_KEY = "moros.pending-market";
 
 function pendingKey(address: string): string {
   return `${PENDING_DEPLOYMENT_KEY}.${address}`;
@@ -82,7 +79,7 @@ export function getPendingDeployment(address: string): PendingDeployment | null 
   if (typeof localStorage === "undefined" || !address) return null;
   try {
     const value = JSON.parse(localStorage.getItem(pendingKey(address)) ?? "null") as PendingDeployment | null;
-    if (!value || value.version !== 3 || value.address !== address) return null;
+    if (!value || value.address !== address) return null;
     return value;
   } catch {
     return null;
@@ -183,7 +180,6 @@ export async function deployShieldedMarket({
   onProgress?: (deployment: PendingDeployment) => void;
 }): Promise<{ marketId: string; poolId: string; deployment: PendingDeployment }> {
   let deployment: PendingDeployment = resume ?? {
-    version: 3,
     address,
     asset,
     strikeUsd,
@@ -204,6 +200,9 @@ export async function deployShieldedMarket({
   };
   checkpoint({});
 
+  if (deployment.resolverType === "event" && !EVENT_MARKETS_ENABLED) {
+    throw new Error("Event markets are unavailable until their resolution operations are live");
+  }
   if (deployment.resolverType === "price" && !RESOLVABLE_ASSETS.includes(deployment.asset.toUpperCase())) {
     throw new Error(`${deployment.asset} does not have price-oracle quorum support`);
   }
@@ -250,12 +249,9 @@ export async function deployShieldedMarket({
     poolId = await deployByHash(
       deployment.poolWasmHash,
       [
-        bytesArg(MAIN_VK),
-        bytesArg(DEPOSIT_VK),
         addr(NETWORK.collateral.sac),
         addr(address),
         addr(marketId),
-        nativeToScVal(BigInt(POOL_CAP), { type: "i128" }),
         addr(PLATFORM_TREASURY),
         nativeToScVal(PLATFORM_FEE_BPS, { type: "u32" }),
       ],
@@ -287,7 +283,7 @@ export async function deployShieldedMarket({
 
   onStep("redeemvk");
   if (!deployment.redeemVkConfigured) {
-    await invokeSigned(poolId, "set_redeem_v2_vk", [addr(address), bytesArg(REDEEMV3_VK)], address);
+    await invokeSigned(poolId, "set_redeem_vk", [addr(address), bytesArg(REDEEM_VK)], address);
     checkpoint({ redeemVkConfigured: true });
   }
 
