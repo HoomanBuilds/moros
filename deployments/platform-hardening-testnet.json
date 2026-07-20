@@ -1,53 +1,114 @@
 {
   "network": "testnet",
+  "verified_at": "2026-07-20T15:49:09Z",
   "collateral": {
     "asset": "Circle USDC",
-    "sac": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+    "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+    "sac": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+    "decimals": 7
   },
   "wasm": {
-    "market": "ca646879c241f3abc52cdc1530174e8475ad627d4bfe325da892694ac4880c3f",
-    "shielded_pool": "ec67aee3f9391ca358e52cfad5ac05c39ea9b09dc4abc575177272f2b79b5ef3",
-    "price_resolver": "2bba2d4a2c88b1d7199adbda7c0964123ecd5a49ca8a43f2d9b3bea83cc2d3c1",
-    "event_resolver": "64956727fbd1561c405f5aac91cd0275f31292e5d110a9f12244a6aa0d5c6f11"
+    "market": "7afca617a67b7f2d2dab4e9dc6836779871dff77fd876a2d83d62b435f5fa06a",
+    "shielded_pool": "617e3d7e152b03ad53f5704abe92295ccfaa538771835c7b2174f00396af9363",
+    "price_resolver": "fa2feaedc7622d45729e39e30a37946789934340a83bdd778981e7442194c06c",
+    "event_resolver": "55f8711add9d5a8f8a9b865def5b0bbed3f8f9e1293d4392e533c555e4e5e3fa"
+  },
+  "public_proving_artifacts_sha256": {
+    "encrypt_order_wasm": "29996da314cf9f0dcab90328ae9066a0d01ee612d7583331f6440f190a845bae",
+    "encrypt_order_zkey": "0e178ff9fa5f7e5da5bc47a85db1e7b7a3109c6f29876fb0521092c55bd182ee",
+    "order_commit_wasm": "ad12ebac83b3c14ce3da5aea2014a1f4646fbc7110990fb7f65b05c2a0b13072",
+    "position_redeem_wasm": "88cc66c9b54ed85d9f596c019dbf8b80245d2eab7122f71fb236a4c7d999fd2d",
+    "position_redeem_zkey": "3815db7494ea54ddf7392effd46cf93e8d52e2b894c05768d261a0c4909549a8",
+    "position_redeem_vk": "dddd9f51313b47407f38d8e9b67b4255150dcae7ce89bdaa1a00ab8f5c092f8d"
   },
   "resolvers": {
     "active_mode": "free",
-    "free_price_resolver": "CAIHZHCNKHLCXGWOTH7T2L4S5YDNNGO6Q6MSDQ7HQ3A4IORN4NE6ZF5B",
+    "free_price_resolver": "CATOCURLCPJXJNYOEBBV5Q2XVHO6S5J2ATZE6NP3A3DAJMUW3G43HNQ7",
     "free_reflector_cex_oracle": "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63",
     "free_reflector_fiat_oracle": "CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W",
     "paid_price_resolver": null,
     "event_resolver": "CBOZK2JSSAOPXJWBSB6JZF5KLPMRQ52JCF4PADI7QUHQ3WS6KBKKBXW5"
   },
-  "transactions": {
-    "free_price_resolver_deploy": "0c8d11b28fba13c315e651a0484ce8c764ab0195550ae482a3f8e3f877fdcf89"
-  },
   "free_price_config": {
-    "oracles": [
-      "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63",
-      "CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W"
-    ],
     "quorum": 1,
     "max_age_seconds": 600,
     "resolution_timeout_seconds": 86400,
     "max_deviation_bps": 300,
     "max_confidence_bps": 200,
-    "pyth_verifier": null,
-    "pyth_feeds": []
+    "paid_pyth_enabled": false
   },
-  "event_resolution": {
-    "bond_atomic": "100000000",
-    "bond_usdc": "10",
-    "challenge_period_seconds": 3600,
-    "committee_threshold": 2,
-    "committee_size": 3
-  },
-  "protocol": {
-    "version": 3,
+  "economics": {
     "fee_bps_on_winning_profit": 200,
     "batch_grace_seconds": 300,
     "lmsr_b_shares": 20,
     "creator_subsidy_atomic": "138629437",
     "creator_subsidy_usdc": "13.8629437"
   },
-  "notes": "Testnet beta only. Free Reflector CEX and fiat coverage is active. Paid oracle support remains disabled unless ORACLE_MODE is explicitly set to pyth_pro and a paid resolver plus access token are configured."
+  "canonical_lifecycle": {
+    "market": "CAXGT3SHUEVWLHA7PZKPNZCVGMEWLWCZTK6EQZWQABOL4NDBEPLRCU64",
+    "pool": "CADIVW7SHMAFKTVU2P7IZ6UONFJWDXNQJFB4RRBE7KZFGXVSXWJEPKKP",
+    "expiry_unix": 1784561035,
+    "finalize_after_unix": 1784561335,
+    "aggregate_yes": "20",
+    "aggregate_no": "10",
+    "outcome": "Yes",
+    "transactions": {
+      "market_deploy": "54798bbfdbf2cada1a894e669bc52b035d65f4f47da825b979f216ef6f400da0",
+      "market_fund": "6d8853e8b23bf380f322ccb2b8370e771856abde536fe95fa490de03e4889587",
+      "pool_deploy": "fac55f621614940117440489eda162c0d6d942a859369afac106eb7f8c63c972",
+      "set_batcher": "347c7ad441af765bc07970e579de2f1552769685bd01bc0ca158cb649990bab4",
+      "set_committee": "a3583f764714920bceb179b55c893f0ca454a8cd1442781a3124827ef106d2f1",
+      "set_redeem_key": "2248b7524483b3b3d96cb90983f032a78c2fc81700e78820218815ef25f4272d",
+      "set_resolver": "8ea6920dd1be20ca7ebacab8a34c0f20c1eaa8199c2b883627014cff6553103b",
+      "private_batch": "4362a5ec40cc8eeb683600e775654c175b6c8f6a92a99097574bc777954d748c",
+      "keeper_resolution": "6b7bcdac54cdfbdc6c5ac817e462b0036df14e1251fdffb5321451c080a2c981",
+      "claims": [
+        "c9661db6685de5281d5f9a27a8b72189e740a4c7f3effccd8d37ca4b9c853749",
+        "b082198f17ea55afb825b076646ddd139108adfc269eb12b2730768b27ff3879",
+        "ac0b43c4bfda945f79317c9cad5d1730ed924ad425184c3e396b6f1ea1a79791",
+        "d942c54ad744caf3e191fe63c8c7a2805618bb25c2a8c88664a61c723b01dbbe"
+      ]
+    },
+    "checks": {
+      "recipient_binding_rejected": true,
+      "claim_replay_rejected": true,
+      "winner_fee_atomic_per_ten_share_order": "755081",
+      "loser_fee_atomic": "0"
+    }
+  },
+  "one_sided_void_lifecycle": {
+    "market": "CBUBAXNQPTN73KUR5LWNOQTM3RIKLTC4RTXQJJ4BJNJC4ETNN7WPIZ6S",
+    "pool": "CALSTYJSTBAIKY4LIIU6G65A5JG7KW7YBIBY7KHHTW424IDRWGGCFXGZ",
+    "aggregate_yes": "4",
+    "aggregate_no": "0",
+    "outcome": "Void",
+    "full_refund_atomic": "40000000",
+    "transactions": {
+      "market_deploy": "4b6bd82f69d98256885c3487523dc87c4bc16275b337c15ed0dbe6dc08550fff",
+      "pool_deploy": "2b55463cd814fa1982e3d2e9459007a6abb0e9479ba90efad19e7a6d458238c7",
+      "private_batch": "9ff7ec3fcade258aece410e73cff2c533c69f6a81b44ca0e3f0a6261a8c89da2",
+      "resolution": "8a5d1be259098e25e87f1dce8cab144a252ceb43ac6e254cedf6dbf7f9a8551a",
+      "refunds": [
+        "89624dcd189724a5f822db143ad5defe4e70bbd9e14d750eb91235b4b7b06e01",
+        "8d5c2b1d16d994c7ca84736b187010cf1cb4b072aa68389fb73554e4f3f6f6a3",
+        "da75a44d7389606e6fb71d120c4a48b1362f0c56c6884c1db3362452a4d95dac",
+        "512048913861aad335ce3d0749916602e080b2bbdec181cd148778e8ade7af16"
+      ]
+    },
+    "checks": {
+      "creator_subsidy_returned": true,
+      "all_included_stakes_refunded": true,
+      "refund_replays_rejected": true,
+      "platform_fee_atomic": "0"
+    }
+  },
+  "service": {
+    "url": "https://moros-market.duckdns.org",
+    "committee_members": 3,
+    "committee_threshold": 2,
+    "batch_size": 4,
+    "registered_release_pools": 1,
+    "keeper_mode": "free"
+  },
+  "notes": "Testnet beta only. The canonical balanced lifecycle and the one-sided void lifecycle were executed with Circle USDC. Event markets remain blocked until their complete resolution operations pass the same release gates. Paid Pyth support remains available only through an explicit configuration switch."
 }

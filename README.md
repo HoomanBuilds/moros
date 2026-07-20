@@ -14,7 +14,7 @@ Moros is currently an unaudited testnet beta. Do not use it with real funds.
 
 ## Current product
 
-- User-created crypto price, sports, politics, and other objective event markets
+- User-created oracle-backed price markets
 - Circle USDC collateral for every new market
 - On-chain LMSR pricing and creator-funded liquidity
 - Browser-generated Groth16 proofs over BLS12-381
@@ -33,14 +33,14 @@ Any connected user can create a market from /app/create.
 
 For a price market, the creator chooses a supported asset, strike, close time, and resolution time. The market uses the active price resolver.
 
-For a sports, politics, or other event market, the creator supplies:
+The event resolver contract supports rules for future sports, politics, and other objective markets:
 
 - A precise binary question
 - An official resolution source
 - Exact YES conditions
 - Cancellation, ambiguity, and void rules
 
-The canonical rules are hashed in the browser and registered on-chain. The UI blocks betting and resolution controls if public metadata no longer matches that on-chain hash.
+The canonical rules are hashed in the browser and registered on-chain. Event creation is currently disabled because the independent observer, challenge, and arbitration operations are not yet running. The UI does not advertise a market type that the backend cannot resolve.
 
 Creation deploys and links an LMSR market and a shielded pool through several wallet transactions. The current beta uses 13.8629437 testnet USDC for the fully funded LMSR worst-case subsidy, which fits within one 20 USDC Circle faucet request. A market is listed only after its contracts, resolver, committee, fee, and liquidity setup complete.
 
@@ -78,7 +78,7 @@ Price markets use the free testnet Reflector resolver by default. Reflector is o
 
 The resolver checks the historical price at the market expiry, freshness, decimals, confidence, and configured deviation limits. If usable data remains unavailable through the resolution timeout, anyone may void the market.
 
-Event markets use an optimistic bonded flow:
+When event operations are enabled, the event resolver uses an optimistic bonded flow:
 
 1. A proposer posts 10 testnet USDC with an outcome and public evidence.
 2. Another user may challenge during the one-hour beta window by posting the same bond and a different outcome.
@@ -99,7 +99,7 @@ Payouts are pull-based. Resolution does not automatically send funds to every wa
 - A pending order that missed the final batch can be fully refunded after the deadline.
 - Every order, refund, and redemption is bound to state and rejects replay.
 
-One-sided demand is valid. The funded LMSR is the counterparty, so a market with users only on one side resolves normally. This is different from a single pending order, which is refunded if it cannot join a private batch.
+If all included positions are on only one side, resolution voids the market and every included order receives its full stake back. This prevents a one-sided testnet market from producing misleading rewards. A single pending order is also refundable if it cannot join a private batch before the deadline.
 
 ## Fees
 
@@ -135,7 +135,7 @@ Public Band and DIA addresses listed in older documentation were not live after 
 ### Contracts
 
 - contracts/lmsr-market: funded binary LMSR, lifecycle, batch settlement, resolution, and share claims
-- contracts/shielded-pool: USDC custody, commitments, order status, committee checks, refunds, v3 redemption, and fees
+- contracts/shielded-pool: USDC custody, commitments, order status, committee checks, refunds, position redemption, and fees
 - contracts/resolver: free Reflector price resolution, optional verified Pyth payloads, and stale-market voiding
 - contracts/event-resolver: bonded event proposals, challenges, committee votes, evidence, finalization, and timeout voiding
 
@@ -143,11 +143,11 @@ Public Band and DIA addresses listed in older documentation were not live after 
 
 - order_commit: derives the order commitment
 - encrypt_order: proves commitment membership and binds the encrypted YES and NO amounts to the committee key
-- order_redeem_v3: proves order ownership, outcome, clearing-price payout, stake, recipient, nullifier, and exact fee
+- position_redeem: proves order ownership, outcome, clearing-price payout, stake, recipient, nullifier, and exact fee
 
 Circuits compile to Groth16 over BLS12-381. Browser WASM and proving keys are intentionally public. Proof soundness comes from private witness values and the on-chain verification key, not from hiding proving artifacts.
 
-The current v3 setup is a development trusted setup. An independent ceremony and external security review are required before mainnet.
+The current setup uses a development trusted setup. An independent ceremony and external security review are required before mainnet.
 
 ### Services
 
@@ -155,12 +155,12 @@ The current v3 setup is a development trusted setup. An independent ceremony and
 - services/committee/member.mjs: DKG share custody, verified partial decryption, and exact batch attestation
 - services/resolve-keeper.mjs: permissionless price-resolution calls using the selected oracle mode
 
-Production registration validates protocol version, market and pool linkage, collateral, committee configuration, redeem key state, and the approved pool WASM hash. ALLOW_UNVERIFIED_REGISTRATION=1 is for local tests only.
+Production registration validates market and pool linkage, collateral, resolver support, committee configuration, redeem key state, and the approved market and pool WASM hashes. Each committee member independently checks the pool WASM and its own committee membership before adding a user-created pool to its signing allowlist. ALLOW_UNVERIFIED_REGISTRATION=1 is for local tests only.
 
 ### Web
 
 - /app: live market catalog
-- /app/create: user-created price and event markets
+- /app/create: user-created oracle-backed price markets, with unsupported event categories clearly gated
 - /app/market/[id]: lifecycle-aware market terminal, betting, rules, comments, and resolution actions
 - /app/portfolio: position-specific redemption and refunds
 
@@ -173,16 +173,18 @@ The canonical record is [deployments/platform-hardening-testnet.json](deployment
 | Component | Testnet value |
 | --- | --- |
 | Circle USDC SAC | CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA |
-| Free price resolver | CAIHZHCNKHLCXGWOTH7T2L4S5YDNNGO6Q6MSDQ7HQ3A4IORN4NE6ZF5B |
+| Canonical market | CAXGT3SHUEVWLHA7PZKPNZCVGMEWLWCZTK6EQZWQABOL4NDBEPLRCU64 |
+| Canonical shielded pool | CADIVW7SHMAFKTVU2P7IZ6UONFJWDXNQJFB4RRBE7KZFGXVSXWJEPKKP |
+| Free price resolver | CATOCURLCPJXJNYOEBBV5Q2XVHO6S5J2ATZE6NP3A3DAJMUW3G43HNQ7 |
 | Event resolver | CBOZK2JSSAOPXJWBSB6JZF5KLPMRQ52JCF4PADI7QUHQ3WS6KBKKBXW5 |
 | Reflector CEX oracle | CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63 |
 | Reflector fiat oracle | CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W |
-| Market WASM | ca646879c241f3abc52cdc1530174e8475ad627d4bfe325da892694ac4880c3f |
-| Shielded pool WASM | ec67aee3f9391ca358e52cfad5ac05c39ea9b09dc4abc575177272f2b79b5ef3 |
-| Price resolver WASM | 2bba2d4a2c88b1d7199adbda7c0964123ecd5a49ca8a43f2d9b3bea83cc2d3c1 |
-| Event resolver WASM | 64956727fbd1561c405f5aac91cd0275f31292e5d110a9f12244a6aa0d5c6f11 |
+| Market WASM | 7afca617a67b7f2d2dab4e9dc6836779871dff77fd876a2d83d62b435f5fa06a |
+| Shielded pool WASM | 617e3d7e152b03ad53f5704abe92295ccfaa538771835c7b2174f00396af9363 |
+| Price resolver WASM | fa2feaedc7622d45729e39e30a37946789934340a83bdd778981e7442194c06c |
+| Event resolver WASM | 55f8711add9d5a8f8a9b865def5b0bbed3f8f9e1293d4392e533c555e4e5e3fa |
 
-The existing flagship seed contracts are legacy XLM testnet deployments. New contracts created through the updated app use Circle USDC and protocol version 3.
+The active testnet registry accepts only new Circle USDC markets built from the approved contract hashes above. Older XLM experiments are not active product markets.
 
 ## Local development
 

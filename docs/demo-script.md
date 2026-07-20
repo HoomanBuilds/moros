@@ -1,6 +1,6 @@
 # Moros testnet demo script
 
-Use a protocol v3 market created by the current app. Do not use a legacy XLM seed market to demonstrate the new USDC flow.
+Use a market created by the current app. Do not use an older XLM test market to demonstrate the USDC flow.
 
 Target: 2 minutes and 45 seconds.
 
@@ -18,22 +18,19 @@ Any user can create a market. New markets use Circle USDC on Stellar testnet."
 
 Open /app/create.
 
-Show both market paths:
-
-- Crypto, FX, or XAU price with asset, strike, and expiry
-- Equities, commodities, sports, economics, weather, politics, or another event with primary and backup sources, an exact YES rule, and an exact void rule
+Show a supported crypto, FX, or XAU price market with its asset, strike, and exact settlement time.
 
 Say:
 
-"A user creates the market from their own wallet. Crypto prices use the free Reflector CEX feed. FX and XAU use the free Reflector fiat feed. Event markets use a USDC-bonded proposal and challenge flow with primary and backup evidence sources.
+"A user creates the market from their own wallet. Crypto prices use the free Reflector CEX feed. FX and XAU use the free Reflector fiat feed. The form confirms the exact local settlement time and UTC before deployment.
 
-The rules are hashed and registered on-chain, so the displayed rules cannot be silently changed later."
+Sports and other event categories remain unavailable until their observer, challenge, arbitration, and refund operations are running."
 
 If you start a deployment, mention that each confirmed step is saved locally and can be resumed after a rejected signature or network interruption.
 
 ## 3. Place a private position
 
-Open a protocol v3 USDC market. Connect the wallet, choose YES or NO, choose an amount, and place the order.
+Open a current USDC market. Connect the wallet, choose YES or NO, choose an amount, and place the order.
 
 Say:
 
@@ -59,13 +56,13 @@ Show the Resolution tab, then the Portfolio.
 
 Say:
 
-"Price markets settle from the matching free Reflector testnet feed. Sports, economics, weather, politics, and other events accept a bonded result, a challenge, and independent committee votes if disputed.
+"Price markets settle from the matching free Reflector testnet feed. Unsupported event markets cannot be created in this release.
 
 Resolution does not automatically push money to wallets. Winners generate a redemption proof and pull their payout. Voided orders and orders that miss the final batch pull a full refund.
 
 Moros charges 2% only on winning profit. Principal and refunds are never charged."
 
-Show a claim or refund button. If showing a redemption transaction, state that the v3 claim identifies the winning commitment and exact payout on-chain.
+Show a claim or refund button. If showing a redemption transaction, state that the claim identifies the commitment and exact payout on-chain.
 
 ## 6. Close
 
@@ -78,19 +75,19 @@ Everything shown is testnet beta software. The contracts and circuits still need
 ## Short answers
 
 - Who creates markets? Any connected user through /app/create.
-- What is collateral? Circle USDC for every new protocol v3 market. XLM is used only for Stellar fees and reserve.
+- What is collateral? Circle USDC for every new market. XLM is used only for Stellar fees and reserve.
 - What is public when betting? The wallet transaction, commitment, and collateral bucket.
 - What stays encrypted during batching? The YES or NO side and exact position amount.
 - What does the committee decrypt? Only a batch aggregate with at least two orders.
 - What happens to one pending order? It becomes fully refundable after the final batch deadline.
 - Are payouts automatic? No. Claims, refunds, resolution, and keeper actions require transactions.
-- How does Moros earn? A fixed 2% fee on winning profit at v3 redemption.
+- How does Moros earn? A fixed 2% fee on winning profit at redemption.
 - What happens on a void? Full order stake refund and no platform fee.
 - What resolves crypto prices? The free Reflector CEX feed on the current testnet beta.
 - What resolves FX and XAU? The free Reflector fiat feed on the current testnet beta.
 - Is Pyth active? No. Pyth Pro support remains disabled behind an explicit paid-mode switch.
-- What resolves sports and other events? A native Soroban bonded proposal, challenge, evidence, vote, finalization, and timeout-void flow.
-- What ZK circuits are current? order_commit, encrypt_order, and order_redeem_v3.
+- What resolves sports and other events? They are unavailable until the complete resolution operations are running and verified.
+- What ZK circuits are current? order_commit, encrypt_order, and position_redeem.
 - Are circuit files public? Yes. WASM, proving keys, and verification keys can be public. Private witnesses stay in the browser.
 
 ## Testnet references
