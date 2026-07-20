@@ -38,7 +38,7 @@ export function MarketCard({ row }: { row: MarketRow }) {
             </div>
             <div className="text-right font-mono text-xs text-muted-foreground">
               <div>{row.orders} shielded</div>
-              <div className="mt-1">{row.poolXlm.toFixed(2)} XLM pool</div>
+              <div className="mt-1">{row.poolSize.toFixed(2)} {row.collateralCode} pool</div>
             </div>
           </div>
         </Panel>

@@ -7,12 +7,18 @@ create table if not exists profiles (
 
 create table if not exists markets_meta (
   market_id text primary key,
+  pool_id text,
+  asset text,
   title text,
   description text,
   category text,
   banner_url text,
   resolution_source text,
   creator text,
+  collateral_code text,
+  collateral_issuer text,
+  collateral_sac text,
+  collateral_decimals integer,
   created_at timestamptz default now()
 );
 

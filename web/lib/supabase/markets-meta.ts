@@ -15,6 +15,10 @@ export type RegistryMarket = {
   marketId: string;
   poolId: string;
   asset: string;
+  collateralCode?: string;
+  collateralIssuer?: string | null;
+  collateralSac?: string;
+  collateralDecimals?: number;
   createdAt?: number;
 };
 
@@ -38,7 +42,7 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
 
   const { data, error } = await client
     .from("markets_meta")
-    .select("market_id, pool_id, asset, created_at")
+    .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, created_at")
     .not("pool_id", "is", null)
     .order("created_at", { ascending: false });
 
@@ -50,6 +54,10 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
       marketId: r.market_id as string,
       poolId: r.pool_id as string,
       asset: String(r.asset ?? "").toUpperCase(),
+      collateralCode: r.collateral_code ? String(r.collateral_code).toUpperCase() : undefined,
+      collateralIssuer: r.collateral_issuer ? String(r.collateral_issuer) : null,
+      collateralSac: r.collateral_sac ? String(r.collateral_sac) : undefined,
+      collateralDecimals: typeof r.collateral_decimals === "number" ? r.collateral_decimals : undefined,
       createdAt: r.created_at ? Date.parse(r.created_at as string) : undefined,
     }));
 }
@@ -58,6 +66,10 @@ export async function saveMarketToRegistry(entry: {
   marketId: string;
   poolId: string;
   asset: string;
+  collateralCode: string;
+  collateralIssuer: string | null;
+  collateralSac: string;
+  collateralDecimals: number;
   creator: string;
   title?: string;
   category?: string;
@@ -76,6 +88,10 @@ export async function saveMarketToRegistry(entry: {
       market_id: entry.marketId,
       pool_id: entry.poolId,
       asset: entry.asset,
+      collateral_code: entry.collateralCode,
+      collateral_issuer: entry.collateralIssuer,
+      collateral_sac: entry.collateralSac,
+      collateral_decimals: entry.collateralDecimals,
       creator: entry.creator,
       title: entry.title ?? null,
       category: entry.category ?? null,

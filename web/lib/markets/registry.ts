@@ -11,16 +11,24 @@ const SEEDS: MarketEntry[] = [
     marketId: NETWORK.marketId,
     poolId: NETWORK.poolId,
     asset: "XLM",
-    kind: "shielded",
+    kind: "shielded" as const,
+    collateralCode: NETWORK.legacyCollateral.code,
+    collateralIssuer: NETWORK.legacyCollateral.issuer,
+    collateralSac: NETWORK.legacyCollateral.sac,
+    collateralDecimals: NETWORK.legacyCollateral.decimals,
     flagship: true,
   },
   {
     marketId: "CDEQRY2APGMW6T3PWBUJB2HFBVVFNFBNMHTYTALZO4SDECM4Z6SZXIZI",
     poolId: "CCIGDYFQTK5Y43HNRGNYM5B4FQIUZE3J46T6O3D5BYVVQVA6JMTTXUZF",
     asset: "ETH",
-    kind: "shielded",
+    kind: "shielded" as const,
+    collateralCode: NETWORK.legacyCollateral.code,
+    collateralIssuer: NETWORK.legacyCollateral.issuer,
+    collateralSac: NETWORK.legacyCollateral.sac,
+    collateralDecimals: NETWORK.legacyCollateral.decimals,
   },
-];
+].filter((market) => market.marketId && market.poolId);
 
 const KEY = "umbra.markets.v1";
 let localCreated: MarketEntry[] | null = null;
@@ -93,6 +101,10 @@ export async function refreshMarkets(): Promise<void> {
       poolId: r.poolId,
       asset: r.asset || "?",
       kind: "shielded" as const,
+      collateralCode: r.collateralCode,
+      collateralIssuer: r.collateralIssuer,
+      collateralSac: r.collateralSac,
+      collateralDecimals: r.collateralDecimals,
       createdAt: r.createdAt,
     }));
     snapshot = build();

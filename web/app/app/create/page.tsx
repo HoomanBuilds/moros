@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { PageHeader, Panel, Tag } from "@/components/app/app-kit";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { AssetIcon } from "@/components/markets/asset-icon";
 import { AssetSpotChart } from "@/components/markets/asset-spot-chart";
-import { RESOLVABLE_ASSETS } from "@/lib/markets/deploy-constants";
+import { MARKET_SUBSIDY, RESOLVABLE_ASSETS } from "@/lib/markets/deploy-constants";
 import { useAssetPrice } from "@/lib/prices/use-asset-price";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 import { deployShieldedMarket, type DeployStep } from "@/lib/markets/deploy";
@@ -16,9 +16,17 @@ import { addMarket, refreshMarkets } from "@/lib/markets/registry";
 import { saveMarketToRegistry } from "@/lib/supabase/markets-meta";
 import { registerPool } from "@/lib/committee/client";
 import { cn } from "@/lib/utils";
+import { NETWORK } from "@/lib/network";
+import {
+  addCollateralTrustline,
+  getCollateralAccountState,
+  type CollateralAccountState,
+} from "@/lib/stellar/collateral-account";
+import { formatTokenAmount } from "@/lib/stellar/amount";
 
 const STEPS: { key: DeployStep; label: string }[] = [
   { key: "market", label: "Deploying market contract" },
+  { key: "funding", label: "Funding guaranteed market solvency" },
   { key: "pool", label: "Deploying shielded pool" },
   { key: "batcher", label: "Linking pool as batcher" },
   { key: "committee", label: "Configuring threshold committee" },
@@ -47,17 +55,42 @@ export default function CreatePage() {
   const [stage, setStage] = useState<DeployStep | null>(null);
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ marketId: string } | null>(null);
+  const [accountState, setAccountState] = useState<CollateralAccountState | null>(null);
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [trustlineLoading, setTrustlineLoading] = useState(false);
 
   const { spot } = useAssetPrice(asset);
   const strikeNum = Number(strike);
   const busy = stage !== null && stage !== "done";
   const valid = strikeNum > 0 && RESOLVABLE_ASSETS.includes(asset);
+  const subsidy = BigInt(MARKET_SUBSIDY);
+  const hasSubsidy = !!accountState?.hasTrustline && accountState.balanceAtomic >= subsidy;
   const activeIndex = stage ? STEPS.findIndex((s) => s.key === stage) : -1;
 
   const question = useMemo(
     () => `Will ${asset} be at or above ${strikeNum > 0 ? fmtUsd(strikeNum) : "..."} at settlement?`,
     [asset, strikeNum],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    setAccountState(null);
+    if (!address) return;
+    setAccountLoading(true);
+    getCollateralAccountState(address, NETWORK.collateral)
+      .then((state) => {
+        if (!cancelled) setAccountState(state);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not read USDC balance");
+      })
+      .finally(() => {
+        if (!cancelled) setAccountLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
 
   async function connect() {
     try {
@@ -72,6 +105,8 @@ export default function CreatePage() {
     setResult(null);
     setStage(null);
     try {
+      if (!accountState?.hasTrustline) throw new Error("Enable USDC before creating a market");
+      if (!hasSubsidy) throw new Error("Insufficient USDC for the required market subsidy");
       const expiryUnix = Math.floor(Date.now() / 1000) + days * 86400;
       const { marketId, poolId } = await deployShieldedMarket({
         address,
@@ -80,10 +115,32 @@ export default function CreatePage() {
         expiryUnix,
         onStep: setStage,
       });
-      addMarket({ marketId, poolId, asset, kind: "shielded", createdAt: Date.now() });
+      const collateral = NETWORK.collateral;
+      addMarket({
+        marketId,
+        poolId,
+        asset,
+        kind: "shielded",
+        collateralCode: collateral.code,
+        collateralIssuer: collateral.issuer,
+        collateralSac: collateral.sac,
+        collateralDecimals: collateral.decimals,
+        createdAt: Date.now(),
+      });
       await registerPool(marketId, poolId);
       try {
-        await saveMarketToRegistry({ marketId, poolId, asset, creator: address, title: question, category: "Crypto price" });
+        await saveMarketToRegistry({
+          marketId,
+          poolId,
+          asset,
+          collateralCode: collateral.code,
+          collateralIssuer: collateral.issuer,
+          collateralSac: collateral.sac,
+          collateralDecimals: collateral.decimals,
+          creator: address,
+          title: question,
+          category: "Crypto price",
+        });
         await refreshMarkets();
       } catch {
         setError("Market is live but could not be listed for others. It is saved locally.");
@@ -92,6 +149,19 @@ export default function CreatePage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "deploy failed");
       setStage(null);
+    }
+  }
+
+  async function enableCollateral() {
+    setError("");
+    setTrustlineLoading(true);
+    try {
+      await addCollateralTrustline(address, NETWORK.collateral);
+      setAccountState(await getCollateralAccountState(address, NETWORK.collateral));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not enable USDC");
+    } finally {
+      setTrustlineLoading(false);
     }
   }
 
@@ -165,14 +235,41 @@ export default function CreatePage() {
             </div>
           </div>
 
+          <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Collateral</p>
+            <p className="mt-1 text-sm">{NETWORK.collateral.code} on Stellar</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              All new markets accept and settle in Circle USDC. Creating one deposits {formatTokenAmount(subsidy, NETWORK.collateral.decimals, 7)} USDC to cover the LMSR worst-case loss. XLM is used only for Stellar network fees and account reserve.
+            </p>
+            {address && accountState?.hasTrustline && (
+              <p className="mt-2 font-mono text-xs text-muted-foreground">
+                Available: {formatTokenAmount(accountState.balanceAtomic, NETWORK.collateral.decimals, 2)} USDC
+              </p>
+            )}
+          </div>
+
           {!address ? (
             <Button className="w-full" onClick={connect}>
               Connect wallet to create
             </Button>
+          ) : accountLoading ? (
+            <Button className="w-full" disabled><Spinner />Checking USDC</Button>
+          ) : accountState && !accountState.hasTrustline ? (
+            <div className="space-y-3">
+              <Button className="w-full" disabled={trustlineLoading} onClick={enableCollateral}>
+                {trustlineLoading && <Spinner />}
+                {trustlineLoading ? "Enabling USDC" : "Enable USDC"}
+              </Button>
+              {NETWORK.id === "testnet" && (
+                <a href="https://faucet.circle.com/" target="_blank" rel="noreferrer" className="block text-xs underline text-muted-foreground hover:text-foreground">
+                  Get testnet USDC from Circle
+                </a>
+              )}
+            </div>
           ) : (
-            <Button className="w-full" disabled={busy || !valid} onClick={create}>
+            <Button className="w-full" disabled={busy || !valid || !hasSubsidy} onClick={create}>
               {busy && <Spinner />}
-              {busy ? "Deploying market" : "Deploy shielded market"}
+              {busy ? "Deploying market" : !hasSubsidy ? "Insufficient USDC for subsidy" : "Deploy shielded market"}
             </Button>
           )}
 
@@ -219,7 +316,7 @@ export default function CreatePage() {
           <Panel className="space-y-2 p-6">
             <Tag>What gets deployed</Tag>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              An LMSR market plus a paired shielded pool and threshold committee, deployed from your wallet in a few signatures. Bets are zero-knowledge commitments, netted by the committee. At expiry the market resolves automatically from the Reflector oracle, so there is no trusted admin deciding the outcome.
+              A USDC-backed LMSR market plus a paired shielded pool and threshold committee, deployed from your wallet in a few signatures. Bets are zero-knowledge commitments, netted by the committee. At expiry the market resolves automatically from the oracle, so there is no trusted admin deciding the outcome.
             </p>
           </Panel>
         </div>

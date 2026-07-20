@@ -1,5 +1,6 @@
 import { Address, nativeToScVal } from "@stellar/stellar-sdk";
 import { NETWORK } from "@/lib/network";
+import type { CollateralAsset } from "@/lib/network";
 import { readContract } from "./client";
 
 export async function getMarketState(marketId: string = NETWORK.marketId): Promise<[bigint, bigint, bigint]> {
@@ -17,7 +18,10 @@ export async function getMarketInfo(marketId: string = NETWORK.marketId): Promis
 export async function getClearingPrice(poolId: string = NETWORK.poolId): Promise<bigint> {
   return readContract(poolId, "get_price");
 }
-export async function getPoolBalance(poolId: string = NETWORK.poolId): Promise<bigint> {
+export async function getPoolBalance(
+  poolId: string = NETWORK.poolId,
+  collateral: CollateralAsset = NETWORK.legacyCollateral,
+): Promise<bigint> {
   const arg = nativeToScVal(Address.fromString(poolId), { type: "address" });
-  return readContract(NETWORK.xlmSac, "balance", [arg]);
+  return readContract(collateral.sac, "balance", [arg]);
 }

@@ -3,6 +3,7 @@ import { useQueries } from "@tanstack/react-query";
 import { fetchMarket } from "@/lib/stellar/use-market";
 import { getRecentOrders } from "@/lib/stellar/events";
 import { useMarkets, type MarketEntry } from "./registry";
+import { collateralForEntry } from "./market-context";
 
 export type MarketRow = {
   id: string;
@@ -17,14 +18,16 @@ export type MarketRow = {
   live: boolean;
   resolutionLabel: string;
   secondsLeft: number;
-  poolXlm: number;
+  poolSize: number;
+  collateralCode: string;
   orders: number;
   flagship: boolean;
 };
 
 async function fetchRow(entry: MarketEntry): Promise<MarketRow> {
+  const collateral = collateralForEntry(entry);
   const [data, orders] = await Promise.all([
-    fetchMarket(entry.marketId, entry.poolId),
+    fetchMarket(entry.marketId, entry.poolId, collateral),
     getRecentOrders(30, entry.poolId).catch(() => []),
   ]);
   return {
@@ -40,7 +43,8 @@ async function fetchRow(entry: MarketEntry): Promise<MarketRow> {
     live: data.outcome === "LIVE",
     resolutionLabel: data.resolutionLabel,
     secondsLeft: data.secondsLeft,
-    poolXlm: data.poolSizeXlm,
+    poolSize: data.poolSize,
+    collateralCode: collateral.code,
     orders: orders.length,
     flagship: !!entry.flagship,
   };

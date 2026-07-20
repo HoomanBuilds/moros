@@ -16,7 +16,7 @@ export function sortRows(rows: MarketRow[], sort: SortId): MarketRow[] {
       case "ending":
         return a.secondsLeft - b.secondsLeft;
       case "pool":
-        return b.poolXlm - a.poolXlm;
+        return b.poolSize - a.poolSize;
       case "yesHigh":
         return (b.yesCents ?? 0) - (a.yesCents ?? 0);
       case "yesLow":

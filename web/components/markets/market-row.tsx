@@ -27,7 +27,7 @@ export function MarketListRow({ row }: { row: MarketRow }) {
           </div>
           <div className="hidden w-24 text-right lg:block">
             <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">pool</div>
-            <div className="font-mono text-sm">{row.poolXlm.toFixed(2)}</div>
+            <div className="font-mono text-sm">{row.poolSize.toFixed(2)} {row.collateralCode}</div>
           </div>
           <div className="hidden w-16 text-right lg:block">
             <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">orders</div>

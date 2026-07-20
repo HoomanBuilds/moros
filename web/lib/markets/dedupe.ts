@@ -3,6 +3,10 @@ export type MarketEntry = {
   poolId: string;
   asset: string;
   kind: "shielded";
+  collateralCode?: string;
+  collateralIssuer?: string | null;
+  collateralSac?: string;
+  collateralDecimals?: number;
   flagship?: boolean;
   createdAt?: number;
 };

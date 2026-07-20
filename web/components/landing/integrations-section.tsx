@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 
 const logos: Record<string, React.ReactNode> = {
-  Stellar: <span className="font-mono text-sm">XLM</span>,
+  Stellar: <span className="font-mono text-sm">USDC</span>,
   Soroban: <span className="font-mono text-sm">SOR</span>,
   Reflector: <span className="font-mono text-sm">RFL</span>,
   circom: <span className="font-mono text-sm">CIR</span>,

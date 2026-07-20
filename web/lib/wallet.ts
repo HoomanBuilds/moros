@@ -1,13 +1,14 @@
 import { StellarWalletsKit, Networks } from "@creit.tech/stellar-wallets-kit";
 import { FREIGHTER_ID } from "@creit.tech/stellar-wallets-kit/modules/freighter";
 import { defaultModules } from "@creit.tech/stellar-wallets-kit/modules/utils";
+import { NETWORK } from "@/lib/network";
 
 let initialized = false;
 
 export function getKit(): typeof StellarWalletsKit {
   if (!initialized) {
     StellarWalletsKit.init({
-      network: Networks.TESTNET,
+      network: NETWORK.id === "mainnet" ? Networks.PUBLIC : Networks.TESTNET,
       selectedWalletId: FREIGHTER_ID,
       modules: defaultModules(),
     });

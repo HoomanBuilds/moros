@@ -1,7 +1,7 @@
 "use client";
 import { useParams } from "next/navigation";
 import { useMarkets } from "@/lib/markets/registry";
-import { MarketProvider } from "@/lib/markets/market-context";
+import { collateralForEntry, MarketProvider } from "@/lib/markets/market-context";
 import { MarketHeader } from "@/components/markets/market-header";
 import { MetricRow } from "@/components/markets/metric-row";
 import { MarketTerminalChart } from "@/components/markets/market-terminal-chart";
@@ -15,7 +15,7 @@ export default function MarketTerminal() {
   const entry = markets.find((m) => m.marketId === id) ?? markets.find((m) => m.flagship)!;
 
   return (
-    <MarketProvider marketId={entry.marketId} poolId={entry.poolId}>
+    <MarketProvider marketId={entry.marketId} poolId={entry.poolId} collateral={collateralForEntry(entry)}>
       <div className="space-y-6">
         <MarketHeader />
         <MetricRow />

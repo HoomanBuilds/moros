@@ -89,7 +89,7 @@ export function FeaturedMarket({ row }: { row: MarketRow }) {
         </div>
 
         <footer className="flex items-center justify-between border-t border-white/[0.08] pt-4">
-          <span className="font-mono text-xs text-muted-foreground">{row.poolXlm.toFixed(2)} XLM pool</span>
+          <span className="font-mono text-xs text-muted-foreground">{row.poolSize.toFixed(2)} {row.collateralCode} pool</span>
           <div className="flex items-center gap-4">
             <FavoriteStar id={row.id} />
             <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">{BRAND.name}</span>

@@ -18,6 +18,7 @@ import {
   COMMITTEE_THRESHOLD,
   LMSR_B,
   POOL_CAP,
+  MARKET_SUBSIDY,
   MAIN_VK,
   DEPOSIT_VK,
   REDEEMV2_VK,
@@ -27,7 +28,7 @@ import {
 
 const server = new rpc.Server(NETWORK.rpcUrl);
 
-export type DeployStep = "market" | "pool" | "batcher" | "committee" | "redeemvk" | "resolver" | "done";
+export type DeployStep = "market" | "funding" | "pool" | "batcher" | "committee" | "redeemvk" | "resolver" | "done";
 
 function bytesArg(hex: string): xdr.ScVal {
   return xdr.ScVal.scvBytes(Buffer.from(hex, "hex"));
@@ -107,12 +108,20 @@ export async function deployShieldedMarket({
     MARKET_WASM_HASH,
     [
       addr(address),
-      addr(NETWORK.xlmSac),
+      addr(NETWORK.collateral.sac),
       nativeToScVal(BigInt(LMSR_B), { type: "i128" }),
       nativeToScVal(asset, { type: "symbol" }),
       nativeToScVal(strikeToRaw(strikeUsd), { type: "i128" }),
       nativeToScVal(BigInt(expiryUnix), { type: "u64" }),
     ],
+    address,
+  );
+
+  onStep("funding");
+  await invokeSigned(
+    marketId,
+    "fund",
+    [addr(address), nativeToScVal(BigInt(MARKET_SUBSIDY), { type: "i128" })],
     address,
   );
 
@@ -122,7 +131,7 @@ export async function deployShieldedMarket({
     [
       bytesArg(MAIN_VK),
       bytesArg(DEPOSIT_VK),
-      addr(NETWORK.xlmSac),
+      addr(NETWORK.collateral.sac),
       addr(address),
       addr(marketId),
       nativeToScVal(BigInt(POOL_CAP), { type: "i128" }),

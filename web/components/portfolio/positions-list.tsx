@@ -151,7 +151,7 @@ export function PositionsList() {
                 >
                   {side.label}
                 </span>
-                <span className="text-sm">{p.amount} XLM</span>
+                <span className="text-sm">{p.amount} {p.collateralCode ?? "XLM"}</span>
                 <span className="text-xs font-mono text-muted-foreground">{truncate(p.commitment)}</span>
               </div>
               <div className="flex items-center gap-3">

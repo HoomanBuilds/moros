@@ -59,7 +59,7 @@ export function AboutPanel() {
         <Row label="Underlying">{asset}</Row>
         <Row label="Resolves at">{strike}</Row>
         <Row label="Settlement">{data ? data.resolutionLabel : "--"}</Row>
-        <Row label="Pool collateral">{data ? `${data.poolSizeXlm.toFixed(2)} XLM` : "--"}</Row>
+        <Row label="Pool collateral">{data ? `${data.poolSize.toFixed(2)} ${data.collateral.code}` : "--"}</Row>
         <Row label="Privacy">Groth16 · BLS12-381 · t-of-n committee</Row>
         <Row label="Market contract"><ContractLink id={marketId} /></Row>
         <Row label="Shielded pool"><ContractLink id={poolId} /></Row>

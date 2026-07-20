@@ -1,5 +1,6 @@
 export type Position = {
   address: string; market: string; side: string; amount: string;
+  collateralCode?: string;
   secret: string; nullifier: string; commitment: string; txHash: string;
   status: "placed" | "submitted" | "redeemed";
 };
