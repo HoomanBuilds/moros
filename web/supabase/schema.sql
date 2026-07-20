@@ -12,7 +12,12 @@ create table if not exists markets_meta (
   title text,
   description text,
   category text,
+  subject text,
   banner_url text,
+  banner_source_url text,
+  banner_attribution text,
+  banner_license text,
+  banner_license_url text,
   resolution_source text,
   resolution_backup_sources text[] not null default '{}',
   creator text,
@@ -126,9 +131,18 @@ insert into storage.buckets (id, name, public)
 values ('avatars', 'avatars', true)
 on conflict (id) do nothing;
 
-insert into storage.buckets (id, name, public)
-values ('market-banners', 'market-banners', true)
-on conflict (id) do nothing;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'market-banners',
+  'market-banners',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (

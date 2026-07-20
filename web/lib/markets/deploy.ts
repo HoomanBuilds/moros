@@ -37,6 +37,12 @@ export type DeployStep = "market" | "funding" | "pool" | "batcher" | "committee"
 export type DeploymentMetadata = {
   title: string;
   category: string;
+  subject?: string;
+  bannerDownloadUrl?: string;
+  bannerSourceUrl?: string;
+  bannerAttribution?: string;
+  bannerLicense?: string;
+  bannerLicenseUrl?: string;
   resolutionSource?: string;
   backupResolutionSources?: string[];
   resolutionRules?: string;

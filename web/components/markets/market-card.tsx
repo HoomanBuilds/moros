@@ -1,35 +1,48 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { Panel, Tag } from "@/components/app/app-kit";
 import { ProbabilityBar } from "@/components/markets/probability-bar";
 import { FavoriteStar } from "@/components/markets/favorite-star";
-import { getMarketMeta, type MarketMeta } from "@/lib/supabase/markets-meta";
 import { centsLabel } from "@/lib/stellar/derive";
-import { AssetIcon } from "@/components/markets/asset-icon";
+import { MarketBanner, MarketVisual } from "@/components/markets/market-visual";
 import type { MarketRow } from "@/lib/markets/catalog";
 
 export function MarketCard({ row }: { row: MarketRow }) {
-  const [meta, setMeta] = useState<MarketMeta | null>(null);
-  const title = meta?.title || row.question;
-
-  useEffect(() => {
-    getMarketMeta(row.id).then(setMeta);
-  }, [row.id]);
-
   return (
     <div className="relative w-full sm:w-[380px]">
       <Link href={row.href} className="block">
         <Panel className="space-y-5 p-6 transition-colors hover:border-white/20">
-          {meta?.banner_url && <img src={meta.banner_url} alt="" className="h-28 w-full rounded object-cover" />}
+          {row.resolverType === "event" && (
+            <MarketBanner
+              category={row.category}
+              subject={row.subject}
+              question={row.question}
+              imageUrl={row.bannerUrl}
+              className="h-32"
+            />
+          )}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <AssetIcon asset={row.asset} size="sm" />
+              <MarketVisual
+                resolverType={row.resolverType}
+                asset={row.asset}
+                category={row.category}
+                subject={row.subject}
+                imageUrl={row.bannerUrl}
+                size="sm"
+              />
               <Tag>{row.outcome}</Tag>
             </div>
             <span className="pr-8 font-mono text-xs text-muted-foreground">{row.resolutionLabel}</span>
           </div>
-          <h3 className="min-h-[3.5rem] font-display text-2xl leading-snug">{title}</h3>
+          <div>
+            {row.resolverType === "event" && (
+              <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-foreground/50">
+                {row.subject || row.category || "Event"}
+              </p>
+            )}
+            <h3 className="min-h-[3.5rem] font-display text-2xl leading-snug">{row.question}</h3>
+          </div>
           <ProbabilityBar probYes={row.probYes} />
           <div className="flex items-end justify-between border-t border-white/[0.08] pt-5">
             <div>

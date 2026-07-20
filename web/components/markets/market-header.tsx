@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { useMarket } from "@/lib/stellar/use-market";
 import { FavoriteStar } from "@/components/markets/favorite-star";
-import { AssetIcon } from "@/components/markets/asset-icon";
+import { MarketVisual } from "@/components/markets/market-visual";
 import { useActiveMarket } from "@/lib/markets/market-context";
 import { NETWORK } from "@/lib/network";
 
@@ -68,10 +68,17 @@ export function MarketHeader() {
       </div>
 
       <div className="flex items-start gap-4">
-        <AssetIcon asset={data?.resolverType === "event" ? data.category || "EVENT" : data?.asset} size="lg" />
+        <MarketVisual
+          resolverType={data?.resolverType}
+          asset={data?.asset}
+          category={data?.category}
+          subject={data?.subject}
+          imageUrl={data?.bannerUrl}
+          size="lg"
+        />
         <div className="space-y-4">
           <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            {data ? `${data.category || data.asset} · binary market` : "binary market"}
+            {data ? `${data.subject || data.category || data.asset} · binary market` : "binary market"}
           </span>
           <h1 className="max-w-3xl font-display text-2xl leading-tight tracking-tight md:text-3xl">
             {data?.question ?? "Loading market"}

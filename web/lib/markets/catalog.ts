@@ -9,6 +9,15 @@ export type MarketRow = {
   id: string;
   href: string;
   asset: string;
+  category?: string;
+  subject?: string;
+  bannerUrl?: string;
+  bannerSourceUrl?: string;
+  bannerAttribution?: string;
+  bannerLicense?: string;
+  bannerLicenseUrl?: string;
+  resolverType: "price" | "event";
+  resolutionRules?: string;
   question: string;
   strike: string;
   strikeNum: number;
@@ -34,6 +43,15 @@ async function fetchRow(entry: MarketEntry): Promise<MarketRow> {
     id: entry.marketId,
     href: `/app/market/${entry.marketId}`,
     asset: data.asset,
+    category: data.category,
+    subject: data.subject,
+    bannerUrl: data.bannerUrl,
+    bannerSourceUrl: data.bannerSourceUrl,
+    bannerAttribution: data.bannerAttribution,
+    bannerLicense: data.bannerLicense,
+    bannerLicenseUrl: data.bannerLicenseUrl,
+    resolverType: data.resolverType,
+    resolutionRules: data.resolutionRules,
     question: data.question,
     strike: data.strike,
     strikeNum: Number(data.strike),

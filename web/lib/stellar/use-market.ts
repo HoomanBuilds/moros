@@ -27,6 +27,12 @@ export async function fetchMarket(
   const meta = {
     title: storedMeta?.title ?? fallback.title,
     category: storedMeta?.category ?? fallback.category,
+    subject: storedMeta?.subject ?? fallback.subject,
+    bannerUrl: storedMeta?.banner_url ?? fallback.bannerUrl,
+    bannerSourceUrl: storedMeta?.banner_source_url ?? fallback.bannerSourceUrl,
+    bannerAttribution: storedMeta?.banner_attribution ?? fallback.bannerAttribution,
+    bannerLicense: storedMeta?.banner_license ?? fallback.bannerLicense,
+    bannerLicenseUrl: storedMeta?.banner_license_url ?? fallback.bannerLicenseUrl,
     resolverType: storedMeta?.resolver_type ?? fallback.resolverType ?? "price",
     resolutionSource: storedMeta?.resolution_source ?? fallback.resolutionSource,
     backupResolutionSources: storedMeta?.resolution_backup_sources ?? fallback.backupResolutionSources,

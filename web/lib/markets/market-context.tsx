@@ -5,6 +5,12 @@ import { NETWORK, collateralFromRecord, type CollateralAsset } from "@/lib/netwo
 export type MarketDescriptor = {
   title?: string;
   category?: string;
+  subject?: string;
+  bannerUrl?: string;
+  bannerSourceUrl?: string;
+  bannerAttribution?: string;
+  bannerLicense?: string;
+  bannerLicenseUrl?: string;
   resolverType?: "price" | "event";
   resolutionSource?: string;
   backupResolutionSources?: string[];

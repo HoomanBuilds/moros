@@ -9,6 +9,11 @@ export type MarketMeta = {
   description: string | null;
   banner_url: string | null;
   category: string | null;
+  subject: string | null;
+  banner_source_url: string | null;
+  banner_attribution: string | null;
+  banner_license: string | null;
+  banner_license_url: string | null;
   resolver_type: "price" | "event" | null;
   resolution_source: string | null;
   resolution_backup_sources: string[] | null;
@@ -29,6 +34,12 @@ export type RegistryMarket = {
   protocolVersion?: 2 | 3;
   title?: string;
   category?: string;
+  subject?: string;
+  bannerUrl?: string;
+  bannerSourceUrl?: string;
+  bannerAttribution?: string;
+  bannerLicense?: string;
+  bannerLicenseUrl?: string;
   resolverType?: "price" | "event";
   resolutionSource?: string;
   backupResolutionSources?: string[];
@@ -43,18 +54,41 @@ export async function getMarketMeta(marketId: string): Promise<MarketMeta | null
 
   const { data, error } = await client
     .from("markets_meta")
-    .select("market_id, title, description, banner_url, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash")
+    .select("market_id, title, description, banner_url, category, subject, banner_source_url, banner_attribution, banner_license, banner_license_url, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash")
     .eq("market_id", marketId)
     .maybeSingle();
 
   if (error) {
+    const preMedia = await client
+      .from("markets_meta")
+      .select("market_id, title, description, banner_url, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash")
+      .eq("market_id", marketId)
+      .maybeSingle();
+    if (!preMedia.error && preMedia.data) {
+      return {
+        ...preMedia.data,
+        subject: null,
+        banner_source_url: null,
+        banner_attribution: null,
+        banner_license: null,
+        banner_license_url: null,
+      } as MarketMeta;
+    }
     const fallback = await client
       .from("markets_meta")
       .select("market_id, title, description, banner_url, category, resolver_type, resolution_source, resolution_rules, void_rules, rules_hash")
       .eq("market_id", marketId)
       .maybeSingle();
     if (!fallback.error && fallback.data) {
-      return { ...fallback.data, resolution_backup_sources: null } as MarketMeta;
+      return {
+        ...fallback.data,
+        subject: null,
+        banner_source_url: null,
+        banner_attribution: null,
+        banner_license: null,
+        banner_license_url: null,
+        resolution_backup_sources: null,
+      } as MarketMeta;
     }
     const legacy = await client
       .from("markets_meta")
@@ -64,6 +98,11 @@ export async function getMarketMeta(marketId: string): Promise<MarketMeta | null
     if (legacy.error || !legacy.data) return null;
     return {
       ...legacy.data,
+      subject: null,
+      banner_source_url: null,
+      banner_attribution: null,
+      banner_license: null,
+      banner_license_url: null,
       resolver_type: "price",
       resolution_backup_sources: null,
       resolution_rules: null,
@@ -81,11 +120,21 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
 
   const primary = await client
     .from("markets_meta")
-    .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, protocol_version, title, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
+    .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, protocol_version, title, category, subject, banner_url, banner_source_url, banner_attribution, banner_license, banner_license_url, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
     .not("pool_id", "is", null)
     .order("created_at", { ascending: false });
   let data = primary.data as Record<string, unknown>[] | null;
   let error = primary.error;
+
+  if (error) {
+    const fallback = await client
+      .from("markets_meta")
+      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, protocol_version, title, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
+      .not("pool_id", "is", null)
+      .order("created_at", { ascending: false });
+    data = fallback.data as Record<string, unknown>[] | null;
+    error = fallback.error;
+  }
 
   if (error) {
     const fallback = await client
@@ -123,6 +172,12 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
       protocolVersion: r.protocol_version === 3 ? 3 : 2,
       title: r.title ? String(r.title) : undefined,
       category: r.category ? String(r.category) : undefined,
+      subject: r.subject ? String(r.subject) : undefined,
+      bannerUrl: r.banner_url ? String(r.banner_url) : undefined,
+      bannerSourceUrl: r.banner_source_url ? String(r.banner_source_url) : undefined,
+      bannerAttribution: r.banner_attribution ? String(r.banner_attribution) : undefined,
+      bannerLicense: r.banner_license ? String(r.banner_license) : undefined,
+      bannerLicenseUrl: r.banner_license_url ? String(r.banner_license_url) : undefined,
       resolverType: r.resolver_type === "event" ? "event" : "price",
       resolutionSource: r.resolution_source ? String(r.resolution_source) : undefined,
       backupResolutionSources: Array.isArray(r.resolution_backup_sources)
@@ -145,6 +200,11 @@ export async function saveMarketToRegistry(entry: {
   creator: string;
   title?: string;
   category?: string;
+  subject?: string;
+  bannerSourceUrl?: string;
+  bannerAttribution?: string;
+  bannerLicense?: string;
+  bannerLicenseUrl?: string;
   protocolVersion?: 2 | 3;
   description?: string;
   resolverType?: "price" | "event";
@@ -158,7 +218,8 @@ export async function saveMarketToRegistry(entry: {
   if (!client) return false;
 
   const { data } = await client.auth.getSession();
-  if (!data?.session) {
+  const sessionWallet = data.session?.user.app_metadata?.wallet;
+  if (sessionWallet !== entry.creator) {
     const result = await signInWithWallet(entry.creator);
     if (!result.ok) return false;
   }
@@ -177,6 +238,11 @@ export async function saveMarketToRegistry(entry: {
       title: entry.title ?? null,
       description: entry.description ?? null,
       category: entry.category ?? null,
+      subject: entry.subject ?? null,
+      banner_source_url: entry.bannerSourceUrl ?? null,
+      banner_attribution: entry.bannerAttribution ?? null,
+      banner_license: entry.bannerLicense ?? null,
+      banner_license_url: entry.bannerLicenseUrl ?? null,
       resolver_type: entry.resolverType ?? "price",
       resolution_source: entry.resolutionSource ?? null,
       resolution_backup_sources: entry.backupResolutionSources ?? [],

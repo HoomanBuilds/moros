@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Panel } from "@/components/app/app-kit";
-import { AssetIcon } from "./asset-icon";
+import { MarketVisual } from "./market-visual";
 import { ProbabilityBar } from "./probability-bar";
 import { FavoriteStar } from "./favorite-star";
 import type { MarketRow } from "@/lib/markets/catalog";
@@ -11,11 +11,18 @@ export function MarketListRow({ row }: { row: MarketRow }) {
     <div className="relative">
       <Link href={row.href} className="block">
         <Panel className="flex items-center gap-4 p-4 pr-12 transition-colors hover:border-white/20">
-          <AssetIcon asset={row.asset} size="sm" />
+          <MarketVisual
+            resolverType={row.resolverType}
+            asset={row.asset}
+            category={row.category}
+            subject={row.subject}
+            imageUrl={row.bannerUrl}
+            size="sm"
+          />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm">{row.question}</div>
             <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              {row.live ? `settles in ${row.resolutionLabel}` : `resolved ${row.outcome}`}
+              {row.subject ? `${row.subject} / ` : ""}{row.live ? `settles in ${row.resolutionLabel}` : `resolved ${row.outcome}`}
             </div>
           </div>
           <div className="hidden w-40 md:block">

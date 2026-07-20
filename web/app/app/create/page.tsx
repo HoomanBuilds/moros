@@ -25,9 +25,14 @@ import { Spinner } from "@/components/ui/spinner";
 import { AssetIcon } from "@/components/markets/asset-icon";
 import { AssetSpotChart } from "@/components/markets/asset-spot-chart";
 import {
+  EventSubjectMediaPicker,
+  type SelectedMarketImage,
+} from "@/components/markets/event-subject-media-picker";
+import {
   CATEGORY_PRESENTATION,
   MarketCategoryIcon,
 } from "@/components/markets/market-category-icon";
+import { MarketBanner, MarketVisual } from "@/components/markets/market-visual";
 import { MARKET_SUBSIDY, ORACLE_MODE } from "@/lib/markets/deploy-constants";
 import { useAssetPrice } from "@/lib/prices/use-asset-price";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
@@ -40,6 +45,7 @@ import {
 } from "@/lib/markets/deploy";
 import { addMarket, refreshMarkets } from "@/lib/markets/registry";
 import { saveMarketToRegistry } from "@/lib/supabase/markets-meta";
+import { uploadMarketBanner } from "@/lib/supabase/market-media";
 import { registerPool } from "@/lib/committee/client";
 import { cn } from "@/lib/utils";
 import { NETWORK } from "@/lib/network";
@@ -55,6 +61,7 @@ import {
   assetsForCategory,
   eventGuidance,
   isPriceCategory,
+  type EventCategory,
   type MarketCategory,
 } from "@/lib/markets/categories";
 
@@ -171,6 +178,8 @@ export default function CreatePage() {
   const [category, setCategory] = useState<MarketCategory>("Crypto price");
   const [strike, setStrike] = useState("");
   const [eventQuestion, setEventQuestion] = useState("");
+  const [subject, setSubject] = useState("");
+  const [selectedImage, setSelectedImage] = useState<SelectedMarketImage | null>(null);
   const [resolutionSource, setResolutionSource] = useState("");
   const [backupSources, setBackupSources] = useState("");
   const [resolutionRules, setResolutionRules] = useState("");
@@ -192,6 +201,7 @@ export default function CreatePage() {
   const { spot } = useAssetPrice(isPriceMarket ? asset : undefined);
   const strikeNum = Number(strike);
   const busy = stage !== null && stage !== "done";
+  const subjectComplete = isPriceMarket || subject.trim().length >= 2;
   const questionComplete = isPriceMarket || eventQuestion.trim().length >= 12;
   const primarySourceComplete = isPriceMarket || isHttpUrl(resolutionSource.trim());
   const backupSourcesComplete = isPriceMarket || (
@@ -205,7 +215,8 @@ export default function CreatePage() {
   const strikeComplete = !isPriceMarket || (strikeNum > 0 && priceAssets.includes(asset));
   const valid = isPriceMarket
     ? strikeComplete
-    : questionComplete
+    : subjectComplete
+      && questionComplete
       && primarySourceComplete
       && backupSourcesComplete
       && yesRuleComplete
@@ -216,22 +227,24 @@ export default function CreatePage() {
   const activeIndex = stage ? STEPS.findIndex((s) => s.key === stage) : -1;
   const categoryMode = isPriceMarket ? "price" : "event";
   const categoryPresentation = CATEGORY_PRESENTATION[category];
-  const outcomeComplete = isPriceMarket ? strikeComplete : questionComplete;
+  const outcomeComplete = isPriceMarket ? strikeComplete : subjectComplete && questionComplete;
   const resolutionComplete = isPriceMarket
     ? true
     : primarySourceComplete && backupSourcesComplete && yesRuleComplete && voidRuleComplete;
   const completedRequirements = isPriceMarket
     ? Number(strikeComplete)
-    : [questionComplete, primarySourceComplete, backupSourcesComplete, yesRuleComplete, voidRuleComplete]
+    : [subjectComplete, questionComplete, primarySourceComplete, backupSourcesComplete, yesRuleComplete, voidRuleComplete]
       .filter(Boolean).length;
-  const totalRequirements = isPriceMarket ? 1 : 5;
+  const totalRequirements = isPriceMarket ? 1 : 6;
   const feedName = category === "Crypto price" ? "Reflector CEX" : "Reflector fiat";
 
   const firstInvalidField = isPriceMarket
     ? "strike-price"
-    : !questionComplete
-      ? "event-question"
-      : !primarySourceComplete
+    : !subjectComplete
+      ? "event-subject"
+      : !questionComplete
+        ? "event-question"
+        : !primarySourceComplete
         ? "resolution-source"
         : !backupSourcesComplete
           ? "backup-sources"
@@ -240,9 +253,13 @@ export default function CreatePage() {
             : "void-rule";
 
   const question = useMemo(() => {
-    if (!isPriceMarket) return eventQuestion.trim() || "Enter a clear YES or NO question";
+    if (!isPriceMarket) return eventQuestion.trim() || (subject.trim() ? `Create a question about ${subject.trim()}` : "Enter a clear YES or NO question");
     return `Will ${asset} be at or above ${strikeNum > 0 ? fmtUsd(strikeNum) : "..."} at settlement?`;
-  }, [asset, eventQuestion, isPriceMarket, strikeNum]);
+  }, [asset, eventQuestion, isPriceMarket, strikeNum, subject]);
+
+  useEffect(() => () => {
+    if (selectedImage?.kind === "upload") URL.revokeObjectURL(selectedImage.previewUrl);
+  }, [selectedImage]);
 
   function selectCategory(nextCategory: MarketCategory) {
     setCategory(nextCategory);
@@ -321,6 +338,12 @@ export default function CreatePage() {
         metadata: {
           title: question,
           category,
+          subject: isPriceMarket ? undefined : subject.trim(),
+          bannerDownloadUrl: selectedImage?.kind === "commons" ? selectedImage.downloadUrl : undefined,
+          bannerSourceUrl: selectedImage?.kind === "commons" ? selectedImage.sourceUrl : undefined,
+          bannerAttribution: isPriceMarket ? undefined : selectedImage?.attribution,
+          bannerLicense: isPriceMarket ? undefined : selectedImage?.license,
+          bannerLicenseUrl: selectedImage?.kind === "commons" ? selectedImage.licenseUrl : undefined,
           resolutionSource: isPriceMarket ? undefined : resolutionSource.trim(),
           backupResolutionSources: isPriceMarket ? undefined : backupResolutionSources,
           resolutionRules: isPriceMarket ? undefined : resolutionRules.trim(),
@@ -345,6 +368,11 @@ export default function CreatePage() {
         protocolVersion: 3,
         title: marketMetadata.title,
         category: marketMetadata.category,
+        subject: marketMetadata.subject,
+        bannerSourceUrl: marketMetadata.bannerSourceUrl,
+        bannerAttribution: marketMetadata.bannerAttribution,
+        bannerLicense: marketMetadata.bannerLicense,
+        bannerLicenseUrl: marketMetadata.bannerLicenseUrl,
         resolverType: deployment.resolverType,
         resolutionSource: marketMetadata.resolutionSource,
         backupResolutionSources: marketMetadata.backupResolutionSources,
@@ -356,7 +384,7 @@ export default function CreatePage() {
       clearPendingDeployment(address);
       setPendingDeployment(null);
       try {
-        await saveMarketToRegistry({
+        const saved = await saveMarketToRegistry({
           marketId,
           poolId,
           asset: deployment.asset,
@@ -367,6 +395,11 @@ export default function CreatePage() {
           creator: address,
           title: marketMetadata.title,
           category: marketMetadata.category,
+          subject: marketMetadata.subject,
+          bannerSourceUrl: marketMetadata.bannerSourceUrl,
+          bannerAttribution: marketMetadata.bannerAttribution,
+          bannerLicense: marketMetadata.bannerLicense,
+          bannerLicenseUrl: marketMetadata.bannerLicenseUrl,
           protocolVersion: 3,
           resolverType: deployment.resolverType,
           resolutionSource: marketMetadata.resolutionSource,
@@ -375,6 +408,21 @@ export default function CreatePage() {
           voidRules: marketMetadata.voidRules,
           rulesHash: deployment.rulesHash,
         });
+        if (!saved) throw new Error("The public registry rejected the market metadata");
+        const bannerSource = selectedImage
+          ? selectedImage.kind === "upload"
+            ? { kind: "upload" as const, file: selectedImage.file }
+            : { kind: "commons" as const, downloadUrl: selectedImage.downloadUrl }
+          : marketMetadata.bannerDownloadUrl
+            ? { kind: "commons" as const, downloadUrl: marketMetadata.bannerDownloadUrl }
+            : null;
+        if (bannerSource) {
+          try {
+            await uploadMarketBanner({ address, marketId, source: bannerSource });
+          } catch (cause) {
+            setError(cause instanceof Error ? cause.message : "The market is live, but its image could not be attached.");
+          }
+        }
         await refreshMarkets();
       } catch {
         setError("Market is live but could not be listed for others. It is saved locally.");
@@ -590,25 +638,39 @@ export default function CreatePage() {
                   </div>
                 </>
               ) : (
-                <div className="space-y-3">
-                  <FieldLabel htmlFor="event-question" description="State one outcome only. Include the subject, condition, and cutoff when relevant.">
-                    YES or NO question
-                  </FieldLabel>
-                  <Textarea
-                    id="event-question"
-                    value={eventQuestion}
+                <div className="space-y-6">
+                  <EventSubjectMediaPicker
+                    category={category as EventCategory}
+                    subject={subject}
+                    subjectLabel={guidance.subjectLabel}
+                    subjectPlaceholder={guidance.subjectPlaceholder}
+                    selectedImage={selectedImage}
                     disabled={busy}
-                    maxLength={180}
-                    rows={3}
-                    aria-describedby="event-question-description event-question-count"
-                    aria-invalid={attempted && !questionComplete}
-                    placeholder={guidance.question}
-                    onChange={(event) => setEventQuestion(event.target.value)}
-                    className="min-h-24 resize-y text-base leading-relaxed"
+                    invalid={attempted && !subjectComplete}
+                    onSubjectChange={setSubject}
+                    onImageChange={setSelectedImage}
                   />
-                  <div id="event-question-count" className="flex justify-between gap-4 text-xs text-foreground/50">
-                    <span>Minimum 12 characters</span>
-                    <span className="font-mono">{eventQuestion.length}/180</span>
+
+                  <div className="space-y-3">
+                    <FieldLabel htmlFor="event-question" description="State one outcome only. Include the subject, condition, and cutoff when relevant.">
+                      YES or NO question
+                    </FieldLabel>
+                    <Textarea
+                      id="event-question"
+                      value={eventQuestion}
+                      disabled={busy}
+                      maxLength={180}
+                      rows={3}
+                      aria-describedby="event-question-description event-question-count"
+                      aria-invalid={attempted && !questionComplete}
+                      placeholder={guidance.question}
+                      onChange={(event) => setEventQuestion(event.target.value)}
+                      className="min-h-24 resize-y text-base leading-relaxed"
+                    />
+                    <div id="event-question-count" className="flex justify-between gap-4 text-xs text-foreground/50">
+                      <span>Minimum 12 characters</span>
+                      <span className="font-mono">{eventQuestion.length}/180</span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -733,6 +795,7 @@ export default function CreatePage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 rounded-lg border border-white/[0.08] bg-black/15 p-4 sm:grid-cols-3">
+                    <ReadinessItem complete={subjectComplete}>Named subject</ReadinessItem>
                     <ReadinessItem complete={questionComplete}>Clear question</ReadinessItem>
                     <ReadinessItem complete={primarySourceComplete}>Primary source</ReadinessItem>
                     <ReadinessItem complete={backupSourcesComplete}>Backup source</ReadinessItem>
@@ -910,17 +973,18 @@ export default function CreatePage() {
               </div>
 
               <div className="mt-5 flex items-start gap-3">
-                {isPriceMarket ? (
-                  <AssetIcon asset={asset} size="lg" />
-                ) : (
-                  <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-xl border border-[#eca8d6]/25 bg-[#eca8d6]/10 text-[#f4c5e4]">
-                    <MarketCategoryIcon category={category} className="size-6" />
-                  </span>
-                )}
+                <MarketVisual
+                  resolverType={isPriceMarket ? "price" : "event"}
+                  asset={asset}
+                  category={category}
+                  subject={subject}
+                  imageUrl={selectedImage?.previewUrl}
+                  size="lg"
+                />
                 <div className="min-w-0">
                   <h2 className="font-display text-2xl leading-tight tracking-tight">{question}</h2>
                   <p className="mt-2 font-mono text-[11px] uppercase tracking-wider text-foreground/50">
-                    {category} / shielded binary market
+                    {isPriceMarket ? category : subject.trim() || category} / shielded binary market
                   </p>
                 </div>
               </div>
@@ -932,14 +996,23 @@ export default function CreatePage() {
                   <AssetSpotChart asset={asset} strike={strikeNum > 0 ? strikeNum : undefined} height={220} />
                 </div>
               ) : (
-                <div className="space-y-4 rounded-lg border border-white/[0.08] bg-black/15 p-4 text-xs leading-relaxed text-foreground/55">
-                  <div>
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-emerald-200">YES condition</span>
-                    <p className="mt-1.5">{resolutionRules.trim() || "Add the exact YES rule."}</p>
-                  </div>
-                  <div className="border-t border-white/[0.08] pt-4">
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-amber-200">Void and refund</span>
-                    <p className="mt-1.5">{voidRules.trim() || "Add the cancellation and ambiguity rule."}</p>
+                <div className="space-y-4">
+                  <MarketBanner
+                    category={category}
+                    subject={subject}
+                    question={question}
+                    imageUrl={selectedImage?.previewUrl}
+                    className="h-40"
+                  />
+                  <div className="space-y-4 rounded-lg border border-white/[0.08] bg-black/15 p-4 text-xs leading-relaxed text-foreground/55">
+                    <div>
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-emerald-200">YES condition</span>
+                      <p className="mt-1.5">{resolutionRules.trim() || "Add the exact YES rule."}</p>
+                    </div>
+                    <div className="border-t border-white/[0.08] pt-4">
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-amber-200">Void and refund</span>
+                      <p className="mt-1.5">{voidRules.trim() || "Add the cancellation and ambiguity rule."}</p>
+                    </div>
                   </div>
                 </div>
               )}

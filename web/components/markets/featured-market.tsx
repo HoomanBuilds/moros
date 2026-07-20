@@ -3,8 +3,8 @@ import Link from "next/link";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { useAssetPrice } from "@/lib/prices/use-asset-price";
 import { Panel } from "@/components/app/app-kit";
-import { AssetIcon } from "./asset-icon";
 import { AssetSpotChart } from "./asset-spot-chart";
+import { MarketBanner, MarketVisual } from "./market-visual";
 import { FavoriteStar } from "./favorite-star";
 import { BRAND } from "@/lib/brand";
 import type { MarketRow } from "@/lib/markets/catalog";
@@ -35,7 +35,8 @@ function SideBet({ href, label, cents, mult, color }: { href: string; label: str
 }
 
 export function FeaturedMarket({ row }: { row: MarketRow }) {
-  const { spot } = useAssetPrice(row.asset);
+  const isEvent = row.resolverType === "event";
+  const { spot } = useAssetPrice(isEvent ? undefined : row.asset);
   const yesMult = row.probYes && row.probYes > 0 ? 1 / row.probYes : null;
   const noMult = row.probYes !== null && row.probYes < 1 ? 1 / (1 - row.probYes) : null;
   const delta = spot && row.strikeNum > 0 ? spot.price - row.strikeNum : null;
@@ -45,28 +46,50 @@ export function FeaturedMarket({ row }: { row: MarketRow }) {
       <div className="space-y-6 p-6">
         <header className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
           <Link href={row.href} className="flex min-w-0 items-center gap-3">
-            <AssetIcon asset={row.asset} size="lg" />
+            <MarketVisual
+              resolverType={row.resolverType}
+              asset={row.asset}
+              category={row.category}
+              subject={row.subject}
+              imageUrl={row.bannerUrl}
+              size="lg"
+            />
             <div className="min-w-0">
               <h2 className="truncate font-display text-2xl leading-tight">{row.question}</h2>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">{row.asset} binary market</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">{isEvent ? row.subject || row.category || "Event" : row.asset} binary market</p>
             </div>
           </Link>
 
-          <div className="flex items-start gap-8">
-            <div className="flex flex-col gap-1">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Strike price</span>
-              <span className="font-mono text-lg tabular-nums">{fmtUsd(row.strikeNum)}</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Current price</span>
-              <span className="font-mono text-lg tabular-nums">{spot ? fmtUsd(spot.price) : "--"}</span>
-              {delta !== null && Math.abs(delta) >= 0.0001 && (
-                <span className="flex items-center gap-0.5 font-mono text-xs" style={{ color: delta >= 0 ? YES : NO }}>
-                  {delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                  {delta >= 0 ? "+" : "-"}{fmtUsd(Math.abs(delta))} vs strike
-                </span>
-              )}
-            </div>
+          <div className="flex flex-wrap items-start gap-8">
+            {isEvent ? (
+              <>
+                <div className="flex flex-col gap-1">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Subject</span>
+                  <span className="max-w-48 truncate text-sm">{row.subject || "Event market"}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Category</span>
+                  <span className="text-sm">{row.category || "Other"}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col gap-1">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Strike price</span>
+                  <span className="font-mono text-lg tabular-nums">{fmtUsd(row.strikeNum)}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Current price</span>
+                  <span className="font-mono text-lg tabular-nums">{spot ? fmtUsd(spot.price) : "--"}</span>
+                  {delta !== null && Math.abs(delta) >= 0.0001 && (
+                    <span className="flex items-center gap-0.5 font-mono text-xs" style={{ color: delta >= 0 ? YES : NO }}>
+                      {delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                      {delta >= 0 ? "+" : "-"}{fmtUsd(Math.abs(delta))} vs strike
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
             <div className="flex flex-col gap-1">
               <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: row.live ? NO : undefined }}>
                 {row.live ? "Ends in" : "Status"}
@@ -85,7 +108,17 @@ export function FeaturedMarket({ row }: { row: MarketRow }) {
               <p className="mt-1 text-xs text-muted-foreground">Which way you bet stays private.</p>
             </div>
           </div>
-          <AssetSpotChart asset={row.asset} strike={row.strikeNum} height={240} />
+          {isEvent ? (
+            <MarketBanner
+              category={row.category}
+              subject={row.subject}
+              question={row.question}
+              imageUrl={row.bannerUrl}
+              className="h-60"
+            />
+          ) : (
+            <AssetSpotChart asset={row.asset} strike={row.strikeNum} height={240} />
+          )}
         </div>
 
         <footer className="flex items-center justify-between border-t border-white/[0.08] pt-4">

@@ -51,6 +51,8 @@ export function AboutPanel() {
   const backupSourceUrls = (data?.backupResolutionSources ?? [])
     .map(safeHttpUrl)
     .filter((value): value is string => value !== null);
+  const bannerSourceUrl = safeHttpUrl(data?.bannerSourceUrl);
+  const bannerLicenseUrl = safeHttpUrl(data?.bannerLicenseUrl);
 
   return (
     <Panel className="p-6 space-y-6">
@@ -82,6 +84,7 @@ export function AboutPanel() {
 
       <div className="divide-y divide-foreground/10 border-t border-foreground/10">
         <Row label={isEvent ? "Category" : "Underlying"}>{isEvent ? data?.category || "Event" : asset}</Row>
+        {isEvent && data?.subject && <Row label="Subject">{data.subject}</Row>}
         {!isEvent && <Row label="Resolves at">{strike}</Row>}
         {isEvent && sourceUrl && (
           <Row label="Primary source">
@@ -100,6 +103,28 @@ export function AboutPanel() {
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               ))}
+            </span>
+          </Row>
+        )}
+        {isEvent && data?.bannerAttribution && (
+          <Row label="Subject image">
+            <span className="flex flex-col items-start gap-1 sm:items-end">
+              <span>{data.bannerAttribution}</span>
+              <span className="flex flex-wrap items-center gap-3 text-xs">
+                {bannerSourceUrl && (
+                  <a href={bannerSourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+                    Image source
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+                {data.bannerLicense && (bannerLicenseUrl ? (
+                  <a href={bannerLicenseUrl} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
+                    {data.bannerLicense}
+                  </a>
+                ) : (
+                  <span className="text-muted-foreground">{data.bannerLicense}</span>
+                ))}
+              </span>
             </span>
           </Row>
         )}

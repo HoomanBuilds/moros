@@ -39,6 +39,12 @@ export default function MarketTerminal() {
   const descriptor = {
     title: entry.title,
     category: entry.category,
+    subject: entry.subject,
+    bannerUrl: entry.bannerUrl,
+    bannerSourceUrl: entry.bannerSourceUrl,
+    bannerAttribution: entry.bannerAttribution,
+    bannerLicense: entry.bannerLicense,
+    bannerLicenseUrl: entry.bannerLicenseUrl,
     resolverType: entry.resolverType,
     resolutionSource: entry.resolutionSource,
     resolutionRules: entry.resolutionRules,
