@@ -42,6 +42,7 @@ pub struct PriceData {
 
 #[contractclient(name = "PriceFeedClient")]
 pub trait PriceFeed {
+    fn base(env: Env) -> Asset;
     fn decimals(env: Env) -> u32;
     fn price(env: Env, asset: Asset, timestamp: u64) -> Option<PriceData>;
 }
@@ -182,12 +183,8 @@ impl Resolver {
             oracles: storage
                 .get(&DataKey::Oracles)
                 .ok_or(Error::NotInitialized)?,
-            quorum: storage
-                .get(&DataKey::Quorum)
-                .ok_or(Error::NotInitialized)?,
-            max_age: storage
-                .get(&DataKey::MaxAge)
-                .ok_or(Error::NotInitialized)?,
+            quorum: storage.get(&DataKey::Quorum).ok_or(Error::NotInitialized)?,
+            max_age: storage.get(&DataKey::MaxAge).ok_or(Error::NotInitialized)?,
             resolution_timeout: storage
                 .get(&DataKey::ResolutionTimeout)
                 .ok_or(Error::NotInitialized)?,
@@ -233,6 +230,13 @@ impl Resolver {
         let mut prices = Vec::new(&env);
         for oracle in oracles.iter() {
             let client = PriceFeedClient::new(&env, &oracle);
+            let base = match client.try_base() {
+                Ok(Ok(value)) => value,
+                _ => continue,
+            };
+            if base != Asset::Other(symbol_short!("USD")) {
+                continue;
+            }
             let decimals = match client.try_decimals() {
                 Ok(Ok(value)) => value,
                 _ => continue,

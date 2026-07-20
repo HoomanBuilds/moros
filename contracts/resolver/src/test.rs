@@ -16,10 +16,11 @@ pub struct MockOracle;
 
 #[contractimpl]
 impl MockOracle {
-    pub fn __constructor(env: Env, decimals: u32) {
+    pub fn __constructor(env: Env, decimals: u32, base: Symbol) {
         env.storage()
             .instance()
             .set(&symbol_short!("dec"), &decimals);
+        env.storage().instance().set(&symbol_short!("base"), &base);
     }
 
     pub fn set(env: Env, price: i128, timestamp: u64) {
@@ -34,6 +35,19 @@ impl MockOracle {
 
     pub fn disable(env: Env) {
         env.storage().instance().set(&symbol_short!("on"), &false);
+    }
+
+    pub fn set_base(env: Env, base: Symbol) {
+        env.storage().instance().set(&symbol_short!("base"), &base);
+    }
+
+    pub fn base(env: Env) -> Asset {
+        Asset::Other(
+            env.storage()
+                .instance()
+                .get(&symbol_short!("base"))
+                .unwrap(),
+        )
     }
 
     pub fn decimals(env: Env) -> u32 {
@@ -112,7 +126,10 @@ fn setup<'a>(
     let mut oracle_addresses = Vec::new(env);
     let mut oracle_clients = Vec::new(env);
     for (price, timestamp, decimals) in values {
-        let client = MockOracleClient::new(env, &env.register(MockOracle {}, (*decimals,)));
+        let client = MockOracleClient::new(
+            env,
+            &env.register(MockOracle {}, (*decimals, symbol_short!("USD"))),
+        );
         client.set(price, timestamp);
         oracle_addresses.push_back(client.address.clone());
         oracle_clients.push_back(client.address.clone());
@@ -248,7 +265,10 @@ fn combines_sep40_and_verified_pyth_price() {
     env.mock_all_auths();
     let expiry = 12_000;
     env.ledger().with_mut(|ledger| ledger.timestamp = expiry);
-    let oracle = MockOracleClient::new(&env, &env.register(MockOracle {}, (14u32,)));
+    let oracle = MockOracleClient::new(
+        &env,
+        &env.register(MockOracle {}, (14u32, symbol_short!("USD"))),
+    );
     oracle.set(&(1004 * 10_000_000_000_000), &expiry);
     let verifier = env.register(MockPythVerifier {}, ());
     let resolver = ResolverClient::new(
@@ -326,6 +346,20 @@ fn single_consensus_oracle_free_mode_resolves() {
     let values = [(101 * 100_000_000_000_000i128, expiry, 14u32)];
     let (resolver, market, _) = setup(&env, &values, 1, expiry);
     assert_eq!(resolver.resolve_market(&market.address, &None), Side::Yes);
+}
+
+#[test]
+fn ignores_oracle_with_non_usd_base() {
+    let env = Env::default();
+    let expiry = 1_000;
+    let values = [
+        (101 * 100_000_000_000_000i128, expiry, 14u32),
+        (101 * 100_000_000_000_000i128, expiry, 14u32),
+    ];
+    let (resolver, market, oracles) = setup(&env, &values, 2, expiry);
+    MockOracleClient::new(&env, &oracles.get(1).unwrap()).set_base(&symbol_short!("EUR"));
+    assert!(resolver.try_resolve_market(&market.address, &None).is_err());
+    assert_eq!(market.outcome(), None);
 }
 
 #[test]
