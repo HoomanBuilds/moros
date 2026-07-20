@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node test-oracle-config.mjs",
+    "verify:oracles": "node verify-oracles.mjs"
+  },
   "dependencies": {
     "@pythnetwork/pyth-lazer-sdk": "^5.0.0",
     "@stellar/stellar-sdk": "^16.0.1",

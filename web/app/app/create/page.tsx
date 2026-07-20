@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { AssetIcon } from "@/components/markets/asset-icon";
 import { AssetSpotChart } from "@/components/markets/asset-spot-chart";
-import { MARKET_SUBSIDY, ORACLE_MODE, RESOLVABLE_ASSETS } from "@/lib/markets/deploy-constants";
+import { MARKET_SUBSIDY, ORACLE_MODE } from "@/lib/markets/deploy-constants";
 import { useAssetPrice } from "@/lib/prices/use-asset-price";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 import {
@@ -31,6 +31,13 @@ import {
 } from "@/lib/stellar/collateral-account";
 import { formatTokenAmount } from "@/lib/stellar/amount";
 import { eventRulesHashHex } from "@/lib/markets/rules";
+import {
+  MARKET_CATEGORIES,
+  assetsForCategory,
+  eventGuidance,
+  isPriceCategory,
+  type MarketCategory,
+} from "@/lib/markets/categories";
 
 const STEPS: { key: DeployStep; label: string }[] = [
   { key: "market", label: "Deploying market contract" },
@@ -49,9 +56,6 @@ const EXPIRIES = [
   { label: "90 days", days: 90 },
 ];
 
-const CATEGORIES = ["Crypto price", "Sports", "Politics", "Other"] as const;
-type Category = (typeof CATEGORIES)[number];
-
 function isHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -59,6 +63,10 @@ function isHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function sourceUrls(value: string): string[] {
+  return [...new Set(value.split(/\r?\n/).map((source) => source.trim()).filter(Boolean))];
 }
 
 function fmtUsd(v: number): string {
@@ -70,10 +78,11 @@ function fmtUsd(v: number): string {
 export default function CreatePage() {
   const address = useWalletAddress();
   const [asset, setAsset] = useState("BTC");
-  const [category, setCategory] = useState<Category>("Crypto price");
+  const [category, setCategory] = useState<MarketCategory>("Crypto price");
   const [strike, setStrike] = useState("");
   const [eventQuestion, setEventQuestion] = useState("");
   const [resolutionSource, setResolutionSource] = useState("");
+  const [backupSources, setBackupSources] = useState("");
   const [resolutionRules, setResolutionRules] = useState("");
   const [voidRules, setVoidRules] = useState("");
   const [days, setDays] = useState(30);
@@ -85,14 +94,21 @@ export default function CreatePage() {
   const [trustlineLoading, setTrustlineLoading] = useState(false);
   const [pendingDeployment, setPendingDeployment] = useState<PendingDeployment | null>(null);
 
-  const { spot } = useAssetPrice(asset);
+  const isPriceMarket = isPriceCategory(category);
+  const priceAssets = assetsForCategory(category, ORACLE_MODE);
+  const guidance = eventGuidance(category);
+  const backupResolutionSources = sourceUrls(backupSources);
+  const { spot } = useAssetPrice(isPriceMarket ? asset : undefined);
   const strikeNum = Number(strike);
-  const isPriceMarket = category === "Crypto price";
   const busy = stage !== null && stage !== "done";
   const valid = isPriceMarket
-    ? strikeNum > 0 && RESOLVABLE_ASSETS.includes(asset)
+    ? strikeNum > 0 && priceAssets.includes(asset)
     : eventQuestion.trim().length >= 12
       && isHttpUrl(resolutionSource.trim())
+      && backupResolutionSources.length >= 1
+      && backupResolutionSources.length <= 3
+      && backupResolutionSources.every(isHttpUrl)
+      && !backupResolutionSources.includes(resolutionSource.trim())
       && resolutionRules.trim().length >= 20
       && voidRules.trim().length >= 20;
   const subsidy = BigInt(MARKET_SUBSIDY);
@@ -151,6 +167,7 @@ export default function CreatePage() {
         title: question,
         category,
         resolutionSource,
+        backupResolutionSources,
         resolutionRules,
         voidRules,
       });
@@ -165,6 +182,7 @@ export default function CreatePage() {
           title: question,
           category,
           resolutionSource: isPriceMarket ? undefined : resolutionSource.trim(),
+          backupResolutionSources: isPriceMarket ? undefined : backupResolutionSources,
           resolutionRules: isPriceMarket ? undefined : resolutionRules.trim(),
           voidRules: isPriceMarket ? undefined : voidRules.trim(),
         },
@@ -189,6 +207,7 @@ export default function CreatePage() {
         category: marketMetadata.category,
         resolverType: deployment.resolverType,
         resolutionSource: marketMetadata.resolutionSource,
+        backupResolutionSources: marketMetadata.backupResolutionSources,
         resolutionRules: marketMetadata.resolutionRules,
         voidRules: marketMetadata.voidRules,
         rulesHash: deployment.rulesHash,
@@ -211,6 +230,7 @@ export default function CreatePage() {
           protocolVersion: 3,
           resolverType: deployment.resolverType,
           resolutionSource: marketMetadata.resolutionSource,
+          backupResolutionSources: marketMetadata.backupResolutionSources,
           resolutionRules: marketMetadata.resolutionRules,
           voidRules: marketMetadata.voidRules,
           rulesHash: deployment.rulesHash,
@@ -249,12 +269,16 @@ export default function CreatePage() {
           <div className="space-y-3">
             <Tag>Market category</Tag>
             <div className="flex flex-wrap gap-2">
-              {CATEGORIES.map((item) => (
+              {MARKET_CATEGORIES.map((item) => (
                 <button
                   key={item}
                   type="button"
                   disabled={busy}
-                  onClick={() => setCategory(item)}
+                  onClick={() => {
+                    setCategory(item);
+                    const nextAssets = assetsForCategory(item, ORACLE_MODE);
+                    if (nextAssets[0]) setAsset(nextAssets[0]);
+                  }}
                   className={cn(
                     "rounded-md border px-3 py-2 font-mono text-xs transition-colors disabled:opacity-50",
                     category === item ? "border-white/40 bg-white/[0.06] text-foreground" : "border-white/10 text-muted-foreground hover:text-foreground",
@@ -271,7 +295,7 @@ export default function CreatePage() {
               <div className="space-y-3">
                 <Tag>Underlying asset</Tag>
                 <div className="flex flex-wrap gap-2">
-                  {RESOLVABLE_ASSETS.map((item) => (
+                  {priceAssets.map((item) => (
                     <button
                       key={item}
                       type="button"
@@ -320,7 +344,7 @@ export default function CreatePage() {
                   value={eventQuestion}
                   disabled={busy}
                   maxLength={180}
-                  placeholder="Will the home team win the match?"
+                  placeholder={guidance.question}
                   onChange={(event) => setEventQuestion(event.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">State one objective outcome. Do not combine multiple conditions.</p>
@@ -332,10 +356,22 @@ export default function CreatePage() {
                   type="url"
                   value={resolutionSource}
                   disabled={busy}
-                  placeholder="https://official-source.example/results"
+                  placeholder={guidance.source}
                   onChange={(event) => setResolutionSource(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">Use the official league, election authority, regulator, or data publisher.</p>
+                <p className="text-xs text-muted-foreground">{guidance.sourceHint}</p>
+              </div>
+
+              <div className="space-y-3">
+                <Tag>Backup resolution sources</Tag>
+                <Textarea
+                  value={backupSources}
+                  disabled={busy}
+                  maxLength={1200}
+                  placeholder={"https://second-official-source.example/result\nhttps://public-archive.example/result"}
+                  onChange={(event) => setBackupSources(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Add one to three distinct HTTP or HTTPS URLs, one per line. The rules must state which source wins if they disagree.</p>
               </div>
 
               <div className="space-y-3">
@@ -344,7 +380,7 @@ export default function CreatePage() {
                   value={resolutionRules}
                   disabled={busy}
                   maxLength={800}
-                  placeholder="Define the exact result, measurement, time zone, and cutoff that resolves YES. Every other completed result resolves NO."
+                  placeholder={guidance.rules}
                   onChange={(event) => setResolutionRules(event.target.value)}
                 />
               </div>
@@ -355,7 +391,7 @@ export default function CreatePage() {
                   value={voidRules}
                   disabled={busy}
                   maxLength={800}
-                  placeholder="Define when a cancellation, postponement, missing result, or ambiguous source makes the market VOID with full refunds."
+                  placeholder={guidance.voidRules}
                   onChange={(event) => setVoidRules(event.target.value)}
                 />
               </div>
@@ -485,7 +521,7 @@ export default function CreatePage() {
           <Panel className="space-y-2 p-6">
             <Tag>What gets deployed</Tag>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              A USDC-backed LMSR market plus a paired shielded pool and threshold committee, deployed from your wallet in a few signatures. Bets are zero-knowledge commitments and only the batch total is decrypted. {isPriceMarket ? ORACLE_MODE === "free" ? "At expiry, the free public Reflector feed resolves the testnet market using its multi-node consensus and aggregated exchange data." : "At expiry, Reflector and Pyth Pro must agree before the market resolves." : "After expiry, anyone can post a bonded result. A conflicting bonded result triggers committee arbitration, and ambiguous or cancelled events can be voided for full refunds."}
+              A USDC-backed LMSR market plus a paired shielded pool and threshold committee, deployed from your wallet in a few signatures. Bets are zero-knowledge commitments and only the batch total is decrypted. {isPriceMarket ? ORACLE_MODE === "free" ? "At expiry, the matching free public Reflector CEX or fiat feed resolves the testnet market." : "At expiry, Reflector and Pyth Pro must agree before the market resolves." : "After expiry, anyone can post a bonded result with evidence. A conflicting bonded result triggers committee arbitration, and ambiguous or cancelled events can be voided for full refunds."}
             </p>
           </Panel>
         </div>

@@ -7,6 +7,7 @@ export type MarketDescriptor = {
   category?: string;
   resolverType?: "price" | "event";
   resolutionSource?: string;
+  backupResolutionSources?: string[];
   resolutionRules?: string;
   voidRules?: string;
   rulesHash?: string;

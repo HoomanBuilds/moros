@@ -38,6 +38,7 @@ export type DeploymentMetadata = {
   title: string;
   category: string;
   resolutionSource?: string;
+  backupResolutionSources?: string[];
   resolutionRules?: string;
   voidRules?: string;
 };

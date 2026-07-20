@@ -48,6 +48,9 @@ export function AboutPanel() {
   const strike = data?.strike ?? "--";
   const isEvent = data?.resolverType === "event";
   const sourceUrl = safeHttpUrl(data?.resolutionSource);
+  const backupSourceUrls = (data?.backupResolutionSources ?? [])
+    .map(safeHttpUrl)
+    .filter((value): value is string => value !== null);
 
   return (
     <Panel className="p-6 space-y-6">
@@ -66,7 +69,7 @@ export function AboutPanel() {
         ) : (
           <p className="text-sm leading-relaxed text-muted-foreground">
             Resolves <span className="text-foreground">YES</span> if {asset} settles at or above{" "}
-            <span className="text-foreground">{strike}</span> at expiry. {ORACLE_MODE === "free" ? "The current testnet beta uses Reflector's free public feed, which aggregates exchange data through a multi-node Stellar consensus." : "The paid-mode adapter requires Reflector and Pyth Pro to agree within the configured tolerance."} Invalid or stale data leaves the market pending instead of guessing a result.
+            <span className="text-foreground">{strike}</span> at expiry. {ORACLE_MODE === "free" ? "The current testnet beta reads the matching free Reflector CEX or fiat contract on Stellar." : "The paid-mode adapter requires Reflector and Pyth Pro to agree within the configured tolerance."} Invalid or stale data leaves the market pending instead of guessing a result.
           </p>
         )}
         <p className="text-sm leading-relaxed text-muted-foreground">
@@ -86,6 +89,18 @@ export function AboutPanel() {
               Open official source
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
+          </Row>
+        )}
+        {isEvent && backupSourceUrls.length > 0 && (
+          <Row label="Backup sources">
+            <span className="flex flex-col items-start gap-2 sm:items-end">
+              {backupSourceUrls.map((url, index) => (
+                <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
+                  Open backup source {index + 1}
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              ))}
+            </span>
           </Row>
         )}
         <Row label="Settlement">{data ? data.resolutionLabel : "--"}</Row>

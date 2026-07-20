@@ -1,3 +1,7 @@
+import { nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import { reflectorOracleForAsset, RESOLVABLE_ASSETS } from "@/lib/markets/deploy-constants";
+import { readContract } from "@/lib/stellar/client";
+
 export type Candle = { t: number; price: number };
 
 const PAIR: Record<string, { binance: string; coinbase: string }> = {
@@ -14,11 +18,34 @@ const PAIR: Record<string, { binance: string; coinbase: string }> = {
   DOT: { binance: "DOTUSDT", coinbase: "DOT-USD" },
 };
 
-export const SUPPORTED_ASSETS = ["XLM", "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "LINK", "DOGE", "DOT"];
+export const SUPPORTED_ASSETS = RESOLVABLE_ASSETS;
 
-function pairFor(asset: string): { binance: string; coinbase: string } {
-  const key = asset.toUpperCase();
-  return PAIR[key] ?? { binance: `${key}USDT`, coinbase: `${key}-USD` };
+export function reflectorPriceToNumber(value: bigint): number {
+  const negative = value < 0n;
+  const digits = (negative ? -value : value).toString().padStart(15, "0");
+  const whole = digits.slice(0, -14);
+  const fraction = digits.slice(-14).replace(/0+$/, "");
+  return Number(`${negative ? "-" : ""}${whole}${fraction ? `.${fraction}` : ""}`);
+}
+
+async function fromReflector(asset: string): Promise<Candle[]> {
+  const oracle = reflectorOracleForAsset(asset);
+  if (!oracle) throw new Error("unsupported Reflector asset");
+  const assetArg = xdr.ScVal.scvVec([
+    xdr.ScVal.scvSymbol("Other"),
+    xdr.ScVal.scvSymbol(asset.toUpperCase()),
+  ]);
+  const rows = await readContract(oracle, "prices", [
+    assetArg,
+    nativeToScVal(20, { type: "u32" }),
+  ]) as { price: bigint; timestamp: bigint }[] | null;
+  if (!Array.isArray(rows)) throw new Error("Reflector history unavailable");
+  const candles = rows
+    .filter((row) => row.price > 0n)
+    .map((row) => ({ t: Number(row.timestamp) * 1000, price: reflectorPriceToNumber(row.price) }))
+    .sort((a, b) => a.t - b.t);
+  if (candles.length === 0) throw new Error("Reflector history unavailable");
+  return candles;
 }
 
 async function fromBinance(pair: string): Promise<Candle[]> {
@@ -39,11 +66,16 @@ async function fromCoinbase(pair: string): Promise<Candle[]> {
 }
 
 export async function getAssetCandles(asset: string): Promise<Candle[]> {
-  const { binance, coinbase } = pairFor(asset);
   try {
-    return await fromBinance(binance);
-  } catch {
-    return await fromCoinbase(coinbase);
+    return await fromReflector(asset);
+  } catch (reflectorError) {
+    const pair = PAIR[asset.toUpperCase()];
+    if (!pair) throw reflectorError;
+    try {
+      return await fromBinance(pair.binance);
+    } catch {
+      return await fromCoinbase(pair.coinbase);
+    }
   }
 }
 

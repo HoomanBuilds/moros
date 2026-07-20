@@ -116,6 +116,7 @@ export async function refreshMarkets(): Promise<void> {
       category: r.category,
       resolverType: r.resolverType,
       resolutionSource: r.resolutionSource,
+      backupResolutionSources: r.backupResolutionSources,
       resolutionRules: r.resolutionRules,
       voidRules: r.voidRules,
       rulesHash: r.rulesHash,

@@ -4,23 +4,31 @@ export type EventRules = {
   title: string;
   category: string;
   resolutionSource: string;
+  backupResolutionSources?: string[];
   resolutionRules: string;
   voidRules: string;
 };
 
 export function normalizeEventRules(input: EventRules): EventRules {
-  return {
+  const normalized = {
     title: input.title.trim(),
     category: input.category.trim(),
     resolutionSource: input.resolutionSource.trim(),
     resolutionRules: input.resolutionRules.trim(),
     voidRules: input.voidRules.trim(),
   };
+  const backupResolutionSources = [...new Set(
+    (input.backupResolutionSources ?? []).map((source) => source.trim()).filter(Boolean),
+  )];
+  return backupResolutionSources.length > 0
+    ? { ...normalized, backupResolutionSources }
+    : normalized;
 }
 
 export function canonicalEventRules(input: EventRules): string {
   const rules = normalizeEventRules(input);
-  return JSON.stringify({ version: 1, ...rules });
+  const version = rules.backupResolutionSources?.length ? 2 : 1;
+  return JSON.stringify({ version, ...rules });
 }
 
 export function sha256Hex(value: string): string {

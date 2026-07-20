@@ -14,6 +14,7 @@ create table if not exists markets_meta (
   category text,
   banner_url text,
   resolution_source text,
+  resolution_backup_sources text[] not null default '{}',
   creator text,
   collateral_code text,
   collateral_issuer text,

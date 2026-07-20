@@ -29,6 +29,7 @@ export async function fetchMarket(
     category: storedMeta?.category ?? fallback.category,
     resolverType: storedMeta?.resolver_type ?? fallback.resolverType ?? "price",
     resolutionSource: storedMeta?.resolution_source ?? fallback.resolutionSource,
+    backupResolutionSources: storedMeta?.resolution_backup_sources ?? fallback.backupResolutionSources,
     resolutionRules: storedMeta?.resolution_rules ?? fallback.resolutionRules,
     voidRules: storedMeta?.void_rules ?? fallback.voidRules,
     rulesHash: storedMeta?.rules_hash ?? fallback.rulesHash,
@@ -42,6 +43,7 @@ export async function fetchMarket(
         title: meta.title,
         category: meta.category,
         resolutionSource: meta.resolutionSource,
+        backupResolutionSources: meta.backupResolutionSources,
         resolutionRules: meta.resolutionRules,
         voidRules: meta.voidRules,
       });

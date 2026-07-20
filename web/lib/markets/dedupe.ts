@@ -14,6 +14,7 @@ export type MarketEntry = {
   category?: string;
   resolverType?: "price" | "event";
   resolutionSource?: string;
+  backupResolutionSources?: string[];
   resolutionRules?: string;
   voidRules?: string;
   rulesHash?: string;

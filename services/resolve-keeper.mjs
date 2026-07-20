@@ -10,11 +10,12 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { PythLazerClient } from "@pythnetwork/pyth-lazer-sdk";
+import { PYTH_PRO_FEEDS, resolvableAssets } from "./oracle-config.mjs";
 
 const RPC = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
 const PASSPHRASE = process.env.NETWORK_PASSPHRASE || "Test SDF Network ; September 2015";
 const ORACLE_MODE = process.env.ORACLE_MODE || "free";
-const FREE_RESOLVER = process.env.FREE_RESOLVER_ID || "CCLZEQIQLPJVFDQCAMFC3A3S6HIRQ2ZIAICC2NH3D3U4ZCCXZI2RU6TQ";
+const FREE_RESOLVER = process.env.FREE_RESOLVER_ID || "CAIHZHCNKHLCXGWOTH7T2L4S5YDNNGO6Q6MSDQ7HQ3A4IORN4NE6ZF5B";
 const PYTH_PRO_RESOLVER = process.env.PYTH_PRO_RESOLVER_ID || "";
 const RESOLVER = ORACLE_MODE === "pyth_pro" ? PYTH_PRO_RESOLVER : FREE_RESOLVER;
 const FUNDER_SK = process.env.FUNDER_SK || "";
@@ -22,8 +23,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || "https://khufxpfbigxpuvsvlhtn.s
 const SUPABASE_ANON = process.env.SUPABASE_ANON_KEY || "";
 const INTERVAL_MS = Number(process.env.RESOLVE_INTERVAL_MS || 300000);
 const PYTH_TOKEN = process.env.PYTH_ACCESS_TOKEN || "";
-const RESOLVABLE = new Set(["XLM", "BTC", "ETH", "SOL", "XRP", "ADA", "AVAX", "LINK", "DOT"]);
-const PYTH_FEEDS = { BTC: 1, ETH: 2, SOL: 6, XRP: 14, ADA: 16, AVAX: 18, LINK: 19, DOT: 22, XLM: 23 };
+const RESOLVABLE = resolvableAssets(ORACLE_MODE);
 
 const server = new rpc.Server(RPC);
 const funder = FUNDER_SK ? Keypair.fromSecret(FUNDER_SK) : null;
@@ -44,11 +44,11 @@ async function readContract(id, method) {
 }
 
 async function pythPayload(asset, expiry) {
-  if (ORACLE_MODE !== "pyth_pro" || !PYTH_TOKEN || !PYTH_FEEDS[asset]) return null;
+  if (ORACLE_MODE !== "pyth_pro" || !PYTH_TOKEN || !PYTH_PRO_FEEDS[asset]) return null;
   pythClient ??= await PythLazerClient.create({ token: PYTH_TOKEN });
   const update = await pythClient.getPrice({
     timestamp: expiry * 1_000_000,
-    priceFeedIds: [PYTH_FEEDS[asset]],
+    priceFeedIds: [PYTH_PRO_FEEDS[asset]],
     properties: ["price", "exponent", "confidence", "feedUpdateTimestamp"],
     formats: ["leEcdsa"],
     jsonBinaryEncoding: "hex",

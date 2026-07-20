@@ -11,6 +11,7 @@ export type MarketMeta = {
   category: string | null;
   resolver_type: "price" | "event" | null;
   resolution_source: string | null;
+  resolution_backup_sources: string[] | null;
   resolution_rules: string | null;
   void_rules: string | null;
   rules_hash: string | null;
@@ -30,6 +31,7 @@ export type RegistryMarket = {
   category?: string;
   resolverType?: "price" | "event";
   resolutionSource?: string;
+  backupResolutionSources?: string[];
   resolutionRules?: string;
   voidRules?: string;
   rulesHash?: string;
@@ -41,20 +43,29 @@ export async function getMarketMeta(marketId: string): Promise<MarketMeta | null
 
   const { data, error } = await client
     .from("markets_meta")
-    .select("market_id, title, description, banner_url, category, resolver_type, resolution_source, resolution_rules, void_rules, rules_hash")
+    .select("market_id, title, description, banner_url, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash")
     .eq("market_id", marketId)
     .maybeSingle();
 
   if (error) {
     const fallback = await client
       .from("markets_meta")
+      .select("market_id, title, description, banner_url, category, resolver_type, resolution_source, resolution_rules, void_rules, rules_hash")
+      .eq("market_id", marketId)
+      .maybeSingle();
+    if (!fallback.error && fallback.data) {
+      return { ...fallback.data, resolution_backup_sources: null } as MarketMeta;
+    }
+    const legacy = await client
+      .from("markets_meta")
       .select("market_id, title, description, banner_url, category, resolution_source")
       .eq("market_id", marketId)
       .maybeSingle();
-    if (fallback.error || !fallback.data) return null;
+    if (legacy.error || !legacy.data) return null;
     return {
-      ...fallback.data,
+      ...legacy.data,
       resolver_type: "price",
+      resolution_backup_sources: null,
       resolution_rules: null,
       void_rules: null,
       rules_hash: null,
@@ -70,7 +81,7 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
 
   const primary = await client
     .from("markets_meta")
-    .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, protocol_version, title, category, resolver_type, resolution_source, resolution_rules, void_rules, rules_hash, created_at")
+    .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, protocol_version, title, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
     .not("pool_id", "is", null)
     .order("created_at", { ascending: false });
   let data = primary.data as Record<string, unknown>[] | null;
@@ -79,11 +90,21 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
   if (error) {
     const fallback = await client
       .from("markets_meta")
-      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, created_at")
+      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, protocol_version, title, category, resolver_type, resolution_source, resolution_rules, void_rules, rules_hash, created_at")
       .not("pool_id", "is", null)
       .order("created_at", { ascending: false });
     data = fallback.data as Record<string, unknown>[] | null;
     error = fallback.error;
+  }
+
+  if (error) {
+    const legacy = await client
+      .from("markets_meta")
+      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, created_at")
+      .not("pool_id", "is", null)
+      .order("created_at", { ascending: false });
+    data = legacy.data as Record<string, unknown>[] | null;
+    error = legacy.error;
   }
 
   if (error || !data) return [];
@@ -104,6 +125,9 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
       category: r.category ? String(r.category) : undefined,
       resolverType: r.resolver_type === "event" ? "event" : "price",
       resolutionSource: r.resolution_source ? String(r.resolution_source) : undefined,
+      backupResolutionSources: Array.isArray(r.resolution_backup_sources)
+        ? r.resolution_backup_sources.map(String)
+        : undefined,
       resolutionRules: r.resolution_rules ? String(r.resolution_rules) : undefined,
       voidRules: r.void_rules ? String(r.void_rules) : undefined,
       rulesHash: r.rules_hash ? String(r.rules_hash) : undefined,
@@ -125,6 +149,7 @@ export async function saveMarketToRegistry(entry: {
   description?: string;
   resolverType?: "price" | "event";
   resolutionSource?: string;
+  backupResolutionSources?: string[];
   resolutionRules?: string;
   voidRules?: string;
   rulesHash?: string;
@@ -154,6 +179,7 @@ export async function saveMarketToRegistry(entry: {
       category: entry.category ?? null,
       resolver_type: entry.resolverType ?? "price",
       resolution_source: entry.resolutionSource ?? null,
+      resolution_backup_sources: entry.backupResolutionSources ?? [],
       resolution_rules: entry.resolutionRules ?? null,
       void_rules: entry.voidRules ?? null,
       rules_hash: entry.rulesHash ?? null,

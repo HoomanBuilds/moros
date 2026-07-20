@@ -19,4 +19,22 @@ assert.notEqual(eventRulesHashHex(rules), eventRulesHashHex({ ...rules, title: "
 assert.equal(stellarStringHashHex("https://source.example/result").length, 64);
 assert.notEqual(stellarStringHashHex("https://source.example/result"), eventRulesHashHex(rules));
 
+const rulesWithBackups = {
+  ...rules,
+  backupResolutionSources: [
+    " https://backup-one.example/result ",
+    "https://backup-two.example/result",
+    "https://backup-one.example/result",
+  ],
+};
+assert.equal(
+  canonicalEventRules(rulesWithBackups),
+  '{"version":2,"title":"Will Team A win?","category":"Sports","resolutionSource":"https://league.example/results","resolutionRules":"Team A is listed as the official winner.","voidRules":"The match is cancelled and not replayed by the cutoff.","backupResolutionSources":["https://backup-one.example/result","https://backup-two.example/result"]}',
+);
+assert.notEqual(eventRulesHashHex(rules), eventRulesHashHex(rulesWithBackups));
+assert.notEqual(
+  eventRulesHashHex(rulesWithBackups),
+  eventRulesHashHex({ ...rulesWithBackups, backupResolutionSources: ["https://backup-two.example/result"] }),
+);
+
 console.log("market rules ok");
