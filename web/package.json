@@ -1,16 +1,20 @@
 {
-  "name": "umbra-web",
+  "name": "moros-web",
   "version": "0.1.0",
   "private": true,
+  "overrides": {
+    "protobufjs": "7.6.5",
+    "underscore": "1.13.8"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
     "test:e2e": "playwright test",
-    "test:unit": "tsx lib/wallet.test.ts && tsx lib/network.test.ts && tsx lib/stellar/amount.test.ts && tsx lib/stellar/collateral-account.test.ts && tsx lib/stellar/derive.test.ts && tsx components/markets/odds-chart.test.ts && tsx lib/markets/dedupe.test.ts && tsx lib/markets/rules.test.ts && tsx lib/markets/categories.test.ts && tsx lib/markets/deploy-constants.test.ts && tsx lib/markets/deploy-recovery.test.ts && tsx lib/prices/asset-price.test.ts && tsx lib/media/commons.test.ts && tsx lib/social/verify.test.ts && tsx lib/social/challenge.test.ts && tsx lib/supabase/comment-media.test.ts && tsx lib/supabase/market-media.test.ts && tsx lib/stellar/recipient.test.mjs && tsx lib/supabase/enabled.test.mjs",
+    "test:unit": "tsx lib/wallet.test.ts && tsx lib/network.test.ts && tsx lib/stellar/amount.test.ts && tsx lib/stellar/collateral-account.test.ts && tsx lib/stellar/derive.test.ts && tsx components/markets/odds-chart.test.ts && tsx lib/markets/dedupe.test.ts && tsx lib/markets/rules.test.ts && tsx lib/markets/categories.test.ts && tsx lib/markets/expiry.test.ts && tsx lib/markets/deploy-constants.test.ts && tsx lib/markets/deploy-recovery.test.ts && tsx lib/positions/book.test.ts && tsx lib/positions/crypto.test.ts && tsx lib/positions/state.test.ts && tsx lib/prices/asset-price.test.ts && tsx lib/media/commons.test.ts && tsx lib/social/verify.test.ts && tsx lib/social/challenge.test.ts && tsx lib/supabase/comment-media.test.ts && tsx lib/supabase/market-media.test.ts && tsx lib/stellar/recipient.test.mjs && tsx lib/supabase/enabled.test.mjs",
     "test": "npm run test:unit && npm run test:e2e",
-    "zk:sync": "mkdir -p public/zk && cp ../contracts/shielded-pool/circuits/build/encrypt_order_js/encrypt_order.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/build/encrypt_order_final.zkey public/zk/ && cp ../contracts/shielded-pool/circuits/build/encrypt_order_vk.json public/zk/ && cp ../contracts/shielded-pool/circuits/build/order_commit_js/order_commit.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/build/order_redeem_v3_js/order_redeem_v3.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/output/order_redeem_v3_final.zkey public/zk/ && cp ../contracts/shielded-pool/circuits/build/order_redeem_v3_vk.json public/zk/"
+    "zk:sync": "mkdir -p public/zk && cp ../contracts/shielded-pool/circuits/build/encrypt_order_js/encrypt_order.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/build/encrypt_order_final.zkey public/zk/ && cp ../contracts/shielded-pool/circuits/build/encrypt_order_vk.json public/zk/ && cp ../contracts/shielded-pool/circuits/build/order_commit_js/order_commit.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/build/position_redeem_js/position_redeem.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/output/position_redeem_final.zkey public/zk/ && cp ../contracts/shielded-pool/circuits/build/position_redeem_vk.json public/zk/"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^2.5.0",
@@ -59,7 +63,7 @@
     "geist": "1.7.0",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
-    "next": "16.2.0",
+    "next": "16.2.10",
     "next-themes": "^0.4.6",
     "react": "^19",
     "react-day-picker": "9.8.0",
@@ -81,7 +85,9 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "postcss": "^8.5",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.2.10",
+    "postcss": "8.5.20",
     "tailwindcss": "^4.1.9",
     "tsx": "^4.22.4",
     "tw-animate-css": "1.3.3",

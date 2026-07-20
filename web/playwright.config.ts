@@ -8,7 +8,7 @@ export default defineConfig({
   retries: 1,
   use: { baseURL },
   webServer: {
-    command: `npm run start -- --port ${port}`,
+    command: `npm run build && npm run start -- --port ${port}`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120000,

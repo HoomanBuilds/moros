@@ -10,7 +10,7 @@ export function TethraChart({
   height = 280,
   className = "",
 }: {
-  option: Record<string, any>;
+  option: Record<string, unknown>;
   height?: number | string;
   className?: string;
 }) {

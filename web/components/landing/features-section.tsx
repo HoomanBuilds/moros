@@ -184,7 +184,7 @@ export function FeaturesSection() {
                     : "opacity-0 translate-y-4"
                 }`}
               >
-                Every order is proven valid before it's ever seen. A threshold
+                Every order is proven valid before it&apos;s ever seen. A threshold
                 committee nets the batch, the LMSR sets fair odds, and your
                 keys never leave your wallet.
               </p>

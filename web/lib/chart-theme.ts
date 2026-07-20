@@ -15,27 +15,31 @@ export const CHART = {
   font: "ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, monospace",
 };
 
-type AnyObj = Record<string, any>;
+type ChartObject = Record<string, unknown>;
 
-function themeAxis(axis: AnyObj | AnyObj[]): AnyObj | AnyObj[] {
-  const base: AnyObj = {
+function chartObject(value: unknown): ChartObject {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as ChartObject : {};
+}
+
+function themeAxis(axis: ChartObject | ChartObject[]): ChartObject | ChartObject[] {
+  const base: ChartObject = {
     axisLine: { lineStyle: { color: CHART.axis } },
     axisTick: { show: false },
     axisLabel: { color: CHART.muted, fontFamily: CHART.font, fontSize: 11 },
     splitLine: { show: true, lineStyle: { color: CHART.grid, type: "dashed" } },
     nameTextStyle: { color: CHART.muted, fontFamily: CHART.font },
   };
-  const merge = (a: AnyObj) => ({
+  const merge = (a: ChartObject) => ({
     ...base,
     ...a,
-    axisLabel: { ...base.axisLabel, ...(a?.axisLabel ?? {}) },
-    splitLine: { ...base.splitLine, ...(a?.splitLine ?? {}) },
+    axisLabel: { ...chartObject(base.axisLabel), ...chartObject(a.axisLabel) },
+    splitLine: { ...chartObject(base.splitLine), ...chartObject(a.splitLine) },
   });
   return Array.isArray(axis) ? axis.map(merge) : merge(axis ?? {});
 }
 
 // Merges a page option with the themed defaults.
-export function applyTheme(option: AnyObj): AnyObj {
+export function applyTheme(option: ChartObject): ChartObject {
   return {
     backgroundColor: "transparent",
     color: [CHART.accent, CHART.fg, CHART.muted],
@@ -48,7 +52,7 @@ export function applyTheme(option: AnyObj): AnyObj {
       top: 18,
       bottom: 8,
       containLabel: true,
-      ...(option.grid ?? {}),
+      ...chartObject(option.grid),
     },
     tooltip: {
       trigger: "axis",
@@ -57,7 +61,7 @@ export function applyTheme(option: AnyObj): AnyObj {
       borderWidth: 1,
       padding: [8, 12],
       textStyle: { color: CHART.fg, fontFamily: CHART.font, fontSize: 12 },
-      ...(option.tooltip ?? {}),
+      ...chartObject(option.tooltip),
     },
     legend: option.legend
       ? {
@@ -65,10 +69,10 @@ export function applyTheme(option: AnyObj): AnyObj {
           icon: "roundRect",
           itemWidth: 10,
           itemHeight: 10,
-          ...option.legend,
+          ...chartObject(option.legend),
         }
       : undefined,
-    xAxis: option.xAxis ? themeAxis(option.xAxis) : undefined,
-    yAxis: option.yAxis ? themeAxis(option.yAxis) : undefined,
+    xAxis: option.xAxis ? themeAxis(option.xAxis as ChartObject | ChartObject[]) : undefined,
+    yAxis: option.yAxis ? themeAxis(option.yAxis as ChartObject | ChartObject[]) : undefined,
   };
 }
