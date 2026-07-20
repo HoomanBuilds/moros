@@ -18,8 +18,9 @@ Required production-like settings:
     RPC_URL=https://soroban-testnet.stellar.org
     NETWORK_PASSPHRASE=Test SDF Network ; September 2015
     ORACLE_MODE=free
-    FREE_RESOLVER_ID=CAIHZHCNKHLCXGWOTH7T2L4S5YDNNGO6Q6MSDQ7HQ3A4IORN4NE6ZF5B
-    POOL_WASM_HASH=ec67aee3f9391ca358e52cfad5ac05c39ea9b09dc4abc575177272f2b79b5ef3
+    FREE_RESOLVER_ID=CATOCURLCPJXJNYOEBBV5Q2XVHO6S5J2ATZE6NP3A3DAJMUW3G43HNQ7
+    POOL_WASM_HASH=617e3d7e152b03ad53f5704abe92295ccfaa538771835c7b2174f00396af9363
+    MARKET_WASM_HASH=7afca617a67b7f2d2dab4e9dc6836779871dff77fd876a2d83d62b435f5fa06a
     COLLATERAL_ID=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
     ALLOW_UNVERIFIED_REGISTRATION=0
     SERVICE_TOKEN=<random operator token>
@@ -52,7 +53,7 @@ There is no paid resolver default and no generic resolver override.
 - GET /pk returns the current committee encryption key.
 - GET /status returns pool and queue status.
 - GET /proof/:commitment returns a persisted Merkle membership proof.
-- POST /register-pool registers a protocol v3 market and pool after on-chain validation.
+- POST /register-pool registers a Moros market and pool after on-chain validation.
 - POST /order verifies and queues an encrypted order.
 - POST /redeem relays a proof-bound redemption.
 
@@ -60,12 +61,13 @@ POST /batch is an operator action and requires SERVICE_TOKEN.
 
 Public pool registration validates:
 
-- Protocol version 3
 - Two-way market and pool linkage
 - Matching collateral
 - Expected 2-of-3 committee configuration
-- Configured v3 redemption verification key
+- Configured redemption verification key
 - Approved pool WASM hash
+- Approved market WASM hash
+- Active price resolver and an asset supported by the selected oracle mode
 
 ALLOW_UNVERIFIED_REGISTRATION=1 bypasses these checks and is allowed only in local tests.
 
@@ -116,6 +118,8 @@ On the testnet VM after unpacking the bundle:
 
     ./services/deploy-vm.sh provision
     ./services/deploy-vm.sh service
+
+The service command installs the three committee members, intake server, and price resolution keeper as managed services. The keeper also refreshes registered market and pool TTLs once a week so exact long-duration expiries remain usable. GET /health fails when the committee is unavailable or the keeper heartbeat is stale. GET /status includes the last keeper tick, TTL refreshes, due markets, resolutions, voids, oracle waits, and recent errors.
 
 Terminate TLS in front of the public service. Run committee members on independently operated hosts before treating threshold privacy as meaningful. The bundled single-VM setup is for testnet operations only.
 

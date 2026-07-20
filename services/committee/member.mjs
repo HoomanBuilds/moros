@@ -4,7 +4,7 @@ import { writeFileSync, readFileSync, existsSync, renameSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import * as snarkjs from "snarkjs";
-import { Address, Keypair, Networks, authorizeEntry, scValToNative, xdr } from "@stellar/stellar-sdk";
+import { Address, BASE_FEE, Contract, Keypair, Networks, TransactionBuilder, authorizeEntry, rpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { G8, ID, R, add, mul, randScalar, thresholdDecrypt, addCiphers } from "./jubjub.mjs";
 import { feldmanCheck, memberVerifyKey } from "./dkg-jubjub.mjs";
 import { provePartial, verifyPartial } from "./chaum-pedersen.mjs";
@@ -21,6 +21,11 @@ const NET_BOUND = Number(process.env.NET_BOUND || 4294967296);
 const S = 1n << 32n;
 const kp = process.env.MEMBER_SK ? Keypair.fromSecret(process.env.MEMBER_SK) : null;
 const SHARE_FILE = process.env.SHARE_FILE || "";
+const TARGETS_FILE = process.env.TARGETS_FILE || (SHARE_FILE ? `${SHARE_FILE}.targets.json` : "");
+const RPC_URL = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
+const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
+const POOL_WASM_HASH = (process.env.POOL_WASM_HASH || "").toLowerCase();
+const CID = /^[A-Z0-9]{56}$/;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ORDER_VK = JSON.parse(readFileSync(resolve(HERE, "../../contracts/shielded-pool/circuits/build/encrypt_order_vk.json"), "utf8"));
 
@@ -36,6 +41,55 @@ let allCommitments = null;
 let received = new Map();
 let finalShare = null;
 let pk = null;
+const allowedTargets = new Set(TARGETS);
+
+function persistTargets() {
+  if (!TARGETS_FILE) return;
+  const tmp = `${TARGETS_FILE}.tmp`;
+  writeFileSync(tmp, JSON.stringify([...allowedTargets].sort()), { mode: 0o600 });
+  renameSync(tmp, TARGETS_FILE);
+}
+
+function restoreTargets() {
+  if (!TARGETS_FILE || !existsSync(TARGETS_FILE)) return;
+  try {
+    for (const target of JSON.parse(readFileSync(TARGETS_FILE, "utf8"))) {
+      if (CID.test(target)) allowedTargets.add(target);
+    }
+  } catch {}
+}
+
+async function readContract(contractId, method) {
+  const client = new rpc.Server(RPC_URL);
+  const account = await client.getAccount(kp.publicKey());
+  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: NETWORK_PASSPHRASE })
+    .addOperation(new Contract(contractId).call(method))
+    .setTimeout(30)
+    .build();
+  const simulation = await client.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(simulation)) throw new Error(`${method} failed: ${simulation.error}`);
+  return scValToNative(simulation.result.retval);
+}
+
+async function allowTarget(marketId, poolId) {
+  if (!kp || !CID.test(marketId) || !CID.test(poolId)) throw new Error("invalid market or pool contract ID");
+  if (!POOL_WASM_HASH) throw new Error("POOL_WASM_HASH is required for dynamic pool registration");
+  const [linkedMarket, security, wasm] = await Promise.all([
+    readContract(poolId, "market"),
+    readContract(poolId, "security_config"),
+    new rpc.Server(RPC_URL).getContractWasmByContractId(poolId),
+  ]);
+  const [committee, threshold, redeemConfigured] = security;
+  if (linkedMarket !== marketId) throw new Error("pool is not linked to the requested market");
+  if (!redeemConfigured || Number(threshold) <= committee.length / 2 || !committee.includes(kp.publicKey())) {
+    throw new Error("pool security configuration does not include this committee member");
+  }
+  if (createHash("sha256").update(wasm).digest("hex") !== POOL_WASM_HASH) {
+    throw new Error("pool WASM hash is not approved");
+  }
+  allowedTargets.add(poolId);
+  persistTargets();
+}
 
 function persist() {
   if (!SHARE_FILE || !finalShare) return;
@@ -109,9 +163,15 @@ function send(res, code, obj) {
 const server = createServer(async (req, res) => {
   try {
     if (req.method === "GET" && req.url === "/health") {
-      return send(res, 200, { ok: true, index: INDEX.toString(), address: kp ? kp.publicKey() : null });
+      return send(res, 200, { ok: true, index: INDEX.toString(), address: kp ? kp.publicKey() : null, allowedTargets: allowedTargets.size });
     }
     if (!authed(req)) return send(res, 401, { error: "unauthorized" });
+
+    if (req.method === "POST" && req.url === "/allow-target") {
+      const { marketId, poolId } = await body(req);
+      await allowTarget(marketId, poolId);
+      return send(res, 200, { allowed: true, poolId });
+    }
 
     if (req.method === "POST" && req.url === "/dkg/commit") {
       if (finalShare && SHARE_FILE) {
@@ -195,7 +255,7 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && req.url === "/attest") {
       if (!finalShare) return send(res, 409, { error: "dkg not complete" });
-      if (!kp || (TARGETS.size === 0 && !ATTEST_ANY)) return send(res, 409, { error: "MEMBER_SK or ATTEST_TARGET not configured" });
+      if (!kp || (allowedTargets.size === 0 && !ATTEST_ANY)) return send(res, 409, { error: "MEMBER_SK or ATTEST_TARGET not configured" });
       const { entryXdr, validUntilLedger, cipherYes, cipherNo, partialsYes, partialsNo, dqyes, dqno, orders, nullHashes, commitments } = await body(req);
 
       const allCms = [];
@@ -224,7 +284,7 @@ const server = createServer(async (req, res) => {
       }
       const inv = fn.contractFn();
       const entryTarget = Address.fromScAddress(inv.contractAddress()).toString();
-      if (!ATTEST_ANY && !TARGETS.has(entryTarget)) {
+      if (!ATTEST_ANY && !allowedTargets.has(entryTarget)) {
         return send(res, 400, { error: "entry targets a contract not in this member's allowed set" });
       }
       if (inv.functionName().toString() !== METHOD) {
@@ -289,6 +349,7 @@ const server = createServer(async (req, res) => {
 });
 
 restore();
+restoreTargets();
 server.listen(PORT, () => {
   console.log(`[member ${INDEX}] listening on ${PORT}${TOKEN ? " (token auth)" : ""}${finalShare ? " (key restored)" : ""}`);
 });

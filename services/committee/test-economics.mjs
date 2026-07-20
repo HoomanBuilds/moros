@@ -86,9 +86,9 @@ try {
     };
     const inPath = resolve(work, `in${k}.json`);
     writeFileSync(inPath, JSON.stringify(input));
-    sh("node", [resolve(CIRC, "build/order_redeem_v3_js/generate_witness.js"), resolve(CIRC, "build/order_redeem_v3_js/order_redeem_v3.wasm"), inPath, resolve(work, `w${k}.wtns`)]);
-    sh(SNARKJS, ["groth16", "prove", resolve(CIRC, "output/order_redeem_v3_final.zkey"), resolve(work, `w${k}.wtns`), resolve(work, `p${k}.json`), resolve(work, `pub${k}.json`)]);
-    sh(SNARKJS, ["groth16", "verify", resolve(CIRC, "build/order_redeem_v3_vk.json"), resolve(work, `pub${k}.json`), resolve(work, `p${k}.json`)]);
+    sh("node", [resolve(CIRC, "build/position_redeem_js/generate_witness.js"), resolve(CIRC, "build/position_redeem_js/position_redeem.wasm"), inPath, resolve(work, `w${k}.wtns`)]);
+    sh(SNARKJS, ["groth16", "prove", resolve(CIRC, "output/position_redeem_final.zkey"), resolve(work, `w${k}.wtns`), resolve(work, `p${k}.json`), resolve(work, `pub${k}.json`)]);
+    sh(SNARKJS, ["groth16", "verify", resolve(CIRC, "build/position_redeem_vk.json"), resolve(work, `pub${k}.json`), resolve(work, `p${k}.json`)]);
     const pub = JSON.parse(readFileSync(resolve(work, `pub${k}.json`), "utf8"));
     if (pub[0] !== leaf.nullifierHash) throw new Error(`order ${k}: nullifierHash mismatch`);
     if (pub[2] !== leaf.commitment) throw new Error(`order ${k}: commitment mismatch`);
@@ -130,8 +130,8 @@ try {
   const badPath = resolve(work, "bad-fee.json");
   writeFileSync(badPath, JSON.stringify(badInput));
   const bad = spawnSync("node", [
-    resolve(CIRC, "build/order_redeem_v3_js/generate_witness.js"),
-    resolve(CIRC, "build/order_redeem_v3_js/order_redeem_v3.wasm"),
+    resolve(CIRC, "build/position_redeem_js/generate_witness.js"),
+    resolve(CIRC, "build/position_redeem_js/position_redeem.wasm"),
     badPath,
     resolve(work, "bad-fee.wtns"),
   ], { encoding: "utf8" });

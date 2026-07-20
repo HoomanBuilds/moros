@@ -58,3 +58,16 @@ export const PYTH_PRO_FEEDS = {
 export function resolvableAssets(oracleMode) {
   return new Set(oracleMode === "pyth_pro" ? Object.keys(PYTH_PRO_FEEDS) : FREE_REFLECTOR_ASSETS);
 }
+
+export function resolutionPhase(now, expiry, finalizeAfter, resolutionTimeout) {
+  if (![now, expiry, finalizeAfter, resolutionTimeout].every(Number.isSafeInteger)) {
+    throw new Error("resolution timing must use integer Unix seconds");
+  }
+  if (expiry < 0 || finalizeAfter < expiry || resolutionTimeout < 300) {
+    throw new Error("invalid resolution timing");
+  }
+  if (now < expiry) return "open";
+  if (now < finalizeAfter) return "final_batch";
+  if (now < finalizeAfter + resolutionTimeout) return "resolve";
+  return "void";
+}

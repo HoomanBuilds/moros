@@ -15,6 +15,16 @@ const SPORT = 39730;
 const TEST_MARKET = "CBKR2OYQHNBYUSHQEFEHB4GI6BMZYXP35GPYYCBKFRTZBTR6NV3P3MXS";
 const TEST_POOL = "CDUYUZEZBIWRPXM3ITDQZBANHN3Q6B6KUKCBV7MP6BGLYRQCT6QSV23E";
 const work = mkdtempSync(resolve(tmpdir(), "server-test-"));
+const keeperStatusFile = resolve(work, "keeper-status.json");
+writeFileSync(keeperStatusFile, JSON.stringify({
+  lastTickAt: new Date().toISOString(),
+  marketsScanned: 0,
+  dueMarkets: 0,
+  resolvedMarkets: 0,
+  voidedMarkets: 0,
+  waitingForOracle: 0,
+  errors: [],
+}));
 
 function sh(bin, args) {
   const r = spawnSync(bin, args, { encoding: "utf8" });
@@ -37,13 +47,17 @@ const serverProc = spawn("node", [resolve(HERE, "server.mjs")], {
       POOL_ID: "", MARKET: "", FUNDER_SK: "",
       POOLS_FILE: resolve(work, "pools.json"), QUEUE_FILE: resolve(work, "queue.json"),
       INDEXER_DIR: resolve(work, "indexer"),
+      KEEPER_STATUS_FILE: keeperStatusFile, KEEPER_STALE_MS: "60000",
     },
     stdio: ["ignore", "inherit", "inherit"],
   });
+serverProc.on("exit", (code, signal) => {
+  if (code && code !== 0) console.error(`server exited during test: code=${code} signal=${signal}`);
+});
 procs.push(serverProc);
 
 const base = `http://127.0.0.1:${SPORT}`;
-const publicHdr = { "content-type": "application/json", connection: "close" };
+const publicHdr = { "content-type": "application/json" };
 const hdr = { ...publicHdr, authorization: `Bearer ${STOKEN}` };
 
 try {
@@ -58,18 +72,28 @@ try {
   if (!pk) throw new Error("server never became ready");
   console.log("server up; epoch committee pk fetched from /pk");
 
+  const health = await fetch(`${base}/health`);
+  if (!health.ok || !(await health.json()).healthy) throw new Error("healthy committee and keeper reported unavailable");
+  console.log("health includes a fresh keeper heartbeat");
+
   const registered = await fetch(`${base}/register-pool`, {
     method: "POST",
     headers: publicHdr,
-    body: JSON.stringify({ marketId: TEST_MARKET, poolId: TEST_POOL, protocolVersion: 2 }),
+    body: JSON.stringify({ marketId: TEST_MARKET, poolId: TEST_POOL }),
   });
   if (!registered.ok) throw new Error(`pool registration failed: ${await registered.text()}`);
   console.log("public pool registration accepted in explicit test mode");
 
+  const invalidProofLookup = await fetch(`${base}/proof/not-a-commitment?poolId=${TEST_POOL}`);
+  if (invalidProofLookup.status !== 400) throw new Error("malformed proof lookup was not rejected");
+  const wrongPoolProofLookup = await fetch(`${base}/proof/1?poolId=${TEST_MARKET}`);
+  if (wrongPoolProofLookup.status !== 404) throw new Error("proof lookup silently searched outside the requested pool");
+  console.log("membership proof lookup is bound to its requested pool");
+
   const wrongPoolRedeem = await fetch(`${base}/redeem`, {
     method: "POST",
     headers: publicHdr,
-    body: JSON.stringify({ proof: {}, public: {}, recipient: TEST_MARKET, poolId: TEST_MARKET, protocolVersion: 3 }),
+    body: JSON.stringify({ proof: {}, public: {}, recipient: TEST_MARKET, poolId: TEST_MARKET }),
   });
   if (wrongPoolRedeem.status !== 404) throw new Error("redemption silently fell back from an unregistered pool");
   console.log("unregistered redemption pool rejected without fallback");

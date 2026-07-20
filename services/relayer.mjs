@@ -25,16 +25,13 @@ export function relay(proofPath, publicPath, recipient, opts = {}) {
   const invokeArgs = [
     "contract", "invoke", "--id", poolId,
     "--source", source, "--network", cfg.network, "--send=yes", "--",
-    "redeem_order_v2", "--to", recipient,
+    "redeem_position", "--to", recipient,
   ];
-  if (opts.protocolVersion !== 3) {
-    const relayerAddr = run("stellar", ["keys", "address", source]).stdout.trim();
-    invokeArgs.push("--relayer", relayerAddr);
-  }
   invokeArgs.push("--proof_bytes", proofHex, "--pub_signals_bytes", pubHex);
   const r = run("stellar", invokeArgs);
-  const line = (r.stdout + r.stderr).split("\n").find((l) => l.includes("transfer") || l.includes("Success"));
-  return { submitted: line || "done" };
+  const output = r.stdout + r.stderr;
+  const hashes = output.match(/\b[0-9a-f]{64}\b/gi) ?? [];
+  return { submitted: true, txHash: hashes.at(-1) };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

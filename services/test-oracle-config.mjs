@@ -4,6 +4,7 @@ import {
   PYTH_PRO_FEEDS,
   REFLECTOR_CEX_ASSETS,
   REFLECTOR_FIAT_ASSETS,
+  resolutionPhase,
   resolvableAssets,
 } from "./oracle-config.mjs";
 
@@ -13,5 +14,10 @@ assert.ok(["BTC", "XLM", "EUR", "CHF", "XAU"].every((asset) => resolvableAssets(
 assert.ok(["BTC", "EUR", "GBP", "XAU"].every((asset) => resolvableAssets("pyth_pro").has(asset)));
 assert.equal(resolvableAssets("pyth_pro").has("CHF"), false);
 assert.ok(Object.values(PYTH_PRO_FEEDS).every((feedId) => Number.isInteger(feedId) && feedId > 0));
+assert.equal(resolutionPhase(999, 1_000, 1_300, 3_600), "open");
+assert.equal(resolutionPhase(1_000, 1_000, 1_300, 3_600), "final_batch");
+assert.equal(resolutionPhase(1_300, 1_000, 1_300, 3_600), "resolve");
+assert.equal(resolutionPhase(4_900, 1_000, 1_300, 3_600), "void");
+assert.throws(() => resolutionPhase(1, 2, 1, 300), /invalid resolution timing/);
 
 console.log("oracle config ok");

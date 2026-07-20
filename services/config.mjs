@@ -29,6 +29,6 @@ export const cfg = {
   batchWasm: resolve(circuits, "build/batch_js/batch.wasm"),
   batchWitnessGen: resolve(circuits, "build/batch_js/generate_witness.js"),
   batchZkey: resolve(circuits, "output/batch_final.zkey"),
-  redeemZkey: resolve(circuits, "output/order_redeem_final.zkey"),
+  redeemZkey: resolve(circuits, "output/position_redeem_final.zkey"),
   work: process.env.WORK || "/tmp/batcher",
 };

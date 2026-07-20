@@ -3,7 +3,7 @@
 # Dev-only: open server (no SERVICE_TOKEN), ATTEST_ANY members, low BATCH_N.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-log="/tmp/umbra-dev"
+log="/tmp/moros-dev"
 mkdir -p "$log"
 
 FLAGSHIP_POOL="CDUYUZEZBIWRPXM3ITDQZBANHN3Q6B6KUKCBV7MP6BGLYRQCT6QSV23E"

@@ -90,4 +90,4 @@ const dqno = thresholdDecrypt(netNo, quorum.map((sh) => partialDecrypt(sh, netNo
 console.log("committee-decrypted net: dqyes =", dqyes, " dqno =", dqno, " (expect 30, 20)");
 console.log("order root (same tree the pool verifies redeems against):", treeInput.orderRoot);
 if (dqyes !== 30n || dqno !== 20n) { console.error("FAIL: net mismatch"); process.exit(1); }
-console.log("PASS: single curve BLS12-381. The ZK-proven encrypted orders ARE the on-chain order-tree leaves; the committee sees only the net; redeem stays on the existing order_redeem path.");
+console.log("PASS: single curve BLS12-381. The ZK-proven encrypted orders are the on-chain order-tree leaves; the committee sees only the net; redemption uses the canonical position proof path.");

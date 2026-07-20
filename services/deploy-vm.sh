@@ -100,10 +100,34 @@ User=$USER
 WantedBy=multi-user.target
 UNIT
 
+  unit=/etc/systemd/system/zkmarket-resolve-keeper.service
+  sudo tee "$unit" >/dev/null <<UNIT
+[Unit]
+Description=Moros testnet price resolution keeper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$repo
+EnvironmentFile=$here/.env
+ExecStart=$node_bin $here/resolve-keeper.mjs
+Restart=on-failure
+RestartSec=5
+User=$USER
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
   sudo systemctl daemon-reload
   sudo systemctl enable --now zkmarket-member1 zkmarket-member2 zkmarket-member3
   sudo systemctl enable --now zkmarket-server
+  sudo systemctl enable --now zkmarket-resolve-keeper
+  sudo systemctl restart zkmarket-member1 zkmarket-member2 zkmarket-member3
+  sudo systemctl restart zkmarket-server zkmarket-resolve-keeper
   echo "[service] started. logs: journalctl -u zkmarket-server -f"
+  echo "[service] keeper logs: journalctl -u zkmarket-resolve-keeper -f"
   echo "[service] NOTE: all 3 members on one VM demonstrates the architecture only;"
   echo "[service] real no-leak trust needs each member on an independently operated host."
   ;;

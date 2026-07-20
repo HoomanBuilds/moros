@@ -10,6 +10,7 @@ import { addCiphers } from "./committee/jubjub.mjs";
 import { ensureDKG, collectPartials, attestEntry } from "./committee/coordinator.mjs";
 import { submitPoolBatch } from "./committee/submit-multisig.mjs";
 import { createIndexer } from "./indexer.mjs";
+import { resolvableAssets } from "./oracle-config.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
 const BATCH_N = Number(process.env.BATCH_N || 4);
@@ -30,12 +31,23 @@ const statePath = (value, fallback) => value ? resolve(cfg.repo, value) : resolv
 const POOLS_FILE = statePath(process.env.POOLS_FILE, "pools.json");
 const QUEUE_FILE = statePath(process.env.QUEUE_FILE, "queue.json");
 const INDEXER_DIR = statePath(process.env.INDEXER_DIR, "indexer-data");
+const KEEPER_STATUS_FILE = statePath(process.env.KEEPER_STATUS_FILE, "keeper-status.json");
+const KEEPER_STALE_MS = Number(process.env.KEEPER_STALE_MS || 900000);
 const POOL_WASM_HASH = (process.env.POOL_WASM_HASH || "").toLowerCase();
+const MARKET_WASM_HASH = (process.env.MARKET_WASM_HASH || "").toLowerCase();
 const COLLATERAL_ID = process.env.COLLATERAL_ID || "";
+const ORACLE_MODE = process.env.ORACLE_MODE || "free";
+const PRICE_RESOLVER_ID = ORACLE_MODE === "pyth_pro"
+  ? process.env.PYTH_PRO_RESOLVER_ID || ""
+  : process.env.FREE_RESOLVER_ID || "";
+const RESOLVABLE_ASSETS = resolvableAssets(ORACLE_MODE);
 const ALLOW_UNVERIFIED_REGISTRATION = process.env.ALLOW_UNVERIFIED_REGISTRATION === "1";
 const MAX_POOLS = Number(process.env.MAX_POOLS || 1000);
 const S = 1n << 32n;
-if (BATCH_N !== 4) throw new Error("BATCH_N must be 4 for protocol v3 privacy batches");
+if (BATCH_N !== 4) throw new Error("BATCH_N must be 4 for private batches");
+if (!ALLOW_UNVERIFIED_REGISTRATION && (!POOL_WASM_HASH || !MARKET_WASM_HASH || !COLLATERAL_ID || !PRICE_RESOLVER_ID)) {
+  throw new Error("POOL_WASM_HASH, MARKET_WASM_HASH, COLLATERAL_ID, and the active price resolver are required");
+}
 if (!TOKEN) console.warn("[server] SERVICE_TOKEN unset - mutating endpoints are OPEN (dev only)");
 if (MEMBERS.length === 0) {
   console.error("[server] MEMBERS unset - need committee member URLs");
@@ -54,30 +66,25 @@ const memberAddrs = {};
 
 const pools = new Map();
 
-function newPool(marketId, poolId, protocolVersion = 2) {
+function newPool(marketId, poolId) {
   return {
     marketId,
     poolId,
-    protocolVersion,
     indexer: createIndexer({ rpcUrl: RPC_URL, poolId, stateFile: resolve(INDEXER_DIR, `${poolId}.json`) }),
     pending: [],
     seen: new Set(),
   };
 }
 
-function registerPool(marketId, poolId, protocolVersion = 2) {
-  if (pools.has(poolId)) {
-    const existing = pools.get(poolId);
-    if (protocolVersion === 3) existing.protocolVersion = 3;
-    return existing;
-  }
-  const p = newPool(marketId, poolId, protocolVersion);
+function registerPool(marketId, poolId) {
+  if (pools.has(poolId)) return pools.get(poolId);
+  const p = newPool(marketId, poolId);
   pools.set(poolId, p);
   return p;
 }
 
 function savePools() {
-  const list = [...pools.values()].map((p) => ({ marketId: p.marketId, poolId: p.poolId, protocolVersion: p.protocolVersion }));
+  const list = [...pools.values()].map((p) => ({ marketId: p.marketId, poolId: p.poolId }));
   try {
     mkdirSync(dirname(POOLS_FILE), { recursive: true });
     writeFileSync(POOLS_FILE, JSON.stringify(list, null, 2));
@@ -89,7 +96,7 @@ function loadPools() {
   if (existsSync(POOLS_FILE)) {
     try {
       for (const p of JSON.parse(readFileSync(POOLS_FILE, "utf8"))) {
-        if (CID.test(p.marketId || "") && CID.test(p.poolId || "")) registerPool(p.marketId, p.poolId, p.protocolVersion === 3 ? 3 : 2);
+        if (CID.test(p.marketId || "") && CID.test(p.poolId || "")) registerPool(p.marketId, p.poolId);
       }
     } catch {}
   }
@@ -134,6 +141,19 @@ function loadQueues() {
   } catch {}
 }
 
+function keeperStatus() {
+  try {
+    const value = JSON.parse(readFileSync(KEEPER_STATUS_FILE, "utf8"));
+    const lastTick = Date.parse(value.lastTickAt || "");
+    return {
+      ...value,
+      healthy: Number.isFinite(lastTick) && Date.now() - lastTick <= KEEPER_STALE_MS,
+    };
+  } catch {
+    return { healthy: false, error: "keeper status unavailable" };
+  }
+}
+
 async function bootstrap() {
   for (const [i, url] of Object.entries(members)) {
     for (let k = 0; ; k++) {
@@ -151,6 +171,16 @@ async function bootstrap() {
   }
   dkg = await ensureDKG(members, THRESHOLD, MEMBER_TOKEN);
   pkDec = [dkg.pk[0].toString(), dkg.pk[1].toString()];
+  if (!ALLOW_UNVERIFIED_REGISTRATION) {
+    for (const pool of pools.values()) {
+      try {
+        await verifyPoolRegistration(pool.marketId, pool.poolId);
+        await allowMemberTarget(pool.marketId, pool.poolId);
+      } catch (error) {
+        console.warn(`[server] skipped unapproved saved pool ${pool.poolId}: ${String(error.message || error)}`);
+      }
+    }
+  }
   console.log(`[server] committee ${dkg.reused ? "epoch REUSED" : "DKG complete"} (${MEMBERS.length} members, t=${THRESHOLD}); serving ${pools.size} pool(s)`);
 }
 
@@ -179,22 +209,28 @@ async function readContract(contractId, method) {
   return scValToNative(sim.result.retval);
 }
 
-async function verifyPoolRegistration(marketId, poolId, protocolVersion) {
+async function verifyPoolRegistration(marketId, poolId) {
   if (ALLOW_UNVERIFIED_REGISTRATION) return;
-  if (protocolVersion !== 3) throw new Error("public registration only supports protocol v3 pools");
-  const [version, linkedMarket, poolCollateral, security, batcher, marketCollateral] = await Promise.all([
-    readContract(poolId, "protocol_version"),
+  const [linkedMarket, poolCollateral, security, batcher, marketCollateral, marketResolver, marketInfo] = await Promise.all([
     readContract(poolId, "market"),
     readContract(poolId, "collateral"),
     readContract(poolId, "security_config"),
     readContract(marketId, "batcher"),
     readContract(marketId, "collateral"),
+    readContract(marketId, "resolver"),
+    readContract(marketId, "market_info"),
   ]);
-  if (Number(version) !== 3 || linkedMarket !== marketId || batcher !== poolId) {
-    throw new Error("market and pool are not a linked protocol v3 deployment");
+  if (linkedMarket !== marketId || batcher !== poolId) {
+    throw new Error("market and pool are not a linked Moros deployment");
   }
   if (poolCollateral !== marketCollateral || (COLLATERAL_ID && poolCollateral !== COLLATERAL_ID)) {
     throw new Error("market collateral does not match the configured asset");
+  }
+  if (marketResolver !== PRICE_RESOLVER_ID) {
+    throw new Error("market does not use the active price resolver");
+  }
+  if (!RESOLVABLE_ASSETS.has(String(marketInfo.asset).toUpperCase())) {
+    throw new Error("market asset is not supported by the active oracle mode");
   }
   const [committee, threshold, redeemConfigured] = security;
   const expectedMembers = Object.keys(memberAddrs).sort();
@@ -202,15 +238,39 @@ async function verifyPoolRegistration(marketId, poolId, protocolVersion) {
   if (!redeemConfigured || Number(threshold) !== THRESHOLD || JSON.stringify(configuredMembers) !== JSON.stringify(expectedMembers)) {
     throw new Error("pool security configuration does not match this committee");
   }
-  if (POOL_WASM_HASH) {
-    const wasm = await new rpc.Server(RPC_URL).getContractWasmByContractId(poolId);
-    const actualHash = createHash("sha256").update(wasm).digest("hex");
-    if (actualHash !== POOL_WASM_HASH) throw new Error("pool WASM hash is not approved");
+  const rpcServer = new rpc.Server(RPC_URL);
+  const [poolWasm, marketWasm] = await Promise.all([
+    rpcServer.getContractWasmByContractId(poolId),
+    rpcServer.getContractWasmByContractId(marketId),
+  ]);
+  if (createHash("sha256").update(poolWasm).digest("hex") !== POOL_WASM_HASH) {
+    throw new Error("pool WASM hash is not approved");
   }
+  if (createHash("sha256").update(marketWasm).digest("hex") !== MARKET_WASM_HASH) {
+    throw new Error("market WASM hash is not approved");
+  }
+}
+
+async function allowMemberTarget(marketId, poolId) {
+  if (ALLOW_UNVERIFIED_REGISTRATION) return;
+  await Promise.all(Object.values(members).map(async (url) => {
+    const response = await fetch(`${url}/allow-target`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(MEMBER_TOKEN ? { authorization: `Bearer ${MEMBER_TOKEN}` } : {}),
+      },
+      body: JSON.stringify({ marketId, poolId }),
+    });
+    if (!response.ok) throw new Error(`${url}/allow-target -> ${response.status}: ${await response.text()}`);
+  }));
 }
 
 const batching = new Set();
 async function marketWindow(pool) {
+  if (DRY && ALLOW_UNVERIFIED_REGISTRATION) {
+    return { expiry: Math.floor(Date.now() / 1000) + 3600, finalizeAfter: Math.floor(Date.now() / 1000) + 3900 };
+  }
   if (!FUNDER_SK || !pool.marketId) throw new Error("market reader is not configured");
   const server = new rpc.Server(RPC_URL);
   const source = Keypair.fromSecret(FUNDER_SK);
@@ -230,23 +290,24 @@ async function batchPool(pool) {
   if (!dkg) return { skipped: "committee not ready" };
   if (pool.pending.length === 0) return { skipped: "no pending orders" };
   let batchSize = Math.min(BATCH_N, pool.pending.length);
-  if (pool.protocolVersion === 3) {
-    let window;
-    try {
-      window = await marketWindow(pool);
-    } catch (e) {
-      return { skipped: String(e.message || e) };
-    }
-    const now = Math.floor(Date.now() / 1000);
-    if (now >= window.finalizeAfter) return { skipped: "final batch deadline passed; pending orders are refundable" };
-    if (now < window.expiry && batchSize < BATCH_N) {
-      return { skipped: `need ${BATCH_N}, have ${pool.pending.length}` };
-    }
-    if (now >= window.expiry && batchSize < 2) {
-      return { skipped: "a private final batch needs at least 2 orders; the pending order becomes refundable after the deadline" };
-    }
-  } else if (batchSize < BATCH_N) {
+  let marketTimes;
+  try {
+    marketTimes = await marketWindow(pool);
+  } catch (e) {
+    return { skipped: String(e.message || e) };
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (now >= marketTimes.finalizeAfter) {
+    const expired = pool.pending.length;
+    pool.pending = [];
+    saveQueues();
+    return { expired, note: "final batch deadline passed; on-chain pending orders are refundable" };
+  }
+  if (now < marketTimes.expiry && batchSize < BATCH_N) {
     return { skipped: `need ${BATCH_N}, have ${pool.pending.length}` };
+  }
+  if (now >= marketTimes.expiry && batchSize < 2) {
+    return { skipped: "a private final batch needs at least 2 orders; the pending order becomes refundable after the deadline" };
   }
   batching.add(pool.poolId);
   try {
@@ -283,7 +344,6 @@ async function batchPool(pool) {
       dqnoFp: (no.net * S).toString(),
       nullHashes,
       commitments,
-      protocolVersion: pool.protocolVersion,
       signerAddrs: Object.keys(memberAddrs).slice(0, THRESHOLD),
       sourceSk: FUNDER_SK,
       attest: async ({ address, entryXdr, validUntilLedger }) => {
@@ -308,7 +368,7 @@ async function runAllWindows() {
   const out = {};
   for (const pool of pools.values()) {
     const r = await batchPool(pool);
-    if (r.batched || r.dryRun || r.error) out[pool.poolId] = r;
+    if (r.batched || r.dryRun || r.error || r.expired) out[pool.poolId] = r;
   }
   return out;
 }
@@ -352,11 +412,18 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
   try {
+    if (req.method === "GET" && req.url === "/health") {
+      const keeper = keeperStatus();
+      const healthy = !!dkg && keeper.healthy;
+      return send(healthy ? 200 : 503, { healthy, committeeReady: !!dkg, keeper });
+    }
     if (req.method === "GET" && req.url === "/status") {
       return send(200, {
         committee: { members: MEMBERS.length, threshold: THRESHOLD, ready: !!dkg },
+        oracle: { mode: ORACLE_MODE, resolver: PRICE_RESOLVER_ID, assets: [...RESOLVABLE_ASSETS] },
+        keeper: keeperStatus(),
         batchN: BATCH_N, windowMs: WINDOW_MS,
-        pools: [...pools.values()].map((p) => ({ market: p.marketId, pool: p.poolId, protocolVersion: p.protocolVersion, pending: p.pending.length })),
+        pools: [...pools.values()].map((p) => ({ market: p.marketId, pool: p.poolId, pending: p.pending.length })),
       });
     }
     if (req.method === "GET" && req.url === "/pk") {
@@ -364,8 +431,16 @@ const server = http.createServer(async (req, res) => {
       return send(200, { pk: pkDec, note: "encrypt orders to this epoch key; prove with encrypt_order.circom" });
     }
     if (req.method === "GET" && req.url.startsWith("/proof/")) {
-      const commitment = req.url.slice("/proof/".length);
-      for (const pool of pools.values()) {
+      const requestUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      const commitment = requestUrl.pathname.slice("/proof/".length);
+      const requestedPoolId = requestUrl.searchParams.get("poolId");
+      if (!DEC.test(commitment) || (requestedPoolId && !CID.test(requestedPoolId))) {
+        return send(400, { error: "invalid commitment or pool ID" });
+      }
+      const selectedPool = requestedPoolId ? pools.get(requestedPoolId) : null;
+      if (requestedPoolId && !selectedPool) return send(404, { error: "pool not registered" });
+      const candidates = selectedPool ? [selectedPool] : pools.values();
+      for (const pool of candidates) {
         await pool.indexer.poll().catch(() => {});
         const p = pool.indexer.proofFor(commitment);
         if (p) return send(200, { ...p, poolId: pool.poolId });
@@ -377,10 +452,10 @@ const server = http.createServer(async (req, res) => {
     if (req.url === "/register-pool") {
       const o = await readBody(req);
       if (!CID.test(o.marketId || "") || !CID.test(o.poolId || "")) return send(400, { error: "need valid marketId and poolId" });
-      const protocolVersion = o.protocolVersion === 3 ? 3 : 2;
       if (!pools.has(o.poolId) && pools.size >= MAX_POOLS) return send(429, { error: "pool registry full" });
-      await verifyPoolRegistration(o.marketId, o.poolId, protocolVersion);
-      const p = registerPool(o.marketId, o.poolId, protocolVersion);
+      await verifyPoolRegistration(o.marketId, o.poolId);
+      await allowMemberTarget(o.marketId, o.poolId);
+      const p = registerPool(o.marketId, o.poolId);
       savePools();
       saveQueues();
       await p.indexer.poll().catch(() => {});
@@ -433,7 +508,7 @@ const server = http.createServer(async (req, res) => {
       try {
         writeFileSync(pf, JSON.stringify(o.proof));
         writeFileSync(pu, JSON.stringify(o.public));
-        return send(200, relay(pf, pu, o.recipient, { poolId, protocolVersion: o.protocolVersion === 3 ? 3 : 2 }));
+        return send(200, relay(pf, pu, o.recipient, { poolId }));
       } finally {
         rmSync(redeemDir, { recursive: true, force: true });
       }
@@ -443,6 +518,8 @@ const server = http.createServer(async (req, res) => {
     return send(400, { error: String(e.message || e) });
   }
 });
+server.keepAliveTimeout = 65_000;
+server.headersTimeout = 66_000;
 
 loadPools();
 loadQueues();

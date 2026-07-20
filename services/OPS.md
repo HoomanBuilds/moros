@@ -28,15 +28,17 @@ Stellar account with multisig thresholds, not a single hot key:
   on the intake server. Consider a timelock contract between admin intents and execution.
 
 ## Resolution (oracle-driven)
-- Deploy `Resolver(oracle)` with the real Reflector testnet/mainnet oracle address.
-- `market.set_resolver(admin, resolver)`; then `Resolver.resolve_market(market)` is
-  permissionless and sets the outcome from the oracle iff `now >= expiry` and price >= threshold.
-- Set the market `expiry` to the real event time; do NOT resolve by admin in production.
+- Deploy the resolver with the approved Reflector contracts and an explicit source quorum.
+- Set the market resolver once, then run `resolve-keeper.mjs` as a managed service.
+- Monitor GET `/health` and `/status`. A stale keeper heartbeat or overdue resolution is a release-blocking failure.
+- The keeper resolves only after `finalize_after`. It invokes the resolver timeout void path only after the configured oracle recovery window has elapsed.
+- The keeper submits `extend_ttl` for every registered market and pool. Testnet caps one extension at about 30 days, so the default weekly refresh keeps long-running markets and later claims available without relying on user traffic.
+- Set the market expiry to the real observation time. Do not resolve by admin in production.
 
 ## Trusted setup
 - The deployed Groth16 zkeys are single-contributor demo entropy. Before mainnet, run
   `circuits/ceremony/` with independent participants, then redeploy the on-chain VKs
-  (`set_redeem_v2_vk`, encrypt-order VK consumers) to match the ceremony output.
+  (`set_redeem_vk`, encrypt-order VK consumers) to match the ceremony output.
 
 ## Money / solvency
 - Fund the market with a `b*ln2` buffer before resolution (covers the LMSR operator subsidy).
