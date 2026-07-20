@@ -5,7 +5,9 @@ extern crate alloc;
 use soroban_sdk::{
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
     contract, contractclient, contractevent, contractimpl, contracttype, log, symbol_short, token,
-    vec, xdr::ToXdr, Address, Bytes, BytesN, Env, IntoVal, String, Symbol, Vec,
+    vec,
+    xdr::ToXdr,
+    Address, Bytes, BytesN, Env, IntoVal, String, Symbol, Vec,
 };
 
 use lean_imt::{Imt, LeanIMT, TREE_DEPTH_KEY, TREE_LEAVES_KEY, TREE_ROOT_KEY};
@@ -17,15 +19,57 @@ mod test;
 use soroban_sdk::contracterror;
 
 #[contracttype]
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Side {
     Yes,
     No,
 }
 
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Outcome {
+    Yes,
+    No,
+    Void,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketInfo {
+    pub asset: Symbol,
+    pub threshold: i128,
+    pub expiry: u64,
+    pub finalize_after: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrderStatus {
+    Pending,
+    Included,
+    Refunded,
+    Redeemed,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrderRecord {
+    pub owner: Address,
+    pub stake: i128,
+    pub status: OrderStatus,
+}
+
+#[contracttype]
+#[derive(Clone)]
+enum DataKey {
+    Order(BytesN<32>),
+    Included(BytesN<32>),
+}
+
 #[contractclient(name = "MarketClient")]
 pub trait Market {
-    fn outcome(env: Env) -> Option<Side>;
+    fn outcome(env: Env) -> Option<Outcome>;
+    fn market_info(env: Env) -> MarketInfo;
     fn quote_batch(env: Env, dqyes: i128, dqno: i128) -> i128;
     fn apply_batch(env: Env, batcher: Address, dqyes: i128, dqno: i128) -> i128;
     fn price_yes(env: Env) -> i128;
@@ -55,6 +99,17 @@ pub enum Error {
     PriceMismatch = 16,
     AlreadyClaimed = 17,
     RedeemProofFailed = 18,
+    MarketClosed = 19,
+    OrderNotFound = 20,
+    InvalidOrderState = 21,
+    InvalidBatchSize = 22,
+    FeeMismatch = 23,
+    MarketVoided = 24,
+    InvalidFee = 25,
+    DuplicateOrder = 26,
+    ConfigurationLocked = 27,
+    LegacyBatchDisabled = 28,
+    LegacyRedeemDisabled = 29,
 }
 
 // Error messages for Vec<String> returns (legacy compatibility)
@@ -79,12 +134,9 @@ const ADMIN_KEY: Symbol = symbol_short!("admin");
 const MARKET_KEY: Symbol = symbol_short!("market");
 const DEPOSIT_VK_KEY: Symbol = symbol_short!("dvk");
 const CAP_KEY: Symbol = symbol_short!("cap");
-const BATCH_VK_KEY: Symbol = symbol_short!("bvk");
 const ORDER_LEAVES_KEY: Symbol = symbol_short!("oleaves");
 const ORDER_DEPTH_KEY: Symbol = symbol_short!("odepth");
 const ORDER_ROOT_KEY: Symbol = symbol_short!("oroot");
-const BATCH_NULL_KEY: Symbol = symbol_short!("bnull");
-const REDEEM_VK_KEY: Symbol = symbol_short!("rvk");
 const REDEEM_NULL_KEY: Symbol = symbol_short!("rnull");
 const COMMITTEE_KEY: Symbol = symbol_short!("committee");
 const COMMITTEE_T_KEY: Symbol = symbol_short!("commit_t");
@@ -93,17 +145,34 @@ const BATCH_INCL_KEY: Symbol = symbol_short!("bincl");
 const REDEEM_V2_VK_KEY: Symbol = symbol_short!("r2vk");
 const DECIMALS_KEY: Symbol = symbol_short!("decimals");
 const CLAIMED_KEY: Symbol = symbol_short!("claimed");
+const TREASURY_KEY: Symbol = symbol_short!("treasury");
+const FEE_BPS_KEY: Symbol = symbol_short!("fee_bps");
 const ORDER_TREE_DEPTH: u32 = 16;
 const BATCH_N: u32 = 4;
+const MIN_PRIVATE_BATCH_N: u32 = 2;
+const MAX_COMMITTEE_MEMBERS: u32 = 16;
 const SCALE: i128 = 1 << 32;
+const TTL_THRESHOLD: u32 = 120_960;
+const TTL_EXTEND_TO: u32 = 6_307_200;
 
-const FIXED_AMOUNT: i128 = 1000000000; // 1 XLM in stroops
+const FIXED_AMOUNT: i128 = 1000000000;
+const MAX_FEE_BPS: u32 = 1_000;
 
 #[contractevent(topics = ["order_placed"], data_format = "vec")]
 pub struct OrderPlaced {
     #[topic]
     pub commitment: BytesN<32>,
     pub index: u32,
+    pub stake: i128,
+}
+
+#[contractevent(topics = ["order_refund"], data_format = "vec")]
+pub struct OrderRefunded {
+    #[topic]
+    pub commitment: BytesN<32>,
+    #[topic]
+    pub owner: Address,
+    pub stake: i128,
 }
 
 #[contract]
@@ -119,15 +188,24 @@ impl PrivacyPoolsContract {
         admin: Address,
         market: Address,
         cap: i128,
+        treasury: Address,
+        fee_bps: u32,
     ) {
+        if fee_bps > MAX_FEE_BPS {
+            panic!("invalid fee configuration");
+        }
         // Store the admin
         env.storage().instance().set(&ADMIN_KEY, &admin);
 
         env.storage().instance().set(&VK_KEY, &vk_bytes);
-        env.storage().instance().set(&DEPOSIT_VK_KEY, &deposit_vk_bytes);
+        env.storage()
+            .instance()
+            .set(&DEPOSIT_VK_KEY, &deposit_vk_bytes);
         env.storage().instance().set(&TOKEN_KEY, &token_address);
         env.storage().instance().set(&MARKET_KEY, &market);
         env.storage().instance().set(&CAP_KEY, &cap);
+        env.storage().instance().set(&TREASURY_KEY, &treasury);
+        env.storage().instance().set(&FEE_BPS_KEY, &fee_bps);
         let decimals = token::Client::new(env, &token_address).decimals();
         env.storage().instance().set(&DECIMALS_KEY, &decimals);
 
@@ -139,9 +217,14 @@ impl PrivacyPoolsContract {
         env.storage().instance().set(&TREE_ROOT_KEY, &root);
 
         let order_tree = Imt::new(env, ORDER_TREE_DEPTH);
-        env.storage().instance().set(&ORDER_LEAVES_KEY, &order_tree.frontier());
+        env.storage()
+            .instance()
+            .set(&ORDER_LEAVES_KEY, &order_tree.frontier());
         env.storage().instance().set(&ORDER_DEPTH_KEY, &0u32);
-        env.storage().instance().set(&ORDER_ROOT_KEY, &order_tree.get_root());
+        env.storage()
+            .instance()
+            .set(&ORDER_ROOT_KEY, &order_tree.get_root());
+        Self::bump(env);
     }
 
     /// Stores a commitment in the merkle tree and updates the tree state
@@ -197,8 +280,12 @@ impl PrivacyPoolsContract {
         let mut tree = Imt::from_storage(env, ORDER_TREE_DEPTH, count, frontier, root);
         let leaf_index = tree.insert(commitment).map_err(|_| Error::TreeAtCapacity)?;
         let new_root = tree.get_root();
-        env.storage().instance().set(&ORDER_LEAVES_KEY, &tree.frontier());
-        env.storage().instance().set(&ORDER_DEPTH_KEY, &tree.get_count());
+        env.storage()
+            .instance()
+            .set(&ORDER_LEAVES_KEY, &tree.frontier());
+        env.storage()
+            .instance()
+            .set(&ORDER_DEPTH_KEY, &tree.get_count());
         env.storage().instance().set(&ORDER_ROOT_KEY, &new_root);
         Ok((new_root, leaf_index))
     }
@@ -213,6 +300,19 @@ impl PrivacyPoolsContract {
         if stake <= 0 {
             return Err(Error::InvalidStake);
         }
+        if Self::stake_tokens(env, stake).is_none() {
+            return Err(Error::InvalidStake);
+        }
+        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
+        let market_client = MarketClient::new(env, &market);
+        let info = market_client.market_info();
+        if market_client.outcome().is_some() || env.ledger().timestamp() >= info.expiry {
+            return Err(Error::MarketClosed);
+        }
+        let order_key = DataKey::Order(commitment.clone());
+        if env.storage().persistent().has(&order_key) {
+            return Err(Error::DuplicateOrder);
+        }
         let token_address: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
         token::Client::new(env, &token_address).transfer(
             &from,
@@ -220,8 +320,78 @@ impl PrivacyPoolsContract {
             &stake,
         );
         let (_, leaf_index) = Self::store_order(env, commitment.clone())?;
-        OrderPlaced { commitment, index: leaf_index }.publish(env);
+        env.storage().persistent().set(
+            &order_key,
+            &OrderRecord {
+                owner: from,
+                stake,
+                status: OrderStatus::Pending,
+            },
+        );
+        Self::bump_key(env, &order_key);
+        Self::bump(env);
+        OrderPlaced {
+            commitment,
+            index: leaf_index,
+            stake,
+        }
+        .publish(env);
         Ok(leaf_index)
+    }
+
+    pub fn get_order(env: &Env, commitment: BytesN<32>) -> Option<OrderRecord> {
+        let key = DataKey::Order(commitment);
+        let order = env.storage().persistent().get(&key);
+        if order.is_some() {
+            Self::bump_key(env, &key);
+        }
+        order
+    }
+
+    pub fn refund_order(env: &Env, owner: Address, commitment: BytesN<32>) -> Result<i128, Error> {
+        owner.require_auth();
+        let key = DataKey::Order(commitment.clone());
+        let mut order: OrderRecord = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::OrderNotFound)?;
+        if order.owner != owner {
+            return Err(Error::Unauthorized);
+        }
+        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
+        let client = MarketClient::new(env, &market);
+        let refundable = match client.outcome() {
+            Some(Outcome::Void) => {
+                matches!(order.status, OrderStatus::Pending | OrderStatus::Included)
+            }
+            Some(_) => false,
+            None => {
+                let info = client.market_info();
+                order.status == OrderStatus::Pending
+                    && env.ledger().timestamp() >= info.finalize_after
+            }
+        };
+        if !refundable {
+            return Err(Error::InvalidOrderState);
+        }
+        order.status = OrderStatus::Refunded;
+        env.storage().persistent().set(&key, &order);
+        Self::bump_key(env, &key);
+        let token_address: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
+        token::Client::new(env, &token_address).transfer(
+            &env.current_contract_address(),
+            &owner,
+            &order.stake,
+        );
+        OrderRefunded {
+            commitment,
+            owner,
+            stake: order.stake,
+        }
+        .publish(env);
+        Self::bump(env);
+        Ok(order.stake)
     }
 
     pub fn get_order_root(env: &Env) -> BytesN<32> {
@@ -284,7 +454,8 @@ impl PrivacyPoolsContract {
         let cap: i128 = env.storage().instance().get(&CAP_KEY).unwrap();
         let mut cap_bytes = [0u8; 32];
         cap_bytes[16..].copy_from_slice(&cap.to_be_bytes());
-        if pub_signals.pub_signals.get(1).unwrap().to_bytes() != BytesN::from_array(env, &cap_bytes) {
+        if pub_signals.pub_signals.get(1).unwrap().to_bytes() != BytesN::from_array(env, &cap_bytes)
+        {
             return Err(Error::CapMismatch);
         }
 
@@ -417,8 +588,11 @@ impl PrivacyPoolsContract {
 
         let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
         let winning: u8 = match MarketClient::new(env, &market).outcome() {
-            Some(Side::Yes) => 1,
-            Some(Side::No) => 0,
+            Some(Outcome::Yes) => 1,
+            Some(Outcome::No) => 0,
+            Some(Outcome::Void) => {
+                return vec![env, String::from_str(env, ERROR_MARKET_UNRESOLVED)]
+            }
             None => return vec![env, String::from_str(env, ERROR_MARKET_UNRESOLVED)],
         };
         let mut winning_bytes = [0u8; 32];
@@ -576,74 +750,44 @@ impl PrivacyPoolsContract {
         env.storage().instance().get(&ADMIN_KEY).unwrap()
     }
 
-    pub fn set_batch_vk(env: &Env, caller: Address, vk_bytes: Bytes) -> Result<(), Error> {
-        caller.require_auth();
-        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
-        if caller != admin {
-            return Err(Error::OnlyAdmin);
-        }
-        env.storage().instance().set(&BATCH_VK_KEY, &vk_bytes);
-        Ok(())
+    pub fn market(env: &Env) -> Address {
+        env.storage().instance().get(&MARKET_KEY).unwrap()
+    }
+
+    pub fn collateral(env: &Env) -> Address {
+        env.storage().instance().get(&TOKEN_KEY).unwrap()
+    }
+
+    pub fn protocol_version(_env: &Env) -> u32 {
+        3
+    }
+
+    pub fn security_config(env: &Env) -> (Vec<Address>, u32, bool) {
+        (
+            env.storage()
+                .instance()
+                .get(&COMMITTEE_KEY)
+                .unwrap_or(vec![env]),
+            env.storage()
+                .instance()
+                .get(&COMMITTEE_T_KEY)
+                .unwrap_or(0),
+            env.storage().instance().has(&REDEEM_V2_VK_KEY),
+        )
+    }
+
+    pub fn set_batch_vk(_env: &Env, _caller: Address, _vk_bytes: Bytes) -> Result<(), Error> {
+        Err(Error::LegacyBatchDisabled)
     }
 
     pub fn submit_batch(
-        env: &Env,
-        dqyes: i128,
-        dqno: i128,
-        proof_bytes: Bytes,
-        pub_signals_bytes: Bytes,
+        _env: &Env,
+        _dqyes: i128,
+        _dqno: i128,
+        _proof_bytes: Bytes,
+        _pub_signals_bytes: Bytes,
     ) -> Result<i128, Error> {
-        let bvk_bytes: Bytes = env.storage().instance().get(&BATCH_VK_KEY).unwrap();
-        let bvk = VerificationKey::from_bytes(env, &bvk_bytes).unwrap();
-        let proof = Proof::from_bytes(env, &proof_bytes);
-        let pub_signals = PublicSignals::from_bytes(env, &pub_signals_bytes);
-        let res = Groth16Verifier::verify_proof(env, bvk, proof, &pub_signals.pub_signals);
-        if res.is_err() || !res.unwrap() {
-            return Err(Error::BatchProofFailed);
-        }
-        if Self::field_of_i128(env, dqyes) != pub_signals.pub_signals.get(0).unwrap().to_bytes()
-            || Self::field_of_i128(env, dqno) != pub_signals.pub_signals.get(1).unwrap().to_bytes()
-        {
-            return Err(Error::BatchMismatch);
-        }
-        if pub_signals.pub_signals.get(6).unwrap().to_bytes() != Self::get_order_root(env) {
-            return Err(Error::OrderRootMismatch);
-        }
-
-        let mut batch_nulls: Vec<BytesN<32>> = env
-            .storage()
-            .instance()
-            .get(&BATCH_NULL_KEY)
-            .unwrap_or(vec![env]);
-        let mut i = 2u32;
-        while i < 2 + BATCH_N {
-            let nh = pub_signals.pub_signals.get(i).unwrap().to_bytes();
-            if batch_nulls.contains(&nh) {
-                return Err(Error::NullifierUsed);
-            }
-            batch_nulls.push_back(nh);
-            i += 1;
-        }
-        env.storage().instance().set(&BATCH_NULL_KEY, &batch_nulls);
-
-        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
-        let token: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
-        let client = MarketClient::new(env, &market);
-        let net = client.quote_batch(&dqyes, &dqno);
-        let me = env.current_contract_address();
-        env.authorize_as_current_contract(vec![
-            env,
-            InvokerContractAuthEntry::Contract(SubContractInvocation {
-                context: ContractContext {
-                    contract: token,
-                    fn_name: symbol_short!("transfer"),
-                    args: (me.clone(), market, net).into_val(env),
-                },
-                sub_invocations: vec![env],
-            }),
-        ]);
-        client.apply_batch(&me, &dqyes, &dqno);
-        Ok(net)
+        Err(Error::LegacyBatchDisabled)
     }
 
     fn field_of_i128(env: &Env, n: i128) -> BytesN<32> {
@@ -670,8 +814,22 @@ impl PrivacyPoolsContract {
         if caller != admin {
             return Err(Error::OnlyAdmin);
         }
-        if threshold == 0 || members.len() < threshold {
+        if env.storage().instance().has(&COMMITTEE_KEY) {
+            return Err(Error::ConfigurationLocked);
+        }
+        if members.is_empty()
+            || members.len() > MAX_COMMITTEE_MEMBERS
+            || threshold <= members.len() / 2
+            || members.len() < threshold
+        {
             return Err(Error::InvalidStake);
+        }
+        let mut unique: Vec<Address> = vec![env];
+        for member in members.iter() {
+            if unique.contains(&member) {
+                return Err(Error::InvalidStake);
+            }
+            unique.push_back(member);
         }
         env.storage().instance().set(&COMMITTEE_KEY, &members);
         env.storage().instance().set(&COMMITTEE_T_KEY, &threshold);
@@ -684,7 +842,25 @@ impl PrivacyPoolsContract {
         dqyes: i128,
         dqno: i128,
         null_hashes: Vec<BytesN<32>>,
+        commitments: Vec<BytesN<32>>,
     ) -> Result<i128, Error> {
+        let batch_len = null_hashes.len();
+        if batch_len < MIN_PRIVATE_BATCH_N
+            || batch_len > BATCH_N
+            || commitments.len() != batch_len
+        {
+            return Err(Error::InvalidBatchSize);
+        }
+        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
+        let client = MarketClient::new(env, &market);
+        let info = client.market_info();
+        let now = env.ledger().timestamp();
+        if client.outcome().is_some() || now >= info.finalize_after {
+            return Err(Error::MarketClosed);
+        }
+        if now < info.expiry && batch_len != BATCH_N {
+            return Err(Error::InvalidBatchSize);
+        }
         let members: Vec<Address> = env
             .storage()
             .instance()
@@ -712,17 +888,36 @@ impl PrivacyPoolsContract {
             .instance()
             .get(&BATCH_INCL_KEY)
             .unwrap_or(vec![env]);
+        let mut index = 0;
         for nh in null_hashes.iter() {
             if included.contains(&nh) {
                 return Err(Error::NullifierUsed);
             }
+            let commitment = commitments.get(index).ok_or(Error::InvalidBatchSize)?;
+            let order_key = DataKey::Order(commitment.clone());
+            let mut order: OrderRecord = env
+                .storage()
+                .persistent()
+                .get(&order_key)
+                .ok_or(Error::OrderNotFound)?;
+            if order.status != OrderStatus::Pending {
+                return Err(Error::InvalidOrderState);
+            }
+            let included_key = DataKey::Included(nh.clone());
+            if env.storage().persistent().has(&included_key) {
+                return Err(Error::NullifierUsed);
+            }
+            order.status = OrderStatus::Included;
+            env.storage().persistent().set(&order_key, &order);
+            env.storage().persistent().set(&included_key, &commitment);
+            Self::bump_key(env, &order_key);
+            Self::bump_key(env, &included_key);
             included.push_back(nh);
+            index += 1;
         }
         env.storage().instance().set(&BATCH_INCL_KEY, &included);
 
-        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
         let token: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
-        let client = MarketClient::new(env, &market);
         let net = client.quote_batch(&dqyes, &dqno);
         let me = env.current_contract_address();
         env.authorize_as_current_contract(vec![
@@ -739,6 +934,7 @@ impl PrivacyPoolsContract {
         client.apply_batch(&me, &dqyes, &dqno);
         let price = client.price_yes();
         env.storage().instance().set(&PRICE_KEY, &price);
+        Self::bump(env);
         Ok(net)
     }
 
@@ -746,17 +942,60 @@ impl PrivacyPoolsContract {
         env.storage().instance().get(&PRICE_KEY).unwrap_or(0)
     }
 
+    pub fn fee_config(env: &Env) -> (Address, u32) {
+        (
+            env.storage().instance().get(&TREASURY_KEY).unwrap(),
+            env.storage().instance().get(&FEE_BPS_KEY).unwrap_or(0),
+        )
+    }
+
+    pub fn required_stake(env: &Env, amount: u32) -> Result<i128, Error> {
+        let bucket = match amount {
+            1 => 1,
+            2..=5 => 5,
+            6..=10 => 10,
+            11..=25 => 25,
+            26..=50 => 50,
+            51..=100 => 100,
+            101..=250 => 250,
+            251..=500 => 500,
+            501..=1_000 => 1_000,
+            _ => return Err(Error::InvalidStake),
+        };
+        Self::tokens_to_atomic(env, bucket)
+    }
+
     pub fn claim_winnings(env: &Env) -> Result<i128, Error> {
         if env.storage().instance().has(&CLAIMED_KEY) {
             return Err(Error::AlreadyClaimed);
         }
+        Self::claim_market_winnings(env)
+    }
+
+    fn claim_market_winnings(env: &Env) -> Result<i128, Error> {
+        if env.storage().instance().has(&CLAIMED_KEY) {
+            return Ok(0);
+        }
         let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
         let client = MarketClient::new(env, &market);
         let side = match client.outcome() {
-            Some(s) => s,
+            Some(Outcome::Yes) => Side::Yes,
+            Some(Outcome::No) => Side::No,
+            Some(Outcome::Void) => return Err(Error::MarketVoided),
             None => return Err(Error::OrderRootMismatch),
         };
         let me = env.current_contract_address();
+        env.authorize_as_current_contract(vec![
+            env,
+            InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context: ContractContext {
+                    contract: market.clone(),
+                    fn_name: symbol_short!("redeem"),
+                    args: (me.clone(), side).into_val(env),
+                },
+                sub_invocations: vec![env],
+            }),
+        ]);
         let got = client.redeem(&me, &side);
         env.storage().instance().set(&CLAIMED_KEY, &true);
         Ok(got)
@@ -767,6 +1006,9 @@ impl PrivacyPoolsContract {
         let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
         if caller != admin {
             return Err(Error::OnlyAdmin);
+        }
+        if env.storage().instance().has(&REDEEM_V2_VK_KEY) {
+            return Err(Error::ConfigurationLocked);
         }
         env.storage().instance().set(&REDEEM_V2_VK_KEY, &vk_bytes);
         Ok(())
@@ -783,10 +1025,29 @@ impl PrivacyPoolsContract {
         (fp * pow) / SCALE
     }
 
+    fn tokens_to_atomic(env: &Env, tokens: i128) -> Result<i128, Error> {
+        let decimals: u32 = env.storage().instance().get(&DECIMALS_KEY).unwrap_or(7);
+        tokens
+            .checked_mul(10i128.checked_pow(decimals).ok_or(Error::InvalidStake)?)
+            .ok_or(Error::InvalidStake)
+    }
+
+    fn stake_tokens(env: &Env, stake: i128) -> Option<i128> {
+        let decimals: u32 = env.storage().instance().get(&DECIMALS_KEY).unwrap_or(7);
+        let unit = 10i128.checked_pow(decimals)?;
+        if stake % unit != 0 {
+            return None;
+        }
+        let tokens = stake / unit;
+        match tokens {
+            1 | 5 | 10 | 25 | 50 | 100 | 250 | 500 | 1_000 => Some(tokens),
+            _ => None,
+        }
+    }
+
     pub fn redeem_order_v2(
         env: &Env,
         to: Address,
-        relayer: Address,
         proof_bytes: Bytes,
         pub_signals_bytes: Bytes,
     ) -> Result<i128, Error> {
@@ -801,11 +1062,19 @@ impl PrivacyPoolsContract {
 
         let nullifier = pub_signals.pub_signals.get(0).unwrap().to_bytes();
         let payout_fp = Self::i128_of_field(&pub_signals.pub_signals.get(1).unwrap().to_bytes());
-        let proof_order_root = pub_signals.pub_signals.get(2).unwrap().to_bytes();
-        let proof_recipient = pub_signals.pub_signals.get(3).unwrap().to_bytes();
-        let proof_winning = pub_signals.pub_signals.get(4).unwrap().to_bytes();
-        let proof_price = Self::i128_of_field(&pub_signals.pub_signals.get(5).unwrap().to_bytes());
-        let fee_fp = Self::i128_of_field(&pub_signals.pub_signals.get(6).unwrap().to_bytes());
+        let proof_commitment = pub_signals.pub_signals.get(2).unwrap().to_bytes();
+        let proof_order_root = pub_signals.pub_signals.get(3).unwrap().to_bytes();
+        let proof_recipient = pub_signals.pub_signals.get(4).unwrap().to_bytes();
+        let proof_winning = pub_signals.pub_signals.get(5).unwrap().to_bytes();
+        let proof_price = Self::i128_of_field(&pub_signals.pub_signals.get(6).unwrap().to_bytes());
+        let fee_fp = Self::i128_of_field(&pub_signals.pub_signals.get(7).unwrap().to_bytes());
+        let proof_fee_bps =
+            Self::i128_of_field(&pub_signals.pub_signals.get(8).unwrap().to_bytes());
+        let proof_stake = Self::i128_of_field(&pub_signals.pub_signals.get(9).unwrap().to_bytes());
+
+        if payout_fp < 0 || fee_fp < 0 || proof_fee_bps < 0 || proof_stake <= 0 {
+            return Err(Error::RedeemProofFailed);
+        }
 
         if Self::recipient_field(env, &to) != proof_recipient {
             return Err(Error::CommitmentMismatch);
@@ -813,28 +1082,50 @@ impl PrivacyPoolsContract {
         if proof_order_root != Self::get_order_root(env) {
             return Err(Error::OrderRootMismatch);
         }
-        let stored_price: i128 = env.storage().instance().get(&PRICE_KEY).ok_or(Error::PriceMismatch)?;
+        let stored_price: i128 = env
+            .storage()
+            .instance()
+            .get(&PRICE_KEY)
+            .ok_or(Error::PriceMismatch)?;
         if proof_price != stored_price {
             return Err(Error::PriceMismatch);
         }
 
         let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
         let winning: i128 = match MarketClient::new(env, &market).outcome() {
-            Some(Side::Yes) => 1,
-            Some(Side::No) => 0,
+            Some(Outcome::Yes) => 1,
+            Some(Outcome::No) => 0,
+            Some(Outcome::Void) => return Err(Error::MarketVoided),
             None => return Err(Error::OrderRootMismatch),
         };
         if proof_winning != Self::field_of_i128(env, winning) {
             return Err(Error::OrderRootMismatch);
         }
 
-        let included: Vec<BytesN<32>> = env
+        let commitment: BytesN<32> = env
             .storage()
-            .instance()
-            .get(&BATCH_INCL_KEY)
-            .unwrap_or(vec![env]);
-        if !included.contains(&nullifier) {
-            return Err(Error::NotIncluded);
+            .persistent()
+            .get(&DataKey::Included(nullifier.clone()))
+            .ok_or(Error::NotIncluded)?;
+        if proof_commitment != commitment {
+            return Err(Error::CommitmentMismatch);
+        }
+        let order_key = DataKey::Order(commitment);
+        let mut order: OrderRecord = env
+            .storage()
+            .persistent()
+            .get(&order_key)
+            .ok_or(Error::OrderNotFound)?;
+        if order.status != OrderStatus::Included {
+            return Err(Error::InvalidOrderState);
+        }
+        let stake_tokens = Self::stake_tokens(env, order.stake).ok_or(Error::InvalidStake)?;
+        if proof_stake != stake_tokens {
+            return Err(Error::InvalidStake);
+        }
+        let fee_bps: u32 = env.storage().instance().get(&FEE_BPS_KEY).unwrap_or(0);
+        if proof_fee_bps != fee_bps as i128 {
+            return Err(Error::FeeMismatch);
         }
         let mut redeem_nulls: Vec<BytesN<32>> = env
             .storage()
@@ -845,7 +1136,14 @@ impl PrivacyPoolsContract {
             return Err(Error::NullifierUsed);
         }
         redeem_nulls.push_back(nullifier);
-        env.storage().instance().set(&REDEEM_NULL_KEY, &redeem_nulls);
+        env.storage()
+            .instance()
+            .set(&REDEEM_NULL_KEY, &redeem_nulls);
+        order.status = OrderStatus::Redeemed;
+        env.storage().persistent().set(&order_key, &order);
+        Self::bump_key(env, &order_key);
+
+        Self::claim_market_winnings(env)?;
 
         let token_address: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
         let tok = token::Client::new(env, &token_address);
@@ -856,81 +1154,27 @@ impl PrivacyPoolsContract {
             tok.transfer(&me, &to, &payout);
         }
         if fee > 0 {
-            tok.transfer(&me, &relayer, &fee);
+            let treasury: Address = env.storage().instance().get(&TREASURY_KEY).unwrap();
+            tok.transfer(&me, &treasury, &fee);
         }
         Ok(payout)
     }
 
-    pub fn set_redeem_vk(env: &Env, caller: Address, vk_bytes: Bytes) -> Result<(), Error> {
-        caller.require_auth();
-        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
-        if caller != admin {
-            return Err(Error::OnlyAdmin);
-        }
-        env.storage().instance().set(&REDEEM_VK_KEY, &vk_bytes);
-        Ok(())
+    pub fn extend_ttl(env: &Env) {
+        Self::bump(env);
+    }
+
+    pub fn set_redeem_vk(_env: &Env, _caller: Address, _vk_bytes: Bytes) -> Result<(), Error> {
+        Err(Error::LegacyRedeemDisabled)
     }
 
     pub fn redeem_order(
         env: &Env,
-        to: Address,
-        proof_bytes: Bytes,
-        pub_signals_bytes: Bytes,
+        _to: Address,
+        _proof_bytes: Bytes,
+        _pub_signals_bytes: Bytes,
     ) -> Vec<String> {
-        let rvk_bytes: Bytes = env.storage().instance().get(&REDEEM_VK_KEY).unwrap();
-        let rvk = VerificationKey::from_bytes(env, &rvk_bytes).unwrap();
-        let proof = Proof::from_bytes(env, &proof_bytes);
-        let pub_signals = PublicSignals::from_bytes(env, &pub_signals_bytes);
-        let res = Groth16Verifier::verify_proof(env, rvk, proof, &pub_signals.pub_signals);
-        if res.is_err() || !res.unwrap() {
-            return vec![env, String::from_str(env, ERROR_COIN_OWNERSHIP_PROOF)];
-        }
-
-        let nullifier = pub_signals.pub_signals.get(0).unwrap().to_bytes();
-        let payout_bytes = pub_signals.pub_signals.get(1).unwrap().to_bytes().to_array();
-        let proof_order_root = pub_signals.pub_signals.get(2).unwrap().to_bytes();
-        let proof_recipient = pub_signals.pub_signals.get(3).unwrap().to_bytes();
-        let proof_winning = pub_signals.pub_signals.get(4).unwrap().to_bytes();
-
-        if Self::recipient_field(env, &to) != proof_recipient {
-            return vec![env, String::from_str(env, ERROR_RECIPIENT_MISMATCH)];
-        }
-        if proof_order_root != Self::get_order_root(env) {
-            return vec![env, String::from_str(env, "Order root mismatch")];
-        }
-
-        let market: Address = env.storage().instance().get(&MARKET_KEY).unwrap();
-        let winning: i128 = match MarketClient::new(env, &market).outcome() {
-            Some(Side::Yes) => 1,
-            Some(Side::No) => 0,
-            None => return vec![env, String::from_str(env, ERROR_MARKET_UNRESOLVED)],
-        };
-        if proof_winning != Self::field_of_i128(env, winning) {
-            return vec![env, String::from_str(env, ERROR_WRONG_OUTCOME)];
-        }
-
-        let mut redeem_nulls: Vec<BytesN<32>> = env
-            .storage()
-            .instance()
-            .get(&REDEEM_NULL_KEY)
-            .unwrap_or(vec![env]);
-        if redeem_nulls.contains(&nullifier) {
-            return vec![env, String::from_str(env, ERROR_NULLIFIER_USED)];
-        }
-        redeem_nulls.push_back(nullifier);
-        env.storage().instance().set(&REDEEM_NULL_KEY, &redeem_nulls);
-
-        let mut payout_arr = [0u8; 16];
-        payout_arr.copy_from_slice(&payout_bytes[16..32]);
-        let payout = i128::from_be_bytes(payout_arr);
-
-        let token_address: Address = env.storage().instance().get(&TOKEN_KEY).unwrap();
-        token::Client::new(env, &token_address).transfer(
-            &env.current_contract_address(),
-            &to,
-            &payout,
-        );
-        vec![env]
+        vec![env, String::from_str(env, "Legacy redemption disabled")]
     }
 
     pub fn get_redeem_nullifiers(env: &Env) -> Vec<BytesN<32>> {
@@ -938,5 +1182,19 @@ impl PrivacyPoolsContract {
             .instance()
             .get(&REDEEM_NULL_KEY)
             .unwrap_or(vec![env])
+    }
+}
+
+impl PrivacyPoolsContract {
+    fn bump(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+
+    fn bump_key(env: &Env, key: &DataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(key, TTL_THRESHOLD, TTL_EXTEND_TO);
     }
 }

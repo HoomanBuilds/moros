@@ -173,91 +173,36 @@ fn apply_batch_rejects_non_batcher() {
 }
 
 #[test]
-fn apply_batch_committee_moves_q_with_quorum() {
+fn batcher_is_one_time_requires_a_pristine_book_and_locks_direct_trading() {
     let env = Env::default();
-    let (client, token, _trader, admin) = setup(&env);
-    let tok = TokenClient::new(&env, &token);
-    let m1 = Address::generate(&env);
-    let m2 = Address::generate(&env);
-    let m3 = Address::generate(&env);
-    let funder = Address::generate(&env);
-    StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
-    client.set_batcher(&admin, &funder);
-    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
+    let (client, _token, trader, admin) = setup(&env);
+    client.buy(&trader, &Side::Yes, &S);
+    assert!(client
+        .try_set_batcher(&admin, &Address::generate(&env))
+        .is_err());
 
-    let quoted = client.quote_batch(&(30 * S), &(20 * S));
-    let start = tok.balance(&funder);
-    let net = client.apply_batch_committee(
-        &vec![&env, m1.clone(), m3.clone()],
-        &funder,
-        &(30 * S),
-        &(20 * S),
-    );
-
-    assert_eq!(net, quoted);
-    assert_eq!(client.get_state(), (30 * S, 20 * S, 100 * S));
-    assert_eq!(tok.balance(&funder), start - net);
-    assert_eq!(tok.balance(&client.address), net);
+    let env2 = Env::default();
+    let (client2, _token2, trader2, admin2) = setup(&env2);
+    client2.set_batcher(&admin2, &Address::generate(&env2));
+    assert!(client2
+        .try_set_batcher(&admin2, &Address::generate(&env2))
+        .is_err());
+    assert!(client2.try_quote_buy(&Side::Yes, &S).is_err());
+    assert!(client2.try_buy(&trader2, &Side::Yes, &S).is_err());
 }
 
 #[test]
-fn apply_batch_committee_rejects_below_threshold() {
+fn legacy_market_committee_path_is_disabled() {
     let env = Env::default();
-    let (client, token, _trader, admin) = setup(&env);
-    let m1 = Address::generate(&env);
-    let m2 = Address::generate(&env);
-    let m3 = Address::generate(&env);
+    let (client, _token, _trader, admin) = setup(&env);
+    let member = Address::generate(&env);
     let funder = Address::generate(&env);
-    StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
-    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
-
-    let r =
-        client.try_apply_batch_committee(&vec![&env, m1.clone()], &funder, &(30 * S), &(20 * S));
-    assert!(r.is_err() || r.unwrap().is_err());
-    assert_eq!(client.get_state(), (0, 0, 100 * S));
-}
-
-#[test]
-fn apply_batch_committee_rejects_non_member() {
-    let env = Env::default();
-    let (client, token, _trader, admin) = setup(&env);
-    let m1 = Address::generate(&env);
-    let m2 = Address::generate(&env);
-    let m3 = Address::generate(&env);
-    let mallory = Address::generate(&env);
-    let funder = Address::generate(&env);
-    StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
-    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
-
-    let r = client.try_apply_batch_committee(
-        &vec![&env, m1.clone(), mallory.clone()],
-        &funder,
-        &(30 * S),
-        &(20 * S),
-    );
-    assert!(r.is_err() || r.unwrap().is_err());
-    assert_eq!(client.get_state(), (0, 0, 100 * S));
-}
-
-#[test]
-fn apply_batch_committee_rejects_duplicate_signer() {
-    let env = Env::default();
-    let (client, token, _trader, admin) = setup(&env);
-    let m1 = Address::generate(&env);
-    let m2 = Address::generate(&env);
-    let m3 = Address::generate(&env);
-    let funder = Address::generate(&env);
-    StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
-    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
-
-    let r = client.try_apply_batch_committee(
-        &vec![&env, m1.clone(), m1.clone()],
-        &funder,
-        &(30 * S),
-        &(20 * S),
-    );
-    assert!(r.is_err() || r.unwrap().is_err());
-    assert_eq!(client.get_state(), (0, 0, 100 * S));
+    assert!(client
+        .try_set_committee(&admin, &vec![&env, member.clone()], &1)
+        .is_err());
+    assert!(client
+        .try_apply_batch_committee(&vec![&env, member], &funder, &S, &S)
+        .is_err());
 }
 
 #[test]
@@ -410,28 +355,39 @@ fn fund_subsidy(env: &Env, client: &LmsrMarketClient, token: &Address, admin: &A
 }
 
 #[test]
-fn void_refunds_batch_collateral_subsidy_and_direct_trader() {
+fn void_refunds_batch_collateral_and_subsidy() {
     let env = Env::default();
-    let (client, token, trader, admin) = setup(&env);
+    let (client, token, _trader, admin) = setup(&env);
     let tok = TokenClient::new(&env, &token);
     let batcher = Address::generate(&env);
     StellarAssetClient::new(&env, &token).mint(&batcher, &(1_000 * S));
     client.set_batcher(&admin, &batcher);
     fund_subsidy(&env, &client, &token, &admin);
 
-    let trader_before = tok.balance(&trader);
     let batcher_before = tok.balance(&batcher);
-    let direct_cost = client.buy(&trader, &Side::Yes, &(10 * S));
     let batch_cost = client.apply_batch(&batcher, &(10 * S), &0);
-    assert_eq!(tok.balance(&trader), trader_before - direct_cost);
     assert_eq!(tok.balance(&batcher), batcher_before - batch_cost);
 
     finalize(&env);
     client.void(&admin);
     assert_eq!(tok.balance(&admin), 100 * S);
     assert_eq!(tok.balance(&batcher), batcher_before);
-    assert_eq!(tok.balance(&client.address), direct_cost);
+    assert_eq!(tok.balance(&client.address), 0);
+}
 
+#[test]
+fn void_refunds_direct_trader_in_unbatched_market() {
+    let env = Env::default();
+    let (client, token, trader, admin) = setup(&env);
+    let tok = TokenClient::new(&env, &token);
+    fund_subsidy(&env, &client, &token, &admin);
+    let trader_before = tok.balance(&trader);
+    let direct_cost = client.buy(&trader, &Side::Yes, &(10 * S));
+
+    finalize(&env);
+    client.void(&admin);
+    assert_eq!(tok.balance(&admin), 100 * S);
+    assert_eq!(tok.balance(&client.address), direct_cost);
     assert_eq!(client.redeem(&trader, &Side::Yes), direct_cost);
     assert_eq!(tok.balance(&trader), trader_before);
     assert_eq!(tok.balance(&client.address), 0);

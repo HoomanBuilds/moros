@@ -3,7 +3,7 @@ use super::*;
 use ark_bls12_381::{Fq, Fq2};
 use ark_serialize::CanonicalSerialize;
 use core::str::FromStr;
-use soroban_sdk::testutils::Address as TestAddress;
+use soroban_sdk::testutils::{Address as TestAddress, Ledger};
 use soroban_sdk::{
     crypto::bls12_381::{Fr, G1Affine, G2Affine, G1_SERIALIZED_SIZE, G2_SERIALIZED_SIZE},
     symbol_short, vec, Address, Bytes, BytesN, Env, String, U256,
@@ -47,7 +47,10 @@ impl MockToken {
     }
 
     pub fn decimals(env: &Env) -> u32 {
-        env.storage().instance().get(&symbol_short!("decimal")).unwrap_or(7)
+        env.storage()
+            .instance()
+            .get(&symbol_short!("decimal"))
+            .unwrap_or(7)
     }
 
     pub fn transfer(env: &Env, from: Address, to: Address, amount: i128) {
@@ -71,42 +74,101 @@ pub struct MockMarket;
 
 #[contractimpl]
 impl MockMarket {
-    pub fn __constructor(env: Env, outcome: Option<Side>) {
-        env.storage().instance().set(&symbol_short!("outcome"), &outcome);
+    pub fn __constructor(env: Env, outcome: Option<Outcome>, expiry: u64, finalize_after: u64) {
+        env.storage()
+            .instance()
+            .set(&symbol_short!("outcome"), &outcome);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("expiry"), &expiry);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("finalize"), &finalize_after);
         env.storage().instance().set(&symbol_short!("qy"), &0i128);
         env.storage().instance().set(&symbol_short!("qn"), &0i128);
     }
-    pub fn outcome(env: Env) -> Option<Side> {
+    pub fn outcome(env: Env) -> Option<Outcome> {
         env.storage()
             .instance()
             .get(&symbol_short!("outcome"))
             .unwrap_or(None)
     }
+    pub fn set_outcome(env: Env, outcome: Option<Outcome>) {
+        env.storage()
+            .instance()
+            .set(&symbol_short!("outcome"), &outcome);
+    }
+    pub fn market_info(env: Env) -> MarketInfo {
+        MarketInfo {
+            asset: symbol_short!("TEST"),
+            threshold: 0,
+            expiry: env
+                .storage()
+                .instance()
+                .get(&symbol_short!("expiry"))
+                .unwrap(),
+            finalize_after: env
+                .storage()
+                .instance()
+                .get(&symbol_short!("finalize"))
+                .unwrap(),
+        }
+    }
     pub fn set_token(env: Env, token: Address) {
-        env.storage().instance().set(&symbol_short!("token"), &token);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("token"), &token);
     }
     pub fn quote_batch(_env: Env, dqyes: i128, dqno: i128) -> i128 {
         (dqyes + dqno) / 2
     }
     pub fn apply_batch(env: Env, batcher: Address, dqyes: i128, dqno: i128) -> i128 {
         let net = (dqyes + dqno) / 2;
-        let token: Address = env.storage().instance().get(&symbol_short!("token")).unwrap();
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("token"))
+            .unwrap();
         soroban_sdk::token::Client::new(&env, &token).transfer(
             &batcher,
             &env.current_contract_address(),
             &net,
         );
-        let qy: i128 = env.storage().instance().get(&symbol_short!("qy")).unwrap_or(0);
-        let qn: i128 = env.storage().instance().get(&symbol_short!("qn")).unwrap_or(0);
-        env.storage().instance().set(&symbol_short!("qy"), &(qy + dqyes));
-        env.storage().instance().set(&symbol_short!("qn"), &(qn + dqno));
+        let qy: i128 = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("qy"))
+            .unwrap_or(0);
+        let qn: i128 = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("qn"))
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("qy"), &(qy + dqyes));
+        env.storage()
+            .instance()
+            .set(&symbol_short!("qn"), &(qn + dqno));
         net
     }
     pub fn get_q(env: Env) -> (i128, i128) {
         (
-            env.storage().instance().get(&symbol_short!("qy")).unwrap_or(0),
-            env.storage().instance().get(&symbol_short!("qn")).unwrap_or(0),
+            env.storage()
+                .instance()
+                .get(&symbol_short!("qy"))
+                .unwrap_or(0),
+            env.storage()
+                .instance()
+                .get(&symbol_short!("qn"))
+                .unwrap_or(0),
         )
+    }
+    pub fn price_yes(_env: Env) -> i128 {
+        SCALE / 2
+    }
+    pub fn redeem(_env: Env, _trader: Address, _side: Side) -> i128 {
+        0
     }
 }
 
@@ -481,33 +543,33 @@ fn init_order_commitments(env: &Env) -> Vec<BytesN<32>> {
             BytesN::from_array(
                 env,
                 &[
-                    0x4e, 0xc1, 0xe1, 0x38, 0xc2, 0x91, 0xff, 0x06, 0xbe, 0x8c, 0x96, 0x6a, 0x18, 0x93,
-                    0x8a, 0x75, 0x2b, 0x66, 0xf1, 0xa4, 0xcc, 0x08, 0xff, 0x4b, 0x46, 0x8d, 0x66, 0x7a,
-                    0x7c, 0x2a, 0x60, 0x39,
+                    0x4e, 0xc1, 0xe1, 0x38, 0xc2, 0x91, 0xff, 0x06, 0xbe, 0x8c, 0x96, 0x6a, 0x18,
+                    0x93, 0x8a, 0x75, 0x2b, 0x66, 0xf1, 0xa4, 0xcc, 0x08, 0xff, 0x4b, 0x46, 0x8d,
+                    0x66, 0x7a, 0x7c, 0x2a, 0x60, 0x39,
                 ],
             ),
             BytesN::from_array(
                 env,
                 &[
-                    0x61, 0x91, 0x35, 0x58, 0x30, 0x91, 0xda, 0xc1, 0x05, 0x86, 0x49, 0x24, 0x81, 0x23,
-                    0x70, 0x52, 0x43, 0xe5, 0x07, 0x1a, 0xf8, 0x17, 0xcc, 0xcd, 0x39, 0xa6, 0x19, 0x91,
-                    0x29, 0x8c, 0x2b, 0x1e,
+                    0x61, 0x91, 0x35, 0x58, 0x30, 0x91, 0xda, 0xc1, 0x05, 0x86, 0x49, 0x24, 0x81,
+                    0x23, 0x70, 0x52, 0x43, 0xe5, 0x07, 0x1a, 0xf8, 0x17, 0xcc, 0xcd, 0x39, 0xa6,
+                    0x19, 0x91, 0x29, 0x8c, 0x2b, 0x1e,
                 ],
             ),
             BytesN::from_array(
                 env,
                 &[
-                    0x54, 0x69, 0xfb, 0x15, 0xbb, 0x0f, 0x0e, 0x87, 0xf4, 0x29, 0xdd, 0x1f, 0x3e, 0x35,
-                    0x50, 0xad, 0x69, 0xeb, 0xdd, 0x0f, 0x04, 0x8b, 0x54, 0x4e, 0x7c, 0xad, 0xa2, 0xa4,
-                    0x30, 0x90, 0x84, 0x0b,
+                    0x54, 0x69, 0xfb, 0x15, 0xbb, 0x0f, 0x0e, 0x87, 0xf4, 0x29, 0xdd, 0x1f, 0x3e,
+                    0x35, 0x50, 0xad, 0x69, 0xeb, 0xdd, 0x0f, 0x04, 0x8b, 0x54, 0x4e, 0x7c, 0xad,
+                    0xa2, 0xa4, 0x30, 0x90, 0x84, 0x0b,
                 ],
             ),
             BytesN::from_array(
                 env,
                 &[
-                    0x13, 0x18, 0xaa, 0xde, 0x5f, 0xbf, 0x09, 0xbb, 0xdb, 0xd5, 0xfd, 0x45, 0x2c, 0x14,
-                    0x07, 0x32, 0xfe, 0x2f, 0x36, 0x56, 0x2e, 0xf5, 0x7c, 0xba, 0x1a, 0xf3, 0x8d, 0xd4,
-                    0x08, 0x5f, 0x6c, 0xe6,
+                    0x13, 0x18, 0xaa, 0xde, 0x5f, 0xbf, 0x09, 0xbb, 0xdb, 0xd5, 0xfd, 0x45, 0x2c,
+                    0x14, 0x07, 0x32, 0xfe, 0x2f, 0x36, 0x56, 0x2e, 0xf5, 0x7c, 0xba, 0x1a, 0xf3,
+                    0x8d, 0xd4, 0x08, 0x5f, 0x6c, 0xe6,
                 ],
             ),
         ],
@@ -754,7 +816,7 @@ fn init_batch_pub_signals(env: &Env) -> Bytes {
     pub_signals.to_bytes(env)
 }
 
-fn setup_test_environment(env: &Env, outcome: Option<Side>) -> (Address, Address, Address) {
+fn setup_test_environment(env: &Env, outcome: Option<Outcome>) -> (Address, Address, Address) {
     let token_admin = Address::generate(env);
     let token_id = env.register(MockToken, ());
     let token_client = MockTokenClient::new(env, &token_id);
@@ -766,7 +828,7 @@ fn setup_test_environment(env: &Env, outcome: Option<Side>) -> (Address, Address
     );
 
     let admin = Address::generate(env);
-    let market_id = env.register(MockMarket, (outcome,));
+    let market_id = env.register(MockMarket, (outcome, 1_000u64, 1_100u64));
     let privacy_pools_id = env.register(
         PrivacyPoolsContract,
         (
@@ -776,16 +838,282 @@ fn setup_test_environment(env: &Env, outcome: Option<Side>) -> (Address, Address
             admin.clone(),
             market_id,
             1000000000i128,
+            admin.clone(),
+            200u32,
         ),
     );
 
     (token_id, privacy_pools_id, admin)
 }
 
+fn order_commitment(env: &Env, value: u8) -> BytesN<32> {
+    let mut bytes = [0u8; 32];
+    bytes[31] = value;
+    BytesN::from_array(env, &bytes)
+}
+
+fn setup_order_environment(env: &Env) -> (Address, Address, Address, Address, Address) {
+    env.mock_all_auths();
+    let token_admin = Address::generate(env);
+    let token_id = env.register(MockToken, ());
+    MockTokenClient::new(env, &token_id).initialize(
+        &token_admin,
+        &7u32,
+        &String::from_str(env, "USD Coin"),
+        &String::from_str(env, "USDC"),
+    );
+    let admin = Address::generate(env);
+    let treasury = Address::generate(env);
+    let market_id = env.register(MockMarket, (Option::<Outcome>::None, 1_000u64, 1_100u64));
+    MockMarketClient::new(env, &market_id).set_token(&token_id);
+    let pool_id = env.register(
+        PrivacyPoolsContract,
+        (
+            init_vk(env),
+            init_deposit_vk(env),
+            token_id.clone(),
+            admin.clone(),
+            market_id.clone(),
+            1000000000i128,
+            treasury.clone(),
+            200u32,
+        ),
+    );
+    (token_id, pool_id, market_id, admin, treasury)
+}
+
+#[test]
+fn stake_buckets_hide_exact_order_amount() {
+    let env = Env::default();
+    let (_token, pool, _market, _admin, treasury) = setup_order_environment(&env);
+    let client = PrivacyPoolsContractClient::new(&env, &pool);
+    assert_eq!(client.required_stake(&1), 10_000_000);
+    assert_eq!(client.required_stake(&2), 50_000_000);
+    assert_eq!(client.required_stake(&11), 250_000_000);
+    assert_eq!(client.required_stake(&1_000), 10_000_000_000);
+    assert!(client.try_required_stake(&1_001).is_err());
+    assert_eq!(client.fee_config(), (treasury, 200));
+}
+
+#[test]
+fn security_configuration_is_one_time_and_requires_a_majority() {
+    let env = Env::default();
+    let (_token, pool, _market, admin, _treasury) = setup_order_environment(&env);
+    let client = PrivacyPoolsContractClient::new(&env, &pool);
+    let m1 = Address::generate(&env);
+    let m2 = Address::generate(&env);
+    let m3 = Address::generate(&env);
+
+    assert!(client
+        .try_set_committee(&admin, &vec![&env, m1.clone(), m2.clone()], &1)
+        .is_err());
+    assert!(client
+        .try_set_committee(&admin, &vec![&env, m1.clone(), m1.clone(), m2.clone()], &2,)
+        .is_err());
+    client.set_committee(&admin, &vec![&env, m1, m2, m3], &2);
+    assert!(client
+        .try_set_committee(&admin, &vec![&env, Address::generate(&env)], &1)
+        .is_err());
+
+    let vk = Bytes::from_array(&env, &[1, 2, 3]);
+    client.set_redeem_v2_vk(&admin, &vk);
+    assert!(client.try_set_redeem_v2_vk(&admin, &vk).is_err());
+}
+
+#[test]
+fn legacy_single_batcher_path_is_disabled() {
+    let env = Env::default();
+    let (_token, pool, _market, admin, _treasury) = setup_order_environment(&env);
+    let client = PrivacyPoolsContractClient::new(&env, &pool);
+
+    assert!(client.try_set_batch_vk(&admin, &Bytes::new(&env)).is_err());
+    assert!(client
+        .try_submit_batch(&0, &0, &Bytes::new(&env), &Bytes::new(&env))
+        .is_err());
+    assert!(client.try_set_redeem_vk(&admin, &Bytes::new(&env)).is_err());
+    assert_eq!(
+        client.redeem_order(
+            &Address::generate(&env),
+            &Bytes::new(&env),
+            &Bytes::new(&env),
+        ),
+        vec![&env, String::from_str(&env, "Legacy redemption disabled")]
+    );
+}
+
+#[test]
+fn place_order_rejects_duplicates_invalid_stakes_and_closed_markets() {
+    let env = Env::default();
+    let (token, pool, _market, _admin, _treasury) = setup_order_environment(&env);
+    let client = PrivacyPoolsContractClient::new(&env, &pool);
+    let token_client = MockTokenClient::new(&env, &token);
+    let owner = Address::generate(&env);
+    token_client.mint(&owner, &200_000_000);
+    let commitment = order_commitment(&env, 1);
+
+    assert!(client
+        .try_place_order(&owner, &commitment, &20_000_000)
+        .is_err());
+    client.place_order(&owner, &commitment, &100_000_000);
+    assert!(client
+        .try_place_order(&owner, &commitment, &100_000_000)
+        .is_err());
+
+    env.ledger().with_mut(|ledger| ledger.timestamp = 1_000);
+    assert!(client
+        .try_place_order(&owner, &order_commitment(&env, 2), &100_000_000)
+        .is_err());
+}
+
+#[test]
+fn pending_order_refund_unlocks_after_final_batch_deadline() {
+    let env = Env::default();
+    let (token, pool, _market, _admin, _treasury) = setup_order_environment(&env);
+    let client = PrivacyPoolsContractClient::new(&env, &pool);
+    let token_client = MockTokenClient::new(&env, &token);
+    let owner = Address::generate(&env);
+    let commitment = order_commitment(&env, 3);
+    token_client.mint(&owner, &100_000_000);
+    client.place_order(&owner, &commitment, &100_000_000);
+
+    assert!(client.try_refund_order(&owner, &commitment).is_err());
+    env.ledger().with_mut(|ledger| ledger.timestamp = 1_100);
+    assert_eq!(client.refund_order(&owner, &commitment), 100_000_000);
+    assert_eq!(token_client.balance(&owner), 100_000_000);
+    assert_eq!(
+        client.get_order(&commitment).unwrap().status,
+        OrderStatus::Refunded
+    );
+    assert!(client.try_refund_order(&owner, &commitment).is_err());
+}
+
+#[test]
+fn committee_batches_bind_commitments_and_allow_private_final_batch() {
+    let env = Env::default();
+    let (token, pool, _market, admin, _treasury) = setup_order_environment(&env);
+    let client = PrivacyPoolsContractClient::new(&env, &pool);
+    let token_client = MockTokenClient::new(&env, &token);
+    let owner = Address::generate(&env);
+    token_client.mint(&owner, &600_000_000);
+    let m1 = Address::generate(&env);
+    let m2 = Address::generate(&env);
+    let m3 = Address::generate(&env);
+    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3], &2);
+
+    let mut commitments = Vec::new(&env);
+    let mut nullifiers = Vec::new(&env);
+    for i in 1..=6u8 {
+        let commitment = order_commitment(&env, i + 10);
+        client.place_order(&owner, &commitment, &100_000_000);
+        commitments.push_back(commitment);
+        nullifiers.push_back(order_commitment(&env, i + 100));
+    }
+    assert!(client
+        .try_submit_batch_committee(
+            &vec![&env, m1.clone(), m2.clone()],
+            &1,
+            &0,
+            &vec![&env, nullifiers.get(0).unwrap()],
+            &vec![&env, commitments.get(0).unwrap()],
+        )
+        .is_err());
+
+    let first_commitments = Vec::from_array(
+        &env,
+        [
+            commitments.get(0).unwrap(),
+            commitments.get(1).unwrap(),
+            commitments.get(2).unwrap(),
+            commitments.get(3).unwrap(),
+        ],
+    );
+    let first_nullifiers = Vec::from_array(
+        &env,
+        [
+            nullifiers.get(0).unwrap(),
+            nullifiers.get(1).unwrap(),
+            nullifiers.get(2).unwrap(),
+            nullifiers.get(3).unwrap(),
+        ],
+    );
+    client.submit_batch_committee(
+        &vec![&env, m1.clone(), m2.clone()],
+        &2,
+        &2,
+        &first_nullifiers,
+        &first_commitments,
+    );
+    assert_eq!(
+        client
+            .get_order(&commitments.get(0).unwrap())
+            .unwrap()
+            .status,
+        OrderStatus::Included
+    );
+
+    env.ledger().with_mut(|ledger| ledger.timestamp = 1_000);
+    client.submit_batch_committee(
+        &vec![&env, m1, m2],
+        &1,
+        &1,
+        &Vec::from_array(
+            &env,
+            [nullifiers.get(4).unwrap(), nullifiers.get(5).unwrap()],
+        ),
+        &Vec::from_array(
+            &env,
+            [commitments.get(4).unwrap(), commitments.get(5).unwrap()],
+        ),
+    );
+    assert_eq!(
+        client
+            .get_order(&commitments.get(4).unwrap())
+            .unwrap()
+            .status,
+        OrderStatus::Included
+    );
+    assert_eq!(
+        client
+            .get_order(&commitments.get(5).unwrap())
+            .unwrap()
+            .status,
+        OrderStatus::Included
+    );
+}
+
+#[test]
+fn voided_market_refunds_included_order() {
+    let env = Env::default();
+    let (token, pool, market, admin, _treasury) = setup_order_environment(&env);
+    let client = PrivacyPoolsContractClient::new(&env, &pool);
+    let token_client = MockTokenClient::new(&env, &token);
+    let owner = Address::generate(&env);
+    token_client.mint(&owner, &400_000_000);
+    let m1 = Address::generate(&env);
+    let m2 = Address::generate(&env);
+    client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone()], &2);
+    let mut commitments = Vec::new(&env);
+    let mut nullifiers = Vec::new(&env);
+    for i in 1..=4u8 {
+        let commitment = order_commitment(&env, i + 30);
+        client.place_order(&owner, &commitment, &100_000_000);
+        commitments.push_back(commitment);
+        nullifiers.push_back(order_commitment(&env, i + 120));
+    }
+    client.submit_batch_committee(&vec![&env, m1, m2], &2, &2, &nullifiers, &commitments);
+    MockMarketClient::new(&env, &market).set_outcome(&Some(Outcome::Void));
+    let before = token_client.balance(&owner);
+    assert_eq!(
+        client.refund_order(&owner, &commitments.get(0).unwrap()),
+        100_000_000
+    );
+    assert_eq!(token_client.balance(&owner), before + 100_000_000);
+}
+
 #[test]
 fn test_deposit_and_withdraw_correct_proof() {
     let env = Env::default();
-    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Outcome::Yes));
     env.cost_estimate().budget().print();
 
     // Create test addresses
@@ -808,7 +1136,12 @@ fn test_deposit_and_withdraw_correct_proof() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
+    client.deposit(
+        &alice,
+        &commitment,
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
 
     // Check commitments
     let commitments = client.get_commitments();
@@ -851,14 +1184,19 @@ fn test_deposit_and_withdraw_correct_proof() {
 #[test]
 fn test_withdraw_wrong_recipient_rejected() {
     let env = Env::default();
-    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Outcome::Yes));
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
     let token_client = MockTokenClient::new(&env, &token_id);
 
     let alice = Address::generate(&env);
     env.mock_all_auths();
     token_client.mint(&alice, &1000000000);
-    client.deposit(&alice, &test_commitment(&env), &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
+    client.deposit(
+        &alice,
+        &test_commitment(&env),
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
     client.set_association_root(&admin, &test_association_root(&env));
 
     let mallory = Address::generate(&env);
@@ -879,14 +1217,19 @@ fn test_withdraw_wrong_recipient_rejected() {
 #[test]
 fn test_withdraw_losing_outcome_rejected() {
     let env = Env::default();
-    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Side::No));
+    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Outcome::No));
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
     let token_client = MockTokenClient::new(&env, &token_id);
 
     let alice = Address::generate(&env);
     env.mock_all_auths();
     token_client.mint(&alice, &1000000000);
-    client.deposit(&alice, &test_commitment(&env), &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
+    client.deposit(
+        &alice,
+        &test_commitment(&env),
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
     client.set_association_root(&admin, &test_association_root(&env));
 
     let bob = test_recipient(&env);
@@ -911,7 +1254,12 @@ fn test_withdraw_unresolved_market_rejected() {
     let alice = Address::generate(&env);
     env.mock_all_auths();
     token_client.mint(&alice, &1000000000);
-    client.deposit(&alice, &test_commitment(&env), &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
+    client.deposit(
+        &alice,
+        &test_commitment(&env),
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
     client.set_association_root(&admin, &test_association_root(&env));
 
     let bob = test_recipient(&env);
@@ -927,7 +1275,7 @@ fn test_withdraw_unresolved_market_rejected() {
 #[test]
 fn test_deposit_wrong_commitment_rejected() {
     let env = Env::default();
-    let (token_id, contract_id, _admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (token_id, contract_id, _admin) = setup_test_environment(&env, Some(Outcome::Yes));
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
     let token_client = MockTokenClient::new(&env, &token_id);
 
@@ -963,7 +1311,7 @@ fn submit_batch_verifies_and_moves_market_odds() {
     );
 
     let admin = Address::generate(&env);
-    let market_id = env.register(MockMarket, (Some(Side::Yes),));
+    let market_id = env.register(MockMarket, (Some(Outcome::Yes), 1_000u64, 1_100u64));
     let mm = MockMarketClient::new(&env, &market_id);
     mm.set_token(&token_id);
 
@@ -976,6 +1324,8 @@ fn submit_batch_verifies_and_moves_market_odds() {
             admin.clone(),
             market_id.clone(),
             1000000000i128,
+            admin.clone(),
+            200u32,
         ),
     );
     let client = PrivacyPoolsContractClient::new(&env, &pool_id);
@@ -1015,7 +1365,7 @@ fn submit_batch_rejects_replay() {
     );
 
     let admin = Address::generate(&env);
-    let market_id = env.register(MockMarket, (Some(Side::Yes),));
+    let market_id = env.register(MockMarket, (Some(Outcome::Yes), 1_000u64, 1_100u64));
     let mm = MockMarketClient::new(&env, &market_id);
     mm.set_token(&token_id);
 
@@ -1028,6 +1378,8 @@ fn submit_batch_rejects_replay() {
             admin.clone(),
             market_id.clone(),
             1000000000i128,
+            admin.clone(),
+            200u32,
         ),
     );
     let client = PrivacyPoolsContractClient::new(&env, &pool_id);
@@ -1039,7 +1391,12 @@ fn submit_batch_rejects_replay() {
         client.place_order(&trader, &c, &10);
     }
 
-    client.submit_batch(&30, &20, &init_batch_proof(&env), &init_batch_pub_signals(&env));
+    client.submit_batch(
+        &30,
+        &20,
+        &init_batch_proof(&env),
+        &init_batch_pub_signals(&env),
+    );
     let r = client.try_submit_batch(
         &30,
         &20,
@@ -1066,7 +1423,7 @@ fn redeem_order_pays_winner() {
     );
 
     let admin = Address::generate(&env);
-    let market_id = env.register(MockMarket, (Some(Side::Yes),));
+    let market_id = env.register(MockMarket, (Some(Outcome::Yes), 1_000u64, 1_100u64));
 
     let pool_id = env.register(
         PrivacyPoolsContract,
@@ -1077,6 +1434,8 @@ fn redeem_order_pays_winner() {
             admin.clone(),
             market_id.clone(),
             1000000000i128,
+            admin.clone(),
+            200u32,
         ),
     );
     let client = PrivacyPoolsContractClient::new(&env, &pool_id);
@@ -1110,7 +1469,7 @@ fn redeem_order_pays_winner() {
 #[test]
 fn test_deposit_and_withdraw_wrong_proof() {
     let env = Env::default();
-    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Outcome::Yes));
 
     // Create test addresses
     let alice = Address::generate(&env);
@@ -1132,7 +1491,12 @@ fn test_deposit_and_withdraw_wrong_proof() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
+    client.deposit(
+        &alice,
+        &commitment,
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
 
     // Check commitments
     let commitments = client.get_commitments();
@@ -1165,7 +1529,7 @@ fn test_deposit_and_withdraw_wrong_proof() {
 #[test]
 fn test_withdraw_insufficient_balance() {
     let env = Env::default();
-    let (_token_id, contract_id, admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (_token_id, contract_id, admin) = setup_test_environment(&env, Some(Outcome::Yes));
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
 
     // Set association root to match the proof
@@ -1192,7 +1556,7 @@ fn test_withdraw_insufficient_balance() {
 #[test]
 fn test_reuse_nullifier() {
     let env = Env::default();
-    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Outcome::Yes));
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
     let token_client = MockTokenClient::new(&env, &token_id);
 
@@ -1206,7 +1570,12 @@ fn test_reuse_nullifier() {
     // Deposit
     let commitment = test_commitment(&env);
     env.mock_all_auths();
-    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
+    client.deposit(
+        &alice,
+        &commitment,
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
 
     // Set association root to match the proof
     let association_root = test_association_root(&env);
@@ -1241,7 +1610,7 @@ fn test_reuse_nullifier() {
 #[test]
 fn test_contract_initialization() {
     let env = Env::default();
-    let (_token_id, contract_id, _admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (_token_id, contract_id, _admin) = setup_test_environment(&env, Some(Outcome::Yes));
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
 
     // Test that contract initializes correctly
@@ -1265,7 +1634,7 @@ fn test_contract_initialization() {
 #[should_panic(expected = "Association root must be set before withdrawal")]
 fn test_withdraw_without_association_set() {
     let env = Env::default();
-    let (token_id, contract_id, _admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (token_id, contract_id, _admin) = setup_test_environment(&env, Some(Outcome::Yes));
 
     // Create test addresses
     let alice = Address::generate(&env);
@@ -1287,7 +1656,12 @@ fn test_withdraw_without_association_set() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
+    client.deposit(
+        &alice,
+        &commitment,
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
 
     // Check commitments
     let commitments = client.get_commitments();
@@ -1318,7 +1692,7 @@ fn test_withdraw_without_association_set() {
 #[test]
 fn test_withdraw_association_root_mismatch() {
     let env = Env::default();
-    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (token_id, contract_id, admin) = setup_test_environment(&env, Some(Outcome::Yes));
 
     // Create test addresses
     let alice = Address::generate(&env);
@@ -1340,7 +1714,12 @@ fn test_withdraw_association_root_mismatch() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
+    client.deposit(
+        &alice,
+        &commitment,
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
 
     // Check commitments
     let commitments = client.get_commitments();
@@ -1395,7 +1774,7 @@ fn test_withdraw_association_root_mismatch() {
 #[test]
 fn test_set_association_root_non_admin() {
     let env = Env::default();
-    let (_token_id, contract_id, _admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (_token_id, contract_id, _admin) = setup_test_environment(&env, Some(Outcome::Yes));
     let client = PrivacyPoolsContractClient::new(&env, &contract_id);
 
     // Create a non-admin user
@@ -1433,7 +1812,7 @@ fn test_set_association_root_non_admin() {
 #[should_panic(expected = "Association root must be set before withdrawal")]
 fn test_withdraw_requires_association_root() {
     let env = Env::default();
-    let (token_id, contract_id, _admin) = setup_test_environment(&env, Some(Side::Yes));
+    let (token_id, contract_id, _admin) = setup_test_environment(&env, Some(Outcome::Yes));
 
     // Create test addresses
     let alice = Address::generate(&env);
@@ -1451,7 +1830,12 @@ fn test_withdraw_requires_association_root() {
 
     // Mock authentication for alice
     env.mock_all_auths();
-    client.deposit(&alice, &commitment, &init_deposit_proof(&env), &init_deposit_pub_signals(&env));
+    client.deposit(
+        &alice,
+        &commitment,
+        &init_deposit_proof(&env),
+        &init_deposit_pub_signals(&env),
+    );
 
     // Check balances after deposit
     assert_eq!(token_client.balance(&alice), 0); // Alice's balance should be 0

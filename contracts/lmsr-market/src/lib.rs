@@ -58,8 +58,6 @@ enum DataKey {
     FinalizeAfter,
     Decimals,
     Batcher,
-    Committee,
-    CommitteeT,
     Resolver,
     Funding,
     BatchCollateral,
@@ -85,6 +83,8 @@ pub enum Error {
     MarketClosed = 9,
     TooEarlyToResolve = 10,
     ResolverLocked = 11,
+    ConfigurationLocked = 12,
+    LegacyCommitteeDisabled = 13,
 }
 
 #[contractevent(topics = ["created"], data_format = "vec")]
@@ -147,18 +147,6 @@ pub struct Batch {
     pub net: i128,
 }
 
-#[contractevent(topics = ["cbatch"], data_format = "vec")]
-pub struct CommitteeBatch {
-    #[topic]
-    pub funder: Address,
-    pub signers: u32,
-    pub dqyes: i128,
-    pub dqno: i128,
-    pub qy: i128,
-    pub qn: i128,
-    pub net: i128,
-}
-
 #[contractevent(topics = ["redeem"], data_format = "vec")]
 pub struct Redeem {
     #[topic]
@@ -172,7 +160,7 @@ pub struct LmsrMarket;
 
 #[contractimpl]
 impl LmsrMarket {
-    /// Constructor (runs atomically at deploy — cannot be front-run). Sets the
+    /// Constructor (runs atomically at deploy and cannot be front-run). Sets the
     /// `admin`, `collateral` token (SEP-41), liquidity parameter `b` (fixed-point,
     /// value * 2^32), and resolution parameters (`asset` / `threshold` / `expiry`).
     /// Worst-case operator loss is `b * ln 2`.
@@ -233,6 +221,13 @@ impl LmsrMarket {
         })
     }
 
+    pub fn admin(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)
+    }
+
     /// Current YES price (fixed-point in (0,1), value * 2^32).
     pub fn price_yes(env: Env) -> Result<i128, Error> {
         let (qy, qn, b) = Self::state(&env)?;
@@ -245,7 +240,7 @@ impl LmsrMarket {
         Ok(math::cost(qy, qn, b))
     }
 
-    /// (q_yes, q_no, b) — current market quantities (fixed-point).
+    /// (q_yes, q_no, b), the current market quantities in fixed-point form.
     pub fn get_state(env: Env) -> Result<(i128, i128, i128), Error> {
         Self::state(&env)
     }
@@ -257,6 +252,7 @@ impl LmsrMarket {
     /// Collateral cost to buy `shares` (fixed-point) of `side`.
     /// Rounded UP by one unit (pool-favoring) so per-trade truncation never undercharges.
     pub fn quote_buy(env: Env, side: Side, shares: i128) -> Result<i128, Error> {
+        Self::ensure_direct_trading(&env)?;
         Self::ensure_open(&env)?;
         if shares <= 0 || shares > MAX_Q {
             return Err(Error::InvalidParams);
@@ -320,6 +316,7 @@ impl LmsrMarket {
     /// Collateral refunded to sell `shares` (fixed-point) of `side`.
     /// Rounded DOWN by one unit (pool-favoring). Errors if it would drive q negative.
     pub fn quote_sell(env: Env, side: Side, shares: i128) -> Result<i128, Error> {
+        Self::ensure_direct_trading(&env)?;
         Self::ensure_open(&env)?;
         if shares <= 0 {
             return Err(Error::InvalidParams);
@@ -416,6 +413,17 @@ impl LmsrMarket {
 
     pub fn resolver(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::Resolver)
+    }
+
+    pub fn batcher(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Batcher)
+    }
+
+    pub fn collateral(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)
     }
 
     pub fn resolve(env: Env, caller: Address, outcome: Outcome) -> Result<(), Error> {
@@ -579,6 +587,13 @@ impl LmsrMarket {
         if admin != stored {
             return Err(Error::Unauthorized);
         }
+        if env.storage().instance().has(&DataKey::Batcher) {
+            return Err(Error::ConfigurationLocked);
+        }
+        let (qy, qn, _) = Self::state(&env)?;
+        if qy != 0 || qn != 0 {
+            return Err(Error::InvalidParams);
+        }
         env.storage().instance().set(&DataKey::Batcher, &batcher);
         Self::bump(&env);
         Ok(())
@@ -670,111 +685,22 @@ impl LmsrMarket {
     }
 
     pub fn set_committee(
-        env: Env,
-        admin: Address,
-        members: Vec<Address>,
-        threshold: u32,
+        _env: Env,
+        _admin: Address,
+        _members: Vec<Address>,
+        _threshold: u32,
     ) -> Result<(), Error> {
-        admin.require_auth();
-        let stored: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        if admin != stored {
-            return Err(Error::Unauthorized);
-        }
-        if threshold == 0 || members.len() < threshold {
-            return Err(Error::InvalidParams);
-        }
-        env.storage().instance().set(&DataKey::Committee, &members);
-        env.storage()
-            .instance()
-            .set(&DataKey::CommitteeT, &threshold);
-        Self::bump(&env);
-        Ok(())
+        Err(Error::LegacyCommitteeDisabled)
     }
 
     pub fn apply_batch_committee(
-        env: Env,
-        signers: Vec<Address>,
-        funder: Address,
-        dqyes: i128,
-        dqno: i128,
+        _env: Env,
+        _signers: Vec<Address>,
+        _funder: Address,
+        _dqyes: i128,
+        _dqno: i128,
     ) -> Result<i128, Error> {
-        let members: Vec<Address> = env
-            .storage()
-            .instance()
-            .get(&DataKey::Committee)
-            .ok_or(Error::NotInitialized)?;
-        let threshold: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::CommitteeT)
-            .ok_or(Error::NotInitialized)?;
-        if signers.len() < threshold {
-            return Err(Error::Unauthorized);
-        }
-        let mut seen: Vec<Address> = Vec::new(&env);
-        for s in signers.iter() {
-            if !members.contains(&s) || seen.contains(&s) {
-                return Err(Error::Unauthorized);
-            }
-            s.require_auth();
-            seen.push_back(s);
-        }
-        Self::ensure_batchable(&env)?;
-        funder.require_auth();
-        let batcher: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Batcher)
-            .ok_or(Error::NotInitialized)?;
-        if funder != batcher {
-            return Err(Error::Unauthorized);
-        }
-        let net = Self::quote_batch(env.clone(), dqyes, dqno)?;
-        let (qy, qn, _b) = Self::state(&env)?;
-        let qy2 = qy.checked_add(dqyes).ok_or(Error::InvalidParams)?;
-        let qn2 = qn.checked_add(dqno).ok_or(Error::InvalidParams)?;
-
-        let token_addr: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .ok_or(Error::NotInitialized)?;
-        token::Client::new(&env, &token_addr).transfer(
-            &funder,
-            &env.current_contract_address(),
-            &net,
-        );
-        let batch_collateral: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::BatchCollateral)
-            .unwrap_or(0);
-        let updated_collateral = batch_collateral
-            .checked_add(net)
-            .ok_or(Error::InvalidParams)?;
-        env.storage()
-            .instance()
-            .set(&DataKey::BatchCollateral, &updated_collateral);
-
-        env.storage().instance().set(&DataKey::QYes, &qy2);
-        env.storage().instance().set(&DataKey::QNo, &qn2);
-        Self::credit_shares(&env, &funder, dqyes, dqno);
-        Self::bump(&env);
-        CommitteeBatch {
-            funder,
-            signers: signers.len(),
-            dqyes,
-            dqno,
-            qy: qy2,
-            qn: qn2,
-            net,
-        }
-        .publish(&env);
-        Ok(net)
+        Err(Error::LegacyCommitteeDisabled)
     }
 
     /// Redeem `trader`'s `side` shares after resolution. Winning shares pay 1
@@ -864,6 +790,13 @@ impl LmsrMarket {
             .ok_or(Error::NotInitialized)?;
         if env.ledger().timestamp() >= expiry {
             return Err(Error::MarketClosed);
+        }
+        Ok(())
+    }
+
+    fn ensure_direct_trading(env: &Env) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Batcher) {
+            return Err(Error::ConfigurationLocked);
         }
         Ok(())
     }
