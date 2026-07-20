@@ -5,10 +5,11 @@ This app can optionally use Supabase for a public social layer: profiles, market
 ## Setup
 
 1. Create a Supabase project at https://supabase.com.
-2. Open the SQL editor and run `supabase/schema.sql` from this directory. It creates the `profiles`, `markets_meta`, `comments`, `reactions`, and `watchlist` tables, enables row level security on each, and adds the public read + owner-write policies and storage buckets.
-3. In Storage, confirm the `avatars` and `market-banners` buckets exist as public read buckets (created by the schema script above).
-4. In Project Settings > API, copy the project URL and anon key.
-5. Set the following environment variables (see `.env.example`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` for any server-side admin usage.
+2. Open the SQL editor and run `supabase/schema.sql` from this directory. It creates the social tables, one-time wallet sign-in challenges, row level security policies, and the avatar, market banner, and comment image storage buckets.
+3. For an existing project, apply `supabase/migrations/20260720000000_comment_media_auth.sql` before deploying this web version.
+4. In Storage, confirm the `avatars`, `market-banners`, and `comment-media` buckets exist as public read buckets.
+5. In Project Settings > API, copy the project URL and anon key.
+6. Set the following environment variables (see `.env.example`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `NEXT_PUBLIC_SITE_URL`.
 
 ## Graceful degradation
 

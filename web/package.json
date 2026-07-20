@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:e2e": "playwright test",
-    "test:unit": "tsx lib/wallet.test.ts && tsx lib/stellar/derive.test.ts && tsx components/markets/odds-chart.test.ts && tsx lib/markets/dedupe.test.ts && tsx lib/social/verify.test.ts && tsx lib/stellar/recipient.test.mjs && tsx lib/supabase/enabled.test.mjs",
+    "test:unit": "tsx lib/wallet.test.ts && tsx lib/stellar/derive.test.ts && tsx components/markets/odds-chart.test.ts && tsx lib/markets/dedupe.test.ts && tsx lib/social/verify.test.ts && tsx lib/social/challenge.test.ts && tsx lib/supabase/comment-media.test.ts && tsx lib/stellar/recipient.test.mjs && tsx lib/supabase/enabled.test.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "zk:sync": "mkdir -p public/zk && cp ../contracts/shielded-pool/circuits/build/encrypt_order_js/encrypt_order.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/build/encrypt_order_final.zkey public/zk/ && cp ../contracts/shielded-pool/circuits/build/encrypt_order_vk.json public/zk/ && cp ../contracts/shielded-pool/circuits/build/order_commit_js/order_commit.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/build/order_redeem_v2_js/order_redeem_v2.wasm public/zk/ && cp ../contracts/shielded-pool/circuits/output/order_redeem_v2_final.zkey public/zk/ && cp ../contracts/shielded-pool/circuits/build/order_redeem_v2_vk.json public/zk/"
   },

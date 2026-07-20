@@ -67,8 +67,8 @@ export async function saveMarketToRegistry(entry: {
 
   const { data } = await client.auth.getSession();
   if (!data?.session) {
-    const ok = await signInWithWallet();
-    if (!ok) return false;
+    const result = await signInWithWallet(entry.creator);
+    if (!result.ok) return false;
   }
 
   const { error } = await client.from("markets_meta").upsert(
