@@ -1,5 +1,9 @@
 # Free oracle expansion specification
 
+## Availability correction
+
+Provider research and UI guidance do not establish end-to-end oracle readiness. The [oracle capability specification](./2026-07-20-oracle-capability-gating.md) supersedes availability statements in this document. The native event resolver is a testnet contract foundation, while event creation remains disabled until source workers, automatic challenge monitoring, independent arbitration, and full USDC lifecycle tests are operational.
+
 ## Verified provider status
 
 | Provider | Stellar path | Current testnet status | Cost status | Moros use |

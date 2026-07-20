@@ -1,5 +1,9 @@
 # Market Creation UI Specification
 
+## Availability correction
+
+Category presentation must follow the [oracle capability specification](./2026-07-20-oracle-capability-gating.md). A category card may be shown for discovery, but it must be disabled unless the exact template has an active network capability enforced by the deployment path. UI guidance cannot be treated as resolver support.
+
 ## Objective
 
 Make market creation clear, category-driven, responsive, and trustworthy without changing the existing Stellar deployment flow.
