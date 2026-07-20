@@ -5,6 +5,7 @@ import {
   commentImagePath,
   isOwnedCommentImagePath,
   validateCommentImage,
+  validateCommentImageDimensions,
 } from "./comment-media.ts";
 
 assert.equal(validateCommentImage({ type: "image/png", size: 100 }), null);
@@ -12,6 +13,10 @@ assert.equal(validateCommentImage({ type: "image/gif", size: COMMENT_IMAGE_MAX_B
 assert.match(validateCommentImage({ type: "image/svg+xml", size: 100 }) ?? "", /JPEG/);
 assert.match(validateCommentImage({ type: "image/png", size: 0 }) ?? "", /empty/);
 assert.match(validateCommentImage({ type: "image/png", size: COMMENT_IMAGE_MAX_BYTES + 1 }) ?? "", /5 MB/);
+assert.equal(validateCommentImageDimensions(1920, 1080), null);
+assert.match(validateCommentImageDimensions(8193, 100) ?? "", /8,192/);
+assert.match(validateCommentImageDimensions(8000, 8000) ?? "", /40 megapixels/);
+assert.match(validateCommentImageDimensions(0, 100) ?? "", /invalid/);
 assert.equal(commentImageExtension("image/webp"), "webp");
 assert.equal(commentImageExtension("text/plain"), null);
 assert.equal(

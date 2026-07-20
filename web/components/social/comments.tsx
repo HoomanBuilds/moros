@@ -15,7 +15,7 @@ import {
   type Comment,
   type CommentImage,
 } from "@/lib/supabase/comments";
-import { validateCommentImage } from "@/lib/supabase/comment-media";
+import { validateCommentImage, validateCommentImageDimensions } from "@/lib/supabase/comment-media";
 import { truncate } from "@/lib/wallet";
 import { useWalletAddress } from "@/lib/wallet-store";
 
@@ -117,6 +117,11 @@ export function Comments({ marketId }: { marketId: string }) {
     }
     try {
       const dimensions = await imageDimensions(file);
+      const dimensionError = validateCommentImageDimensions(dimensions.width, dimensions.height);
+      if (dimensionError) {
+        setPostError(dimensionError);
+        return;
+      }
       setImage({ file, ...dimensions });
       if (fileRef.current) fileRef.current.value = "";
     } catch {

@@ -22,7 +22,7 @@ async function responseError(res: Response, fallback: string): Promise<string> {
 
 export async function signInWithWallet(expectedAddress?: string): Promise<SocialAuthResult> {
   const client = getBrowserClient();
-  if (!client) return { ok: false, error: "Comments are not configured." };
+  if (!client) return { ok: false, error: "Wallet sign-in is not configured." };
 
   try {
     const kit = getKit();

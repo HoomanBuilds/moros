@@ -1,7 +1,7 @@
 "use client";
 
 import { getKit } from "@/lib/wallet";
-import { commentImagePath, isOwnedCommentImagePath, validateCommentImage } from "./comment-media";
+import { commentImagePath, isOwnedCommentImagePath, validateCommentImage, validateCommentImageDimensions } from "./comment-media";
 import { getBrowserClient } from "./client";
 
 export type Comment = {
@@ -72,6 +72,8 @@ export async function postComment(
   if (image) {
     const imageError = validateCommentImage(image.file);
     if (imageError) return { ok: false, error: imageError };
+    const dimensionError = validateCommentImageDimensions(image.width, image.height);
+    if (dimensionError) return { ok: false, error: dimensionError };
   }
 
   try {
