@@ -10,11 +10,11 @@ import { NETWORK } from "@/lib/network";
 const YES = "#16c784";
 const NO = "#f0564a";
 
-function StatusPill({ outcome, settles }: { outcome?: string; settles?: string }) {
+function StatusPill({ outcome, settles, acceptingOrders }: { outcome?: string; settles?: string; acceptingOrders?: boolean }) {
   if (!outcome) {
     return <span className="font-mono text-xs text-muted-foreground">loading</span>;
   }
-  if (outcome === "LIVE") {
+  if (outcome === "LIVE" && acceptingOrders) {
     return (
       <span className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-wider">
         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: YES }} />
@@ -22,13 +22,20 @@ function StatusPill({ outcome, settles }: { outcome?: string; settles?: string }
       </span>
     );
   }
-  const color = outcome === "YES" ? YES : NO;
+  if (outcome === "LIVE") {
+    return (
+      <span className="inline-flex items-center gap-2 rounded-full border border-amber-400 px-3 py-1 font-mono text-xs uppercase tracking-wider text-amber-300">
+        Closed, resolution pending
+      </span>
+    );
+  }
+  const color = outcome === "YES" ? YES : outcome === "VOID" ? "#fbbf24" : NO;
   return (
     <span
       className="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs uppercase tracking-wider"
       style={{ borderColor: color, color }}
     >
-      Resolved {outcome}
+      {outcome === "VOID" ? "Voided, full refunds" : `Resolved ${outcome}`}
     </span>
   );
 }
@@ -61,15 +68,15 @@ export function MarketHeader() {
       </div>
 
       <div className="flex items-start gap-4">
-        <AssetIcon asset={data?.asset} size="lg" />
+        <AssetIcon asset={data?.resolverType === "event" ? data.category || "EVENT" : data?.asset} size="lg" />
         <div className="space-y-4">
           <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            {data ? `${data.asset} · binary market` : "binary market"}
+            {data ? `${data.category || data.asset} · binary market` : "binary market"}
           </span>
           <h1 className="max-w-3xl font-display text-2xl leading-tight tracking-tight md:text-3xl">
             {data?.question ?? "Loading market"}
           </h1>
-          <StatusPill outcome={data?.outcome} settles={data?.resolutionLabel} />
+          <StatusPill outcome={data?.outcome} settles={data?.resolutionLabel} acceptingOrders={data?.acceptingOrders} />
         </div>
       </div>
     </div>

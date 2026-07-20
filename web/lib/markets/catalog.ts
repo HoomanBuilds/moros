@@ -14,7 +14,7 @@ export type MarketRow = {
   strikeNum: number;
   probYes: number | null;
   yesCents: number | null;
-  outcome: "YES" | "NO" | "LIVE";
+  outcome: "YES" | "NO" | "VOID" | "LIVE";
   live: boolean;
   resolutionLabel: string;
   secondsLeft: number;
@@ -27,7 +27,7 @@ export type MarketRow = {
 async function fetchRow(entry: MarketEntry): Promise<MarketRow> {
   const collateral = collateralForEntry(entry);
   const [data, orders] = await Promise.all([
-    fetchMarket(entry.marketId, entry.poolId, collateral),
+    fetchMarket(entry.marketId, entry.poolId, collateral, entry),
     getRecentOrders(30, entry.poolId).catch(() => []),
   ]);
   return {
@@ -40,7 +40,7 @@ async function fetchRow(entry: MarketEntry): Promise<MarketRow> {
     probYes: data.probYes,
     yesCents: Math.round(data.probYes * 100),
     outcome: data.outcome,
-    live: data.outcome === "LIVE",
+    live: data.acceptingOrders,
     resolutionLabel: data.resolutionLabel,
     secondsLeft: data.secondsLeft,
     poolSize: data.poolSize,

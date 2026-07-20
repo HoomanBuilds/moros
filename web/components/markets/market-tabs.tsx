@@ -7,17 +7,21 @@ import { PositionsList } from "@/components/portfolio/positions-list";
 import { Comments } from "@/components/social/comments";
 import { useActiveMarket } from "@/lib/markets/market-context";
 import { cn } from "@/lib/utils";
+import { ResolutionPanel } from "./resolution-panel";
+import { useMarket } from "@/lib/stellar/use-market";
 
-type TabKey = "activity" | "positions" | "about" | "comments";
+type TabKey = "activity" | "positions" | "resolution" | "about" | "comments";
 
 export function MarketTabs() {
   const [tab, setTab] = useState<TabKey>("activity");
   const { data: orders } = useOrders();
   const { marketId } = useActiveMarket();
+  const { data: market } = useMarket();
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: "activity", label: `Activity${orders ? ` (${orders.length})` : ""}` },
     { key: "positions", label: "Your positions" },
+    ...(market?.resolverType === "event" ? [{ key: "resolution" as const, label: "Resolution" }] : []),
     { key: "about", label: "About" },
     { key: "comments", label: "Comments" },
   ];
@@ -44,6 +48,7 @@ export function MarketTabs() {
 
       {tab === "activity" && <ActivityFeed />}
       {tab === "positions" && <PositionsList />}
+      {tab === "resolution" && <ResolutionPanel />}
       {tab === "about" && <AboutPanel />}
       {tab === "comments" && <Comments marketId={marketId} />}
     </div>

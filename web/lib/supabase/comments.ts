@@ -1,7 +1,7 @@
 "use client";
 
 import { getKit } from "@/lib/wallet";
-import { commentImagePath, validateCommentImage } from "./comment-media";
+import { commentImagePath, isOwnedCommentImagePath, validateCommentImage } from "./comment-media";
 import { getBrowserClient } from "./client";
 
 export type Comment = {
@@ -31,6 +31,18 @@ export type PostCommentResult =
 const COMMENT_FIELDS =
   "id, market_id, wallet, body, parent_id, image_url, image_path, image_width, image_height, image_alt, created_at";
 
+function withTrustedImageUrl(
+  client: NonNullable<ReturnType<typeof getBrowserClient>>,
+  comment: Comment,
+): Comment {
+  const imagePath = isOwnedCommentImagePath(comment.image_path, comment.wallet) ? comment.image_path : null;
+  return {
+    ...comment,
+    image_path: imagePath,
+    image_url: imagePath ? client.storage.from("comment-media").getPublicUrl(imagePath).data.publicUrl : null,
+  };
+}
+
 export async function listComments(marketId: string): Promise<Comment[]> {
   const client = getBrowserClient();
   if (!client) return [];
@@ -42,7 +54,7 @@ export async function listComments(marketId: string): Promise<Comment[]> {
     .order("created_at", { ascending: true });
 
   if (error || !data) return [];
-  return data as Comment[];
+  return (data as Comment[]).map((comment) => withTrustedImageUrl(client, comment));
 }
 
 export async function postComment(
@@ -107,7 +119,7 @@ export async function postComment(
       if (imagePath) await client.storage.from("comment-media").remove([imagePath]);
       return { ok: false, error: error?.message ?? "The comment could not be saved." };
     }
-    return { ok: true, comment: data as Comment };
+    return { ok: true, comment: withTrustedImageUrl(client, data as Comment) };
   } catch (error) {
     const message = error instanceof Error ? error.message : "The comment could not be posted.";
     return { ok: false, error: message };
@@ -123,7 +135,7 @@ export function subscribeComments(marketId: string, cb: (comment: Comment) => vo
     .on<Comment>(
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "comments", filter: `market_id=eq.${marketId}` },
-      (payload) => cb(payload.new),
+      (payload) => cb(withTrustedImageUrl(client, payload.new)),
     )
     .subscribe();
 

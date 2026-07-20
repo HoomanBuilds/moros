@@ -2,13 +2,23 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { NETWORK, collateralFromRecord, type CollateralAsset } from "@/lib/network";
 
-type Ids = { marketId: string; poolId: string; collateral?: CollateralAsset };
-type ActiveMarket = { marketId: string; poolId: string; collateral: CollateralAsset };
+export type MarketDescriptor = {
+  title?: string;
+  category?: string;
+  resolverType?: "price" | "event";
+  resolutionSource?: string;
+  resolutionRules?: string;
+  voidRules?: string;
+  rulesHash?: string;
+};
 
-const Ctx = createContext<ActiveMarket>({ marketId: NETWORK.marketId, poolId: NETWORK.poolId, collateral: NETWORK.legacyCollateral });
+type Ids = { marketId: string; poolId: string; collateral?: CollateralAsset; protocolVersion?: 2 | 3; descriptor?: MarketDescriptor };
+type ActiveMarket = { marketId: string; poolId: string; collateral: CollateralAsset; protocolVersion: 2 | 3; descriptor?: MarketDescriptor };
 
-export function MarketProvider({ marketId, poolId, collateral, children }: Ids & { children: ReactNode }) {
-  return <Ctx.Provider value={{ marketId, poolId, collateral: collateral ?? NETWORK.legacyCollateral }}>{children}</Ctx.Provider>;
+const Ctx = createContext<ActiveMarket>({ marketId: NETWORK.marketId, poolId: NETWORK.poolId, collateral: NETWORK.legacyCollateral, protocolVersion: 2 });
+
+export function MarketProvider({ marketId, poolId, collateral, protocolVersion, descriptor, children }: Ids & { children: ReactNode }) {
+  return <Ctx.Provider value={{ marketId, poolId, collateral: collateral ?? NETWORK.legacyCollateral, protocolVersion: protocolVersion ?? 2, descriptor }}>{children}</Ctx.Provider>;
 }
 
 export function useActiveMarket(): ActiveMarket {

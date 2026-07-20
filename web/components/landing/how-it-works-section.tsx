@@ -8,10 +8,11 @@ const steps = [
     title: "Place an encrypted order",
     subtitle: "",
     description: "Pick a side and amount; your browser proves the order is valid without revealing it.",
-    code: `const vault = new Vault({
-  action: 'deposit',
-  amount: true,
-  shares: 'minted'
+    code: `const commitment = poseidon255({
+  amount,
+  side,
+  secret,
+  nullifier
 })`,
   },
   {
@@ -19,10 +20,9 @@ const steps = [
     title: "The committee nets the batch",
     subtitle: "",
     description: "A t-of-n committee sums everyone's encrypted orders and learns only the total.",
-    code: `await vault.supply({
-  venue: ['Predict', 'Margin'],
-  policy: 'conservative',
-  compound: 'auto'
+    code: `const net = await committee.decryptAggregate({
+  minimumOrders: 2,
+  threshold: '2-of-3'
 })`,
   },
   {
@@ -30,23 +30,19 @@ const steps = [
     title: "Odds move on-chain",
     subtitle: "",
     description: "The LMSR market updates YES/NO prices from the verified net.",
-    code: `keeper.redeem({
-  vault: [settled],
-  fields: ['shares', 'price', 'fee'],
-  netOfFee: true
-})
-// 10% fee on profit`,
+    code: `await pool.submitBatch({
+  commitments,
+  nullifierHashes,
+  net
+})`,
   },
   {
     number: "04",
-    title: "Redeem privately",
+    title: "Claim with a proof",
     subtitle: "",
-    description: "When the market resolves, prove your winning order and get paid - side and size still hidden.",
-    code: `keeper.redeem({
-  vault: [settled],
-  fields: ['shares', 'price', 'fee'],
-  netOfFee: true
-})`,
+    description: "After resolution, prove the exact payout and claim. Moros charges 2% only on winning profit.",
+    code: `const fee = max(payout - stake, 0) * 0.02
+await relayer.submit({ proof, recipient })`,
   },
 ];
 
@@ -83,7 +79,7 @@ export function HowItWorksSection() {
       <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-white/[0.02] blur-[100px] pointer-events-none" />
 
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12">
-        {/* Header — titre + image cerisier */}
+        {/* Header with title and illustration */}
         <div className="relative mb-0 lg:mb-0 grid lg:grid-cols-2 gap-4 lg:gap-12 items-end">
           {/* Titre colonne gauche */}
           <div className="overflow-hidden pb-0 lg:pb-32">
@@ -103,7 +99,7 @@ export function HowItWorksSection() {
             </h2>
           </div>
 
-          {/* Image cerisier — se colle en bas sur les blocs */}
+          {/* Illustration aligned with the lower blocks */}
           <div className={`relative h-[320px] lg:h-[640px] overflow-hidden transition-all duration-1000 delay-200 ${
             isVisible ? "opacity-100" : "opacity-0"
           }`}>

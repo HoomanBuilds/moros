@@ -28,3 +28,11 @@ export function commentImagePath(address: string, marketId: string, type: string
   if (!safeMarketId || !safeId) return null;
   return `${address}/${safeMarketId}/${safeId}.${extension}`;
 }
+
+export function isOwnedCommentImagePath(path: string | null, wallet: string): path is string {
+  if (!path) return false;
+  const parts = path.split("/");
+  if (parts.length !== 3 || parts[0] !== wallet) return false;
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(parts[1])) return false;
+  return /^[A-Za-z0-9_-]{1,80}\.(jpg|png|webp|gif)$/.test(parts[2]);
+}

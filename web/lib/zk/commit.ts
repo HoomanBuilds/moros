@@ -13,7 +13,7 @@ export type Commitment = {
 };
 
 export async function computeCommitment(order: OrderInput): Promise<Commitment> {
-  const wtns = { type: "mem" };
+  const wtns = { type: "mem" } as const;
   await snarkjs.wtns.calculate(order, "/zk/order_commit.wasm", wtns);
   const witness = await snarkjs.wtns.exportJson(wtns);
   return { commitment: witness[1].toString(), nullifierHash: witness[2].toString() };

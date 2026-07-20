@@ -3,6 +3,7 @@ import {
   COMMENT_IMAGE_MAX_BYTES,
   commentImageExtension,
   commentImagePath,
+  isOwnedCommentImagePath,
   validateCommentImage,
 } from "./comment-media.ts";
 
@@ -18,5 +19,9 @@ assert.equal(
   "GABC/marketid/imageid.jpg",
 );
 assert.equal(commentImagePath("GABC", "///", "image/jpeg", "id"), null);
+assert.equal(isOwnedCommentImagePath("GABC/market/image.png", "GABC"), true);
+assert.equal(isOwnedCommentImagePath("GOTHER/market/image.png", "GABC"), false);
+assert.equal(isOwnedCommentImagePath("GABC/market/../../image.png", "GABC"), false);
+assert.equal(isOwnedCommentImagePath("javascript:alert(1)", "GABC"), false);
 
 console.log("comment media ok");

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { ArrowUpRight, ShieldCheck, Boxes } from "lucide-react";
 import { Panel } from "@/components/app/app-kit";
+import { NETWORK } from "@/lib/network";
 
 const ACCENT = "#eca8d6";
 
@@ -15,11 +16,11 @@ export function MarketsHeroRail() {
           </span>
           <h3 className="font-display text-xl leading-tight">Private by design</h3>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Your side and size are a zero-knowledge commitment. A threshold committee only ever sees the net, and payouts redeem with no signature linking back to you.
+            Your side and exact position amount are encrypted inside a public collateral bucket. A threshold committee decrypts only batches of at least two orders.
           </p>
         </div>
         <Link
-          href="/app/market/main"
+          href={`/app/market/${NETWORK.marketId}`}
           className="inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-background"
           style={{ backgroundColor: ACCENT }}
         >

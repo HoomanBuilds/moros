@@ -15,7 +15,7 @@ import {
   getCollateralAccountState,
   type CollateralAccountState,
 } from "@/lib/stellar/collateral-account";
-import { formatTokenAmount, parseWholeOrderAmount } from "@/lib/stellar/amount";
+import { formatTokenAmount, parseWholeOrderAmount, privacyStakeForOrder } from "@/lib/stellar/amount";
 import { NETWORK } from "@/lib/network";
 
 const STAGES: { key: BetStage; label: string }[] = [
@@ -60,7 +60,7 @@ function SideButton({
 
 export function BetPanel() {
   const { data } = useMarket();
-  const { marketId, poolId, collateral } = useActiveMarket();
+  const { marketId, poolId, collateral, protocolVersion } = useActiveMarket();
   const address = useWalletAddress();
   const [side, setSide] = useState<BetSide>("1");
   const [amount, setAmount] = useState("10");
@@ -70,14 +70,26 @@ export function BetPanel() {
   const [accountLoading, setAccountLoading] = useState(false);
   const [trustlineLoading, setTrustlineLoading] = useState(false);
   const busy = stage !== null && stage !== "done";
-  const resolved = data ? data.outcome !== "LIVE" : false;
+  const rulesInvalid = data?.resolverType === "event" && !data.rulesVerified;
+  const closed = data ? !data.acceptingOrders || rulesInvalid : false;
 
   const prob = side === "1" ? data?.probYes ?? null : data ? 1 - data.probYes : null;
-  const stake = Number(amount);
-  const estReturn = prob && prob > 0 && stake > 0 ? stake / prob : null;
+  const positionSize = Number(amount);
+  const grossProfit = prob !== null && positionSize > 0 ? positionSize * (1 - prob) : null;
+  const fee = grossProfit === null ? null : protocolVersion === 3 ? grossProfit * 0.02 : 0;
+  const netProfit = grossProfit === null || fee === null ? null : grossProfit - fee;
   let stakeAtomic: bigint | null = null;
+  let stakeAmount: string | null = null;
   try {
-    stakeAtomic = parseWholeOrderAmount(amount, collateral.decimals).atomic;
+    if (protocolVersion === 3) {
+      const parsed = privacyStakeForOrder(amount, collateral.decimals);
+      stakeAtomic = parsed.stakeAtomic;
+      stakeAmount = parsed.stakeAmount;
+    } else {
+      const parsed = parseWholeOrderAmount(amount, collateral.decimals);
+      stakeAtomic = parsed.atomic;
+      stakeAmount = parsed.orderAmount;
+    }
   } catch {
     stakeAtomic = null;
   }
@@ -105,6 +117,7 @@ export function BetPanel() {
 
   async function connect() {
     try {
+      if (rulesInvalid) throw new Error("Betting is blocked because these event rules do not match the on-chain rules hash");
       await connectWallet();
     } catch {
       return;
@@ -117,7 +130,7 @@ export function BetPanel() {
     try {
       if (!accountState?.hasTrustline) throw new Error(`Enable ${collateral.code} before placing a bet`);
       if (insufficient) throw new Error(`Insufficient ${collateral.code} balance`);
-      await runBet({ side, amount, address, collateral, marketId, poolId, onStage: setStage });
+      await runBet({ side, amount, address, collateral, marketId, poolId, protocolVersion, onStage: setStage });
       setAccountState(await getCollateralAccountState(address, collateral));
     } catch (e) {
       setError(e instanceof Error ? e.message : "private bet failed");
@@ -151,14 +164,14 @@ export function BetPanel() {
       <div className="flex items-center justify-between">
         <Tag>Private bet</Tag>
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          hidden until redeem
+          side encrypted in batch
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <SideButton
           active={side === "1"}
-          disabled={busy || resolved}
+          disabled={busy || closed}
           label="Yes"
           price={centsLabel(data ? data.probYes : null)}
           color={YES}
@@ -166,7 +179,7 @@ export function BetPanel() {
         />
         <SideButton
           active={side === "0"}
-          disabled={busy || resolved}
+          disabled={busy || closed}
           label="No"
           price={centsLabel(data ? 1 - data.probYes : null)}
           color={NO}
@@ -181,25 +194,34 @@ export function BetPanel() {
         <Input
           type="number"
           min="1"
+          max="1000"
           step="1"
           value={amount}
-          disabled={busy || resolved}
+          disabled={busy || closed}
           onChange={(e) => setAmount(e.target.value)}
           className="h-11 border-white/15 bg-white/[0.04] text-base focus-visible:border-white/30"
         />
         <div className="space-y-1.5 pt-1 font-mono text-xs text-muted-foreground">
           <div className="flex items-center justify-between">
-            <span>Shares (est.)</span>
+            <span>Position size</span>
             <span className="text-foreground">
-              {estReturn ? `≈ ${estReturn.toFixed(2)} ${side === "1" ? "YES" : "NO"}` : "--"}
+              {positionSize > 0 ? `${positionSize.toFixed(0)} ${side === "1" ? "YES" : "NO"}` : "--"}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span>Max payout if {side === "1" ? "YES" : "NO"} wins</span>
-            <span className="text-foreground">{estReturn ? `~${estReturn.toFixed(2)} ${collateral.code}` : "--"}</span>
+            <span>Estimated profit after fee</span>
+            <span className="text-foreground">{netProfit !== null ? `~${netProfit.toFixed(2)} ${collateral.code}` : "--"}</span>
           </div>
+          {protocolVersion === 3 && (
+            <div className="flex items-center justify-between">
+              <span>Privacy bucket locked</span>
+              <span className="text-foreground">{stakeAmount ? `${stakeAmount} ${collateral.code}` : "--"}</span>
+            </div>
+          )}
           <p className="text-[10px] leading-snug text-muted-foreground/70">
-            Each winning share redeems for 1 {collateral.code}. Final count is set at the batch clearing price.
+            {protocolVersion === 3
+              ? "Your exact position amount stays encrypted inside a public collateral bucket. Unused collateral is returned at redemption. Moros charges 2% only on winning profit."
+              : `Each winning share redeems for 1 ${collateral.code}. Final count is set at the batch clearing price.`}
           </p>
           {address && accountState?.hasTrustline && (
             <p className="text-[10px] leading-snug text-muted-foreground/70">
@@ -209,9 +231,15 @@ export function BetPanel() {
         </div>
       </div>
 
-      {resolved ? (
+      {closed ? (
         <p className="text-sm text-muted-foreground">
-          This market has resolved. Head to your positions to redeem.
+          {rulesInvalid
+            ? "Betting is blocked because the displayed event rules do not match the immutable on-chain rules hash."
+            : data?.outcome === "LIVE"
+            ? "Betting is closed. The final encrypted batch and resolution are still pending."
+            : data?.outcome === "VOID"
+              ? "This market was voided. Head to your positions to claim a full refund."
+              : "This market has resolved. Head to your positions to redeem."}
         </p>
       ) : stage === "done" ? (
         <div className="space-y-3 rounded-md border p-4" style={{ borderColor: `${YES}44`, backgroundColor: `${YES}0f` }}>
@@ -220,7 +248,7 @@ export function BetPanel() {
             Position placed privately
           </div>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Your side is hidden on-chain and the committee only ever sees the batch net. Track it under Portfolio and redeem once the market resolves.
+            Your side and exact position amount are encrypted, while the collateral bucket is public. The committee only decrypts a batch net. Track the position under Portfolio and redeem or refund when eligible.
           </p>
           <Button className="w-full" onClick={reset}>Place another bet</Button>
         </div>

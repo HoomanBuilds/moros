@@ -12,11 +12,37 @@ export async function getPriceYes(marketId: string = NETWORK.marketId): Promise<
 export async function getOutcome(marketId: string = NETWORK.marketId): Promise<unknown> {
   return readContract(marketId, "outcome");
 }
-export async function getMarketInfo(marketId: string = NETWORK.marketId): Promise<{ asset: string; threshold: bigint; expiry: bigint }> {
+export async function getMarketInfo(marketId: string = NETWORK.marketId): Promise<{ asset: string; threshold: bigint; expiry: bigint; finalize_after?: bigint }> {
   return readContract(marketId, "market_info");
+}
+export async function getMarketResolver(marketId: string = NETWORK.marketId): Promise<string | null> {
+  return readContract(marketId, "resolver");
+}
+export async function getEventRulesHash(resolverId: string, marketId: string): Promise<string | null> {
+  const value = await readContract(resolverId, "rules_hash", [nativeToScVal(Address.fromString(marketId), { type: "address" })]);
+  return value ? Buffer.from(value).toString("hex") : null;
+}
+export async function getEventConfig(resolverId: string): Promise<{
+  collateral: string;
+  bond: bigint;
+  challenge_period: bigint;
+  committee: string[];
+  threshold: number;
+}> {
+  return readContract(resolverId, "config");
+}
+export async function getEventProposal(resolverId: string, marketId: string): Promise<unknown | null> {
+  return readContract(resolverId, "proposal", [nativeToScVal(Address.fromString(marketId), { type: "address" })]);
 }
 export async function getClearingPrice(poolId: string = NETWORK.poolId): Promise<bigint> {
   return readContract(poolId, "get_price");
+}
+export async function getFeeConfig(poolId: string): Promise<[string, number]> {
+  return readContract(poolId, "fee_config");
+}
+export async function getOrder(commitmentDec: string, poolId: string = NETWORK.poolId): Promise<unknown> {
+  const commitment = Buffer.from(BigInt(commitmentDec).toString(16).padStart(64, "0"), "hex");
+  return readContract(poolId, "get_order", [nativeToScVal(commitment, { type: "bytes" })]);
 }
 export async function getPoolBalance(
   poolId: string = NETWORK.poolId,

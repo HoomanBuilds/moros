@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { NETWORK } from "../lib/network";
 
 test("markets page renders the shell and a market card", async ({ page }) => {
   await page.goto("/app");
@@ -7,7 +8,7 @@ test("markets page renders the shell and a market card", async ({ page }) => {
 });
 
 test("market terminal renders stats and chart section", async ({ page }) => {
-  await page.goto("/app/market/main");
-  await expect(page.getByText(/pool size/i).first()).toBeVisible();
-  await expect(page.getByText(/live since open/i).first()).toBeVisible();
+  await page.goto(`/app/market/${NETWORK.marketId}`);
+  await expect(page.getByText(/pool collateral/i).first()).toBeVisible();
+  await expect(page.getByText(/implied probability/i).first()).toBeVisible();
 });

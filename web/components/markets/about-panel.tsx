@@ -6,6 +6,7 @@ import { Panel } from "@/components/app/app-kit";
 import { truncate } from "@/lib/wallet";
 import { useActiveMarket } from "@/lib/markets/market-context";
 import { NETWORK } from "@/lib/network";
+import { ORACLE_MODE } from "@/lib/markets/deploy-constants";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -30,11 +31,23 @@ function ContractLink({ id }: { id: string }) {
   );
 }
 
+function safeHttpUrl(value?: string): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AboutPanel() {
   const { data } = useMarket();
   const { marketId, poolId } = useActiveMarket();
   const asset = data?.asset ?? "the asset";
   const strike = data?.strike ?? "--";
+  const isEvent = data?.resolverType === "event";
+  const sourceUrl = safeHttpUrl(data?.resolutionSource);
 
   return (
     <Panel className="p-6 space-y-6">
@@ -42,25 +55,44 @@ export function AboutPanel() {
         <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
           How this market works
         </span>
+        {isEvent ? (
+          <div className="space-y-3 text-sm leading-relaxed text-muted-foreground">
+            <p><span className="text-foreground">YES:</span> {data?.resolutionRules}</p>
+            <p><span className="text-foreground">VOID:</span> {data?.voidRules}</p>
+            <p>
+              Anyone can propose a result with a USDC bond after betting closes. An unchallenged proposal finalizes after the challenge window. A conflicting bonded proposal goes to threshold committee arbitration.
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Resolves <span className="text-foreground">YES</span> if {asset} settles at or above{" "}
+            <span className="text-foreground">{strike}</span> at expiry. {ORACLE_MODE === "free" ? "The current testnet beta uses Reflector's free public feed, which aggregates exchange data through a multi-node Stellar consensus." : "The paid-mode adapter requires Reflector and Pyth Pro to agree within the configured tolerance."} Invalid or stale data leaves the market pending instead of guessing a result.
+          </p>
+        )}
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Resolves <span className="text-foreground">YES</span> if {asset} settles at or above{" "}
-          <span className="text-foreground">{strike}</span> at expiry, read from the on-chain oracle.
-          Otherwise it resolves <span className="text-foreground">NO</span>. Prices are set by an LMSR
-          market maker, so odds move as the pool takes each side.
-        </p>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Your bet is a zero-knowledge commitment. Neither the side nor the size is visible on-chain.
-          A threshold committee only ever decrypts the net across a batch, and winners redeem privately
-          through a relayer, so no signature links a payout back to you.
+          Your side and exact position amount are encrypted inside a public collateral bucket. A threshold
+          committee decrypts only the net across a batch of at least two orders. A lone final order is
+          refunded after the deadline instead of being decrypted by itself. Redemption is proof-bound and
+          relayer-submittable, but the current v3 claim identifies the winning order commitment on-chain.
         </p>
       </div>
 
       <div className="divide-y divide-foreground/10 border-t border-foreground/10">
-        <Row label="Underlying">{asset}</Row>
-        <Row label="Resolves at">{strike}</Row>
+        <Row label={isEvent ? "Category" : "Underlying"}>{isEvent ? data?.category || "Event" : asset}</Row>
+        {!isEvent && <Row label="Resolves at">{strike}</Row>}
+        {isEvent && sourceUrl && (
+          <Row label="Primary source">
+            <a href={sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
+              Open official source
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </Row>
+        )}
         <Row label="Settlement">{data ? data.resolutionLabel : "--"}</Row>
         <Row label="Pool collateral">{data ? `${data.poolSize.toFixed(2)} ${data.collateral.code}` : "--"}</Row>
-        <Row label="Privacy">Groth16 · BLS12-381 · t-of-n committee</Row>
+        <Row label="Platform fee">2% of winning profit only</Row>
+        {isEvent && <Row label="Rules integrity">{data?.rulesVerified ? "Verified against on-chain hash" : "Verification failed"}</Row>}
+        <Row label="Privacy">Encrypted side and amount · public stake bucket · t-of-n committee</Row>
         <Row label="Market contract"><ContractLink id={marketId} /></Row>
         <Row label="Shielded pool"><ContractLink id={poolId} /></Row>
       </div>

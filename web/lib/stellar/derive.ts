@@ -18,7 +18,7 @@ export function centsLabel(prob: number | null): string {
   return `${Math.round(c)}c`;
 }
 
-export function outcomeLabel(o: unknown): "YES" | "NO" | "LIVE" {
+export function outcomeLabel(o: unknown): "YES" | "NO" | "VOID" | "LIVE" {
   if (o === null || o === undefined) return "LIVE";
   let s: string | undefined;
   if (typeof o === "string") s = o;
@@ -26,11 +26,12 @@ export function outcomeLabel(o: unknown): "YES" | "NO" | "LIVE" {
   else s = (o as { tag?: string }).tag;
   if (s === "Yes") return "YES";
   if (s === "No") return "NO";
+  if (s === "Void") return "VOID";
   return "LIVE";
 }
 
 export function formatCountdown(secondsLeft: number): string {
-  if (secondsLeft <= 0) return "resolved";
+  if (secondsLeft <= 0) return "closed";
   const d = Math.floor(secondsLeft / 86400);
   const h = Math.floor((secondsLeft % 86400) / 3600);
   const m = Math.floor((secondsLeft % 3600) / 60);

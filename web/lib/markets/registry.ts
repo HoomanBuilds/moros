@@ -33,6 +33,7 @@ const SEEDS: MarketEntry[] = [
 const KEY = "umbra.markets.v1";
 let localCreated: MarketEntry[] | null = null;
 let remote: MarketEntry[] = [];
+let refreshComplete = false;
 const listeners = new Set<() => void>();
 
 function loadLocal(): MarketEntry[] {
@@ -82,6 +83,10 @@ export function useMarkets(): MarketEntry[] {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+export function useMarketRegistryReady(): boolean {
+  return useSyncExternalStore(subscribe, () => refreshComplete, () => false);
+}
+
 export function findMarket(marketId: string): MarketEntry | undefined {
   return snapshot.find((m) => m.marketId === marketId);
 }
@@ -106,11 +111,21 @@ export async function refreshMarkets(): Promise<void> {
       collateralSac: r.collateralSac,
       collateralDecimals: r.collateralDecimals,
       createdAt: r.createdAt,
+      protocolVersion: r.protocolVersion,
+      title: r.title,
+      category: r.category,
+      resolverType: r.resolverType,
+      resolutionSource: r.resolutionSource,
+      resolutionRules: r.resolutionRules,
+      voidRules: r.voidRules,
+      rulesHash: r.rulesHash,
     }));
+  } catch {
+    remote = [];
+  } finally {
+    refreshComplete = true;
     snapshot = build();
     emit();
-  } catch {
-    return;
   }
 }
 

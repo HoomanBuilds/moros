@@ -1,8 +1,9 @@
 export type Position = {
   address: string; market: string; side: string; amount: string;
   collateralCode?: string;
+  stakeAmount?: string;
   secret: string; nullifier: string; commitment: string; txHash: string;
-  status: "placed" | "submitted" | "redeemed";
+  status: "placed" | "submitted" | "redeemed" | "refunded";
 };
 
 const KEY = "umbra.positions.v1";
@@ -12,7 +13,7 @@ function store(): Record<string, Position[]> {
   if (mem) return mem;
   if (typeof localStorage === "undefined") { mem = {}; return mem; }
   try { mem = JSON.parse(localStorage.getItem(KEY) ?? "{}"); } catch { mem = {}; }
-  return mem;
+  return mem ?? {};
 }
 function flush() {
   if (typeof localStorage !== "undefined") localStorage.setItem(KEY, JSON.stringify(mem));

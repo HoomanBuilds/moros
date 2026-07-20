@@ -9,6 +9,14 @@ export type MarketEntry = {
   collateralDecimals?: number;
   flagship?: boolean;
   createdAt?: number;
+  protocolVersion?: 2 | 3;
+  title?: string;
+  category?: string;
+  resolverType?: "price" | "event";
+  resolutionSource?: string;
+  resolutionRules?: string;
+  voidRules?: string;
+  rulesHash?: string;
 };
 
 export function dedupeMarkets(entries: MarketEntry[]): MarketEntry[] {

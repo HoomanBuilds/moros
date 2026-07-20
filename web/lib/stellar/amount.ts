@@ -27,3 +27,20 @@ export function parseWholeOrderAmount(value: string, decimals: number): { orderA
   const atomic = parseTokenAmount(input, decimals);
   return { orderAmount: BigInt(input).toString(), atomic };
 }
+
+const ORDER_STAKE_BUCKETS = [1n, 5n, 10n, 25n, 50n, 100n, 250n, 500n, 1_000n];
+
+export function privacyStakeForOrder(
+  value: string,
+  decimals: number,
+): { orderAmount: string; stakeAmount: string; stakeAtomic: bigint } {
+  const parsed = parseWholeOrderAmount(value, decimals);
+  const amount = BigInt(parsed.orderAmount);
+  const stake = ORDER_STAKE_BUCKETS.find((bucket) => amount <= bucket);
+  if (stake === undefined) throw new Error("Private orders support up to 1,000 collateral units");
+  return {
+    orderAmount: parsed.orderAmount,
+    stakeAmount: stake.toString(),
+    stakeAtomic: stake * 10n ** BigInt(decimals),
+  };
+}

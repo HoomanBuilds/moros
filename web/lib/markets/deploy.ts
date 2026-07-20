@@ -21,14 +21,76 @@ import {
   MARKET_SUBSIDY,
   MAIN_VK,
   DEPOSIT_VK,
-  REDEEMV2_VK,
-  RESOLVER_ID,
+  REDEEMV3_VK,
+  PRICE_RESOLVER_ID,
+  EVENT_RESOLVER_ID,
   RESOLVABLE_ASSETS,
+  PLATFORM_TREASURY,
+  PLATFORM_FEE_BPS,
+  BATCH_GRACE_SECONDS,
 } from "./deploy-constants";
 
 const server = new rpc.Server(NETWORK.rpcUrl);
 
 export type DeployStep = "market" | "funding" | "pool" | "batcher" | "committee" | "redeemvk" | "resolver" | "done";
+
+export type DeploymentMetadata = {
+  title: string;
+  category: string;
+  resolutionSource?: string;
+  resolutionRules?: string;
+  voidRules?: string;
+};
+
+export type PendingDeployment = {
+  version: 3;
+  address: string;
+  asset: string;
+  strikeUsd: number;
+  expiryUnix: number;
+  resolverType: "price" | "event";
+  resolverId: string;
+  rulesHash?: string;
+  metadata: DeploymentMetadata;
+  marketWasmHash: string;
+  poolWasmHash: string;
+  marketId?: string;
+  funded?: boolean;
+  poolId?: string;
+  batcherConfigured?: boolean;
+  committeeConfigured?: boolean;
+  redeemVkConfigured?: boolean;
+  resolverConfigured?: boolean;
+  eventRegistered?: boolean;
+  complete?: boolean;
+};
+
+const PENDING_DEPLOYMENT_KEY = "moros.pending-market.v3";
+
+function pendingKey(address: string): string {
+  return `${PENDING_DEPLOYMENT_KEY}.${address}`;
+}
+
+export function getPendingDeployment(address: string): PendingDeployment | null {
+  if (typeof localStorage === "undefined" || !address) return null;
+  try {
+    const value = JSON.parse(localStorage.getItem(pendingKey(address)) ?? "null") as PendingDeployment | null;
+    if (!value || value.version !== 3 || value.address !== address) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function storePendingDeployment(deployment: PendingDeployment): void {
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(pendingKey(deployment.address), JSON.stringify(deployment));
+  }
+}
+
+export function clearPendingDeployment(address: string): void {
+  if (typeof localStorage !== "undefined") localStorage.removeItem(pendingKey(address));
+}
 
 function bytesArg(hex: string): xdr.ScVal {
   return xdr.ScVal.scvBytes(Buffer.from(hex, "hex"));
@@ -95,73 +157,149 @@ export async function deployShieldedMarket({
   asset,
   strikeUsd,
   expiryUnix,
+  resolverType,
+  rulesHash,
+  metadata,
+  resume,
   onStep,
+  onProgress,
 }: {
   address: string;
   asset: string;
   strikeUsd: number;
   expiryUnix: number;
+  resolverType: "price" | "event";
+  rulesHash?: string;
+  metadata: DeploymentMetadata;
+  resume?: PendingDeployment | null;
   onStep: (s: DeployStep) => void;
-}): Promise<{ marketId: string; poolId: string }> {
-  onStep("market");
-  const marketId = await deployByHash(
-    MARKET_WASM_HASH,
-    [
-      addr(address),
-      addr(NETWORK.collateral.sac),
-      nativeToScVal(BigInt(LMSR_B), { type: "i128" }),
-      nativeToScVal(asset, { type: "symbol" }),
-      nativeToScVal(strikeToRaw(strikeUsd), { type: "i128" }),
-      nativeToScVal(BigInt(expiryUnix), { type: "u64" }),
-    ],
+  onProgress?: (deployment: PendingDeployment) => void;
+}): Promise<{ marketId: string; poolId: string; deployment: PendingDeployment }> {
+  let deployment: PendingDeployment = resume ?? {
+    version: 3,
     address,
-  );
+    asset,
+    strikeUsd,
+    expiryUnix,
+    resolverType,
+    resolverId: resolverType === "event" ? EVENT_RESOLVER_ID : PRICE_RESOLVER_ID,
+    rulesHash,
+    metadata,
+    marketWasmHash: MARKET_WASM_HASH,
+    poolWasmHash: POOL_WASM_HASH,
+  };
+  if (deployment.address !== address) throw new Error("The saved deployment belongs to a different wallet");
+
+  const checkpoint = (update: Partial<PendingDeployment>) => {
+    deployment = { ...deployment, ...update };
+    storePendingDeployment(deployment);
+    onProgress?.(deployment);
+  };
+  checkpoint({});
+
+  if (deployment.resolverType === "price" && !RESOLVABLE_ASSETS.includes(deployment.asset.toUpperCase())) {
+    throw new Error(`${deployment.asset} does not have price-oracle quorum support`);
+  }
+  const resolverId = deployment.resolverId;
+  if (!resolverId) throw new Error(`${resolverType} resolver is not configured on ${NETWORK.name}`);
+  Address.fromString(resolverId);
+  if (deployment.resolverType === "event" && !/^[0-9a-f]{64}$/.test(deployment.rulesHash ?? "")) {
+    throw new Error("Event rules hash is invalid");
+  }
+
+  onStep("market");
+  let marketId = deployment.marketId;
+  if (!marketId) {
+    marketId = await deployByHash(
+      deployment.marketWasmHash,
+      [
+        addr(address),
+        addr(NETWORK.collateral.sac),
+        nativeToScVal(BigInt(LMSR_B), { type: "i128" }),
+        nativeToScVal(deployment.asset, { type: "symbol" }),
+        nativeToScVal(strikeToRaw(deployment.strikeUsd), { type: "i128" }),
+        nativeToScVal(BigInt(deployment.expiryUnix), { type: "u64" }),
+        nativeToScVal(BigInt(BATCH_GRACE_SECONDS), { type: "u64" }),
+      ],
+      address,
+    );
+    checkpoint({ marketId });
+  }
 
   onStep("funding");
-  await invokeSigned(
-    marketId,
-    "fund",
-    [addr(address), nativeToScVal(BigInt(MARKET_SUBSIDY), { type: "i128" })],
-    address,
-  );
+  if (!deployment.funded) {
+    await invokeSigned(
+      marketId,
+      "fund",
+      [addr(address), nativeToScVal(BigInt(MARKET_SUBSIDY), { type: "i128" })],
+      address,
+    );
+    checkpoint({ funded: true });
+  }
 
   onStep("pool");
-  const poolId = await deployByHash(
-    POOL_WASM_HASH,
-    [
-      bytesArg(MAIN_VK),
-      bytesArg(DEPOSIT_VK),
-      addr(NETWORK.collateral.sac),
-      addr(address),
-      addr(marketId),
-      nativeToScVal(BigInt(POOL_CAP), { type: "i128" }),
-    ],
-    address,
-  );
+  let poolId = deployment.poolId;
+  if (!poolId) {
+    poolId = await deployByHash(
+      deployment.poolWasmHash,
+      [
+        bytesArg(MAIN_VK),
+        bytesArg(DEPOSIT_VK),
+        addr(NETWORK.collateral.sac),
+        addr(address),
+        addr(marketId),
+        nativeToScVal(BigInt(POOL_CAP), { type: "i128" }),
+        addr(PLATFORM_TREASURY),
+        nativeToScVal(PLATFORM_FEE_BPS, { type: "u32" }),
+      ],
+      address,
+    );
+    checkpoint({ poolId });
+  }
 
   onStep("batcher");
-  await invokeSigned(marketId, "set_batcher", [addr(address), addr(poolId)], address);
+  if (!deployment.batcherConfigured) {
+    await invokeSigned(marketId, "set_batcher", [addr(address), addr(poolId)], address);
+    checkpoint({ batcherConfigured: true });
+  }
 
   onStep("committee");
-  await invokeSigned(
-    poolId,
-    "set_committee",
-    [
-      addr(address),
-      xdr.ScVal.scvVec(COMMITTEE_MEMBERS.map((m) => addr(m))),
-      nativeToScVal(COMMITTEE_THRESHOLD, { type: "u32" }),
-    ],
-    address,
-  );
+  if (!deployment.committeeConfigured) {
+    await invokeSigned(
+      poolId,
+      "set_committee",
+      [
+        addr(address),
+        xdr.ScVal.scvVec(COMMITTEE_MEMBERS.map((m) => addr(m))),
+        nativeToScVal(COMMITTEE_THRESHOLD, { type: "u32" }),
+      ],
+      address,
+    );
+    checkpoint({ committeeConfigured: true });
+  }
 
   onStep("redeemvk");
-  await invokeSigned(poolId, "set_redeem_v2_vk", [addr(address), bytesArg(REDEEMV2_VK)], address);
+  if (!deployment.redeemVkConfigured) {
+    await invokeSigned(poolId, "set_redeem_v2_vk", [addr(address), bytesArg(REDEEMV3_VK)], address);
+    checkpoint({ redeemVkConfigured: true });
+  }
 
-  if (RESOLVABLE_ASSETS.includes(asset.toUpperCase())) {
-    onStep("resolver");
-    await invokeSigned(marketId, "set_resolver", [addr(address), addr(RESOLVER_ID)], address);
+  onStep("resolver");
+  if (!deployment.resolverConfigured) {
+    await invokeSigned(marketId, "set_resolver", [addr(address), addr(resolverId)], address);
+    checkpoint({ resolverConfigured: true });
+  }
+  if (deployment.resolverType === "event" && !deployment.eventRegistered) {
+    await invokeSigned(
+      resolverId,
+      "register_market",
+      [addr(marketId), addr(address), bytesArg(deployment.rulesHash!)],
+      address,
+    );
+    checkpoint({ eventRegistered: true });
   }
 
   onStep("done");
-  return { marketId, poolId };
+  checkpoint({ complete: true });
+  return { marketId, poolId, deployment };
 }

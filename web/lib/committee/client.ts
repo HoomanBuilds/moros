@@ -33,22 +33,22 @@ export async function postOrder(body: { proof: unknown; publicSignals: string[];
   if (!r.ok) throw new Error(`committee rejected order: ${await r.text()}`);
 }
 
-export async function postRedeem(body: { proof: unknown; publicSignals: string[]; recipient: string; poolId: string }): Promise<unknown> {
+export async function postRedeem(body: { proof: unknown; publicSignals: string[]; recipient: string; poolId: string; protocolVersion?: 2 | 3 }): Promise<unknown> {
   const r = await fetch(`${COMMITTEE_URL}/redeem`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ proof: body.proof, public: body.publicSignals, recipient: body.recipient, poolId: body.poolId }),
+    body: JSON.stringify({ proof: body.proof, public: body.publicSignals, recipient: body.recipient, poolId: body.poolId, protocolVersion: body.protocolVersion ?? 2 }),
   });
   if (!r.ok) throw new Error(`committee rejected redeem: ${await r.text()}`);
   return r.json();
 }
 
-export async function registerPool(marketId: string, poolId: string): Promise<boolean> {
+export async function registerPool(marketId: string, poolId: string, protocolVersion: 2 | 3 = 2): Promise<boolean> {
   try {
     const r = await fetch(`${COMMITTEE_URL}/register-pool`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ marketId, poolId }),
+      body: JSON.stringify({ marketId, poolId, protocolVersion }),
     });
     return r.ok;
   } catch {

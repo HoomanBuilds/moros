@@ -187,7 +187,7 @@ export function HeroSection() {
           >
             <span className="block whitespace-nowrap">Bet privately.</span>
             <span className="block">
-              Nobody sees your{" "}
+              Encrypt your{" "}
               <span className="relative inline-block">
                 <BlurWord word={words[wordIndex]} trigger={wordIndex} />
               </span>
@@ -198,7 +198,7 @@ export function HeroSection() {
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            Bet on binary outcomes with zero-knowledge privacy. Your side and amount are encrypted end to end; only the market's net ever settles on-chain.
+            Bet on binary outcomes with zero-knowledge proofs. Your side and exact position amount are encrypted during batching, while the public chain records the collateral bucket and proof-bound claim.
           </p>
         </div>
         </div>
