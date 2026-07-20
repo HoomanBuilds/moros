@@ -7,19 +7,24 @@
   "wasm": {
     "market": "ca646879c241f3abc52cdc1530174e8475ad627d4bfe325da892694ac4880c3f",
     "shielded_pool": "ec67aee3f9391ca358e52cfad5ac05c39ea9b09dc4abc575177272f2b79b5ef3",
-    "price_resolver": "cd84de12e4dff687151c876bd5a7d95dd27be6240d4b3f5f28e64587a1150ae2",
+    "price_resolver": "2bba2d4a2c88b1d7199adbda7c0964123ecd5a49ca8a43f2d9b3bea83cc2d3c1",
     "event_resolver": "64956727fbd1561c405f5aac91cd0275f31292e5d110a9f12244a6aa0d5c6f11"
   },
   "resolvers": {
     "active_mode": "free",
-    "free_price_resolver": "CCLZEQIQLPJVFDQCAMFC3A3S6HIRQ2ZIAICC2NH3D3U4ZCCXZI2RU6TQ",
-    "free_reflector_oracle": "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63",
+    "free_price_resolver": "CAIHZHCNKHLCXGWOTH7T2L4S5YDNNGO6Q6MSDQ7HQ3A4IORN4NE6ZF5B",
+    "free_reflector_cex_oracle": "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63",
+    "free_reflector_fiat_oracle": "CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W",
     "paid_price_resolver": null,
     "event_resolver": "CBOZK2JSSAOPXJWBSB6JZF5KLPMRQ52JCF4PADI7QUHQ3WS6KBKKBXW5"
   },
+  "transactions": {
+    "free_price_resolver_deploy": "0c8d11b28fba13c315e651a0484ce8c764ab0195550ae482a3f8e3f877fdcf89"
+  },
   "free_price_config": {
     "oracles": [
-      "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63"
+      "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63",
+      "CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W"
     ],
     "quorum": 1,
     "max_age_seconds": 600,
@@ -44,5 +49,5 @@
     "creator_subsidy_atomic": "138629437",
     "creator_subsidy_usdc": "13.8629437"
   },
-  "notes": "Testnet beta only. Free Reflector mode is active. Paid oracle support remains disabled unless ORACLE_MODE is explicitly set to pyth_pro and a paid resolver plus access token are configured."
+  "notes": "Testnet beta only. Free Reflector CEX and fiat coverage is active. Paid oracle support remains disabled unless ORACLE_MODE is explicitly set to pyth_pro and a paid resolver plus access token are configured."
 }

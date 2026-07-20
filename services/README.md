@@ -18,7 +18,7 @@ Required production-like settings:
     RPC_URL=https://soroban-testnet.stellar.org
     NETWORK_PASSPHRASE=Test SDF Network ; September 2015
     ORACLE_MODE=free
-    FREE_RESOLVER_ID=CCLZEQIQLPJVFDQCAMFC3A3S6HIRQ2ZIAICC2NH3D3U4ZCCXZI2RU6TQ
+    FREE_RESOLVER_ID=CAIHZHCNKHLCXGWOTH7T2L4S5YDNNGO6Q6MSDQ7HQ3A4IORN4NE6ZF5B
     POOL_WASM_HASH=ec67aee3f9391ca358e52cfad5ac05c39ea9b09dc4abc575177272f2b79b5ef3
     COLLATERAL_ID=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
     ALLOW_UNVERIFIED_REGISTRATION=0
@@ -35,6 +35,8 @@ Keep FUNDER_SK and every MEMBER_SK out of git, logs, browser variables, and shar
 Free Reflector mode is mandatory for the current beta:
 
     ORACLE_MODE=free
+
+This resolver reads both live free Reflector testnet contracts. The CEX feed covers supported crypto assets. The fiat feed covers supported FX assets and XAU. The contracts expand coverage but belong to one provider family, so the beta does not describe them as independent provider quorum.
 
 Pyth Pro support remains in the keeper for future use. It runs only when all of these are explicitly configured:
 
@@ -95,6 +97,10 @@ Run service syntax checks:
     node --check indexer.mjs
     node --check committee/member.mjs
     node --check committee/submit-multisig.mjs
+
+Verify the live free Stellar oracle contracts and exact asset coverage:
+
+    npm run verify:oracles
 
 The test server uses ALLOW_UNVERIFIED_REGISTRATION=1, DRY_RUN=1, temporary queue files, and temporary committee shares. Those values are not production settings.
 

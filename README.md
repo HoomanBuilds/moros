@@ -173,12 +173,13 @@ The canonical record is [deployments/platform-hardening-testnet.json](deployment
 | Component | Testnet value |
 | --- | --- |
 | Circle USDC SAC | CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA |
-| Free price resolver | CCLZEQIQLPJVFDQCAMFC3A3S6HIRQ2ZIAICC2NH3D3U4ZCCXZI2RU6TQ |
+| Free price resolver | CAIHZHCNKHLCXGWOTH7T2L4S5YDNNGO6Q6MSDQ7HQ3A4IORN4NE6ZF5B |
 | Event resolver | CBOZK2JSSAOPXJWBSB6JZF5KLPMRQ52JCF4PADI7QUHQ3WS6KBKKBXW5 |
-| Reflector oracle | CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63 |
+| Reflector CEX oracle | CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63 |
+| Reflector fiat oracle | CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W |
 | Market WASM | ca646879c241f3abc52cdc1530174e8475ad627d4bfe325da892694ac4880c3f |
 | Shielded pool WASM | ec67aee3f9391ca358e52cfad5ac05c39ea9b09dc4abc575177272f2b79b5ef3 |
-| Price resolver WASM | cd84de12e4dff687151c876bd5a7d95dd27be6240d4b3f5f28e64587a1150ae2 |
+| Price resolver WASM | 2bba2d4a2c88b1d7199adbda7c0964123ecd5a49ca8a43f2d9b3bea83cc2d3c1 |
 | Event resolver WASM | 64956727fbd1561c405f5aac91cd0275f31292e5d110a9f12244a6aa0d5c6f11 |
 
 The existing flagship seed contracts are legacy XLM testnet deployments. New contracts created through the updated app use Circle USDC and protocol version 3.
