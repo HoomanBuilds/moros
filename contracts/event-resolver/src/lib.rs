@@ -7,8 +7,8 @@ use soroban_sdk::{
     symbol_short, token, vec, Address, BytesN, Env, IntoVal, String, Val, Vec,
 };
 
-const TTL_THRESHOLD: u32 = 120_960;
-const TTL_EXTEND_TO: u32 = 6_307_200;
+const TTL_THRESHOLD: u32 = 350_000;
+const TTL_EXTEND_TO: u32 = 500_000;
 
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -202,6 +202,10 @@ impl EventResolver {
         };
         Self::bump(&env);
         Ok(config)
+    }
+
+    pub fn extend_ttl(env: Env) {
+        Self::bump(&env);
     }
 
     pub fn register_market(

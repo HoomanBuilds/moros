@@ -3,7 +3,7 @@
 extern crate std;
 
 use crate::{EventResolver, EventResolverClient, Outcome};
-use lmsr_market::{LmsrMarket, LmsrMarketClient, Outcome as MarketOutcome};
+use lmsr_market::{LmsrMarket, LmsrMarketClient, Outcome as MarketOutcome, Side};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
 use soroban_sdk::xdr::ToXdr;
@@ -83,7 +83,14 @@ fn setup(env: &Env, timestamp: u64) -> Setup {
             0u64,
         ),
     );
-    LmsrMarketClient::new(env, &market).set_resolver(&creator, &resolver);
+    let market_client = LmsrMarketClient::new(env, &market);
+    let trader = Address::generate(env);
+    StellarAssetClient::new(env, &token).mint(&trader, &(1_000_000 * SCALE));
+    env.ledger().with_mut(|ledger| ledger.timestamp = EXPIRY - 1);
+    market_client.buy(&trader, &Side::Yes, &SCALE);
+    market_client.buy(&trader, &Side::No, &SCALE);
+    env.ledger().with_mut(|ledger| ledger.timestamp = timestamp);
+    market_client.set_resolver(&creator, &resolver);
     EventResolverClient::new(env, &resolver).register_market(&market, &creator, &evidence(env, 99));
     StellarAssetClient::new(env, &token).mint(&proposer, &(BOND * 2));
     StellarAssetClient::new(env, &token).mint(&challenger, &(BOND * 2));

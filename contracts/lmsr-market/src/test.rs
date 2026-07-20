@@ -192,20 +192,6 @@ fn batcher_is_one_time_requires_a_pristine_book_and_locks_direct_trading() {
 }
 
 #[test]
-fn legacy_market_committee_path_is_disabled() {
-    let env = Env::default();
-    let (client, _token, _trader, admin) = setup(&env);
-    let member = Address::generate(&env);
-    let funder = Address::generate(&env);
-    assert!(client
-        .try_set_committee(&admin, &vec![&env, member.clone()], &1)
-        .is_err());
-    assert!(client
-        .try_apply_batch_committee(&vec![&env, member], &funder, &S, &S)
-        .is_err());
-}
-
-#[test]
 fn sell_refunds_collateral_debits_shares_and_restores_price() {
     let env = Env::default();
     let (client, token, trader, _admin) = setup(&env);
@@ -234,8 +220,10 @@ fn cannot_sell_more_than_held() {
 #[test]
 fn resolve_sets_the_winning_outcome() {
     let env = Env::default();
-    let (client, _token, _trader, admin) = setup(&env);
+    let (client, _token, trader, admin) = setup(&env);
     assert_eq!(client.outcome(), None);
+    client.buy(&trader, &Side::Yes, &S);
+    client.buy(&trader, &Side::No, &S);
     finalize(&env);
     client.resolve(&admin, &Outcome::Yes);
     assert_eq!(client.outcome(), Some(Outcome::Yes));
@@ -253,9 +241,11 @@ fn resolve_rejects_non_admin() {
 #[test]
 fn resolve_accepts_registered_resolver() {
     let env = Env::default();
-    let (client, _token, _trader, admin) = setup(&env);
+    let (client, _token, trader, admin) = setup(&env);
     let resolver = Address::generate(&env);
     client.set_resolver(&admin, &resolver);
+    client.buy(&trader, &Side::Yes, &S);
+    client.buy(&trader, &Side::No, &S);
     finalize(&env);
     client.resolve(&resolver, &Outcome::No);
     assert_eq!(client.outcome(), Some(Outcome::No));
@@ -284,9 +274,11 @@ fn cannot_resolve_twice() {
 #[test]
 fn lifecycle_status_tracks_open_closed_resolved_and_voided() {
     let env = Env::default();
-    let (resolved, token, _trader, admin) = setup(&env);
+    let (resolved, token, trader, admin) = setup(&env);
     assert_eq!(resolved.status(), MarketStatus::Open);
     fund_subsidy(&env, &resolved, &token, &admin);
+    resolved.buy(&trader, &Side::Yes, &S);
+    resolved.buy(&trader, &Side::No, &S);
     set_time(&env, EXPIRY);
     assert_eq!(resolved.status(), MarketStatus::Closed);
     finalize(&env);
@@ -394,16 +386,20 @@ fn void_refunds_direct_trader_in_unbatched_market() {
 }
 
 #[test]
-fn one_sided_market_settles_normally() {
+fn one_sided_market_is_voided_and_refunded() {
     let env = Env::default();
     let (client, token, trader, admin) = setup(&env);
+    let tok = TokenClient::new(&env, &token);
     fund_subsidy(&env, &client, &token, &admin);
-    client.buy(&trader, &Side::Yes, &(25 * S));
+    let before = tok.balance(&trader);
+    let paid = client.buy(&trader, &Side::Yes, &(25 * S));
     assert_eq!(client.get_state().1, 0);
 
     finalize(&env);
     client.resolve(&admin, &Outcome::Yes);
-    assert!(client.redeem(&trader, &Side::Yes) > 0);
+    assert_eq!(client.outcome(), Some(Outcome::Void));
+    assert_eq!(client.redeem(&trader, &Side::Yes), paid);
+    assert_eq!(tok.balance(&trader), before);
 }
 
 #[test]
@@ -413,6 +409,7 @@ fn redeem_pays_winning_shares_and_burns_them() {
     let tok = TokenClient::new(&env, &token);
     fund_subsidy(&env, &client, &token, &admin);
     client.buy(&trader, &Side::Yes, &(60 * S));
+    client.buy(&trader, &Side::No, &S);
     finalize(&env);
     client.resolve(&admin, &Outcome::Yes);
     let before = tok.balance(&trader);
@@ -432,6 +429,7 @@ fn redeem_losing_side_pays_nothing() {
     let tok = TokenClient::new(&env, &token);
     fund_subsidy(&env, &client, &token, &admin);
     client.buy(&trader, &Side::No, &(60 * S));
+    client.buy(&trader, &Side::Yes, &S);
     finalize(&env);
     client.resolve(&admin, &Outcome::Yes); // NO loses
     let before = tok.balance(&trader);
@@ -460,6 +458,7 @@ fn resolve_rejects_when_pool_cannot_cover_payouts() {
     // Buy 60 YES but DON'T fund the subsidy: the pool holds only the buy proceeds
     // (~34 units) while a YES win owes 60 -> resolution must be rejected as insolvent.
     client.buy(&trader, &Side::Yes, &(60 * S));
+    client.buy(&trader, &Side::No, &S);
     finalize(&env);
     assert!(client.try_resolve(&admin, &Outcome::Yes).is_err());
 }
@@ -516,7 +515,9 @@ fn sell_emits_trade_event() {
 #[test]
 fn resolve_emits_event() {
     let env = Env::default();
-    let (client, _token, _trader, admin) = setup(&env);
+    let (client, _token, trader, admin) = setup(&env);
+    client.buy(&trader, &Side::Yes, &S);
+    client.buy(&trader, &Side::No, &S);
     finalize(&env);
     client.resolve(&admin, &Outcome::Yes);
     assert_eq!(
@@ -527,7 +528,7 @@ fn resolve_emits_event() {
                 client.address.clone(),
                 (symbol_short!("resolved"),).into_val(&env),
                 Outcome::Yes.into_val(&env),
-            )
+            ),
         ]
     );
 }

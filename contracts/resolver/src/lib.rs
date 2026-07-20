@@ -10,8 +10,8 @@ use soroban_sdk::{
 
 const TARGET_DECIMALS: u32 = 14;
 const BPS_SCALE: i128 = 10_000;
-const TTL_THRESHOLD: u32 = 120_960;
-const TTL_EXTEND_TO: u32 = 6_307_200;
+const TTL_THRESHOLD: u32 = 350_000;
+const TTL_EXTEND_TO: u32 = 500_000;
 
 #[contracttype]
 #[derive(Clone)]

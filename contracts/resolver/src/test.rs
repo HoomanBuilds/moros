@@ -3,8 +3,9 @@
 extern crate std;
 
 use crate::{Asset, PriceData, PythFeed, Resolver, ResolverClient, Side};
-use lmsr_market::{LmsrMarket, LmsrMarketClient, Outcome as MarketOutcome};
+use lmsr_market::{LmsrMarket, LmsrMarketClient, Outcome as MarketOutcome, Side as MarketSide};
 use soroban_sdk::testutils::{Address as _, Ledger};
+use soroban_sdk::token::StellarAssetClient;
 use soroban_sdk::{contract, contractimpl, symbol_short, vec, Address, Bytes, Env, Symbol, Vec};
 
 const S: i128 = 1 << 32;
@@ -115,6 +116,15 @@ fn pyth_payload(
     Bytes::from_slice(env, &raw)
 }
 
+fn seed_two_sided_market(env: &Env, market: &LmsrMarketClient<'_>, token: &Address, expiry: u64) {
+    let trader = Address::generate(env);
+    StellarAssetClient::new(env, token).mint(&trader, &(1_000_000 * S));
+    env.ledger().with_mut(|ledger| ledger.timestamp = expiry - 1);
+    market.buy(&trader, &MarketSide::Yes, &S);
+    market.buy(&trader, &MarketSide::No, &S);
+    env.ledger().with_mut(|ledger| ledger.timestamp = expiry);
+}
+
 fn setup<'a>(
     env: &'a Env,
     values: &[(i128, u64, u32)],
@@ -160,7 +170,7 @@ fn setup<'a>(
             LmsrMarket {},
             (
                 creator.clone(),
-                token,
+                token.clone(),
                 100i128 * S,
                 ASSET,
                 THRESHOLD,
@@ -169,6 +179,7 @@ fn setup<'a>(
             ),
         ),
     );
+    seed_two_sided_market(env, &market, &token, expiry);
     market.set_resolver(&creator, &resolver.address);
     assert_eq!(market.resolver(), Some(resolver.address.clone()));
     (resolver, market, oracle_clients)
@@ -303,7 +314,7 @@ fn combines_sep40_and_verified_pyth_price() {
             LmsrMarket {},
             (
                 creator.clone(),
-                token,
+                token.clone(),
                 100i128 * S,
                 ASSET,
                 THRESHOLD,
@@ -312,12 +323,14 @@ fn combines_sep40_and_verified_pyth_price() {
             ),
         ),
     );
+    seed_two_sided_market(&env, &market, &token, expiry);
     market.set_resolver(&creator, &resolver.address);
     let payload = pyth_payload(&env, 1, 10_050_000_000, -8, 10_000_000, expiry);
     assert_eq!(
         resolver.resolve_market(&market.address, &Some(payload)),
         Side::Yes
     );
+    assert_eq!(market.outcome(), Some(MarketOutcome::Yes));
 }
 
 #[test]

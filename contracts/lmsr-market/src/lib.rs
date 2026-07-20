@@ -5,7 +5,7 @@ mod math;
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token,
-    Address, Env, Symbol, Vec,
+    Address, Env, Symbol,
 };
 
 /// Which outcome a trade is on.
@@ -66,8 +66,8 @@ enum DataKey {
 }
 
 const MAX_Q: i128 = 1i128 << 60;
-const TTL_THRESHOLD: u32 = 120_960;
-const TTL_EXTEND_TO: u32 = 518_400;
+const TTL_THRESHOLD: u32 = 350_000;
+const TTL_EXTEND_TO: u32 = 500_000;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -84,7 +84,6 @@ pub enum Error {
     TooEarlyToResolve = 10,
     ResolverLocked = 11,
     ConfigurationLocked = 12,
-    LegacyCommitteeDisabled = 13,
 }
 
 #[contractevent(topics = ["created"], data_format = "vec")]
@@ -437,6 +436,9 @@ impl LmsrMarket {
         }
         Self::ensure_finalizable(&env)?;
         let (qy, qn, _b) = Self::state(&env)?;
+        if qy == 0 || qn == 0 {
+            return Self::void_market(&env);
+        }
         let q_win = match outcome {
             Outcome::Yes => qy,
             Outcome::No => qn,
@@ -484,6 +486,10 @@ impl LmsrMarket {
             return Err(Error::AlreadyResolved);
         }
         Self::ensure_finalizable(&env)?;
+        Self::void_market(&env)
+    }
+
+    fn void_market(env: &Env) -> Result<(), Error> {
         let token_addr: Address = env
             .storage()
             .instance()
@@ -516,14 +522,14 @@ impl LmsrMarket {
                 .instance()
                 .get(&DataKey::Batcher)
                 .ok_or(Error::NotInitialized)?;
-            token::Client::new(&env, &token_addr).transfer(
+            token::Client::new(env, &token_addr).transfer(
                 &env.current_contract_address(),
                 &batcher,
                 &pool_refund,
             );
         }
         if funding > 0 {
-            token::Client::new(&env, &token_addr).transfer(
+            token::Client::new(env, &token_addr).transfer(
                 &env.current_contract_address(),
                 &sponsor,
                 &funding,
@@ -536,8 +542,8 @@ impl LmsrMarket {
             pool_refund,
             sponsor_refund: funding,
         }
-        .publish(&env);
-        Self::bump(&env);
+        .publish(env);
+        Self::bump(env);
         Ok(())
     }
 
@@ -682,25 +688,6 @@ impl LmsrMarket {
             env.storage().persistent().set(&kn, &(hn + dqno));
             Self::bump_shares(env, &kn);
         }
-    }
-
-    pub fn set_committee(
-        _env: Env,
-        _admin: Address,
-        _members: Vec<Address>,
-        _threshold: u32,
-    ) -> Result<(), Error> {
-        Err(Error::LegacyCommitteeDisabled)
-    }
-
-    pub fn apply_batch_committee(
-        _env: Env,
-        _signers: Vec<Address>,
-        _funder: Address,
-        _dqyes: i128,
-        _dqno: i128,
-    ) -> Result<i128, Error> {
-        Err(Error::LegacyCommitteeDisabled)
     }
 
     /// Redeem `trader`'s `side` shares after resolution. Winning shares pay 1
