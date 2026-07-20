@@ -1,8 +1,9 @@
 import http from "http";
-import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "fs";
-import { resolve } from "path";
-import { timingSafeEqual } from "crypto";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, renameSync } from "fs";
+import { resolve, dirname } from "path";
+import { timingSafeEqual, createHash } from "crypto";
 import * as snarkjs from "snarkjs";
+import { rpc, TransactionBuilder, Contract, BASE_FEE, Keypair, Networks, scValToNative } from "@stellar/stellar-sdk";
 import { cfg } from "./config.mjs";
 import { relay } from "./relayer.mjs";
 import { addCiphers } from "./committee/jubjub.mjs";
@@ -22,8 +23,19 @@ const THRESHOLD = Number(process.env.THRESHOLD || 2);
 const MARKET = process.env.MARKET || "";
 const DRY = process.env.DRY_RUN === "1";
 const RPC_URL = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
-const POOLS_FILE = resolve(cfg.repo, "services", "pools.json");
+const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
+const FUNDER_SK = process.env.FUNDER_SK || "";
+const READER_ADDRESS = process.env.READER_ADDRESS || (FUNDER_SK ? Keypair.fromSecret(FUNDER_SK).publicKey() : "");
+const statePath = (value, fallback) => value ? resolve(cfg.repo, value) : resolve(cfg.repo, "services", fallback);
+const POOLS_FILE = statePath(process.env.POOLS_FILE, "pools.json");
+const QUEUE_FILE = statePath(process.env.QUEUE_FILE, "queue.json");
+const INDEXER_DIR = statePath(process.env.INDEXER_DIR, "indexer-data");
+const POOL_WASM_HASH = (process.env.POOL_WASM_HASH || "").toLowerCase();
+const COLLATERAL_ID = process.env.COLLATERAL_ID || "";
+const ALLOW_UNVERIFIED_REGISTRATION = process.env.ALLOW_UNVERIFIED_REGISTRATION === "1";
+const MAX_POOLS = Number(process.env.MAX_POOLS || 1000);
 const S = 1n << 32n;
+if (BATCH_N !== 4) throw new Error("BATCH_N must be 4 for protocol v3 privacy batches");
 if (!TOKEN) console.warn("[server] SERVICE_TOKEN unset - mutating endpoints are OPEN (dev only)");
 if (MEMBERS.length === 0) {
   console.error("[server] MEMBERS unset - need committee member URLs");
@@ -42,20 +54,34 @@ const memberAddrs = {};
 
 const pools = new Map();
 
-function newPool(marketId, poolId) {
-  return { marketId, poolId, indexer: createIndexer({ rpcUrl: RPC_URL, poolId }), pending: [], seen: new Set() };
+function newPool(marketId, poolId, protocolVersion = 2) {
+  return {
+    marketId,
+    poolId,
+    protocolVersion,
+    indexer: createIndexer({ rpcUrl: RPC_URL, poolId, stateFile: resolve(INDEXER_DIR, `${poolId}.json`) }),
+    pending: [],
+    seen: new Set(),
+  };
 }
 
-function registerPool(marketId, poolId) {
-  if (pools.has(poolId)) return pools.get(poolId);
-  const p = newPool(marketId, poolId);
+function registerPool(marketId, poolId, protocolVersion = 2) {
+  if (pools.has(poolId)) {
+    const existing = pools.get(poolId);
+    if (protocolVersion === 3) existing.protocolVersion = 3;
+    return existing;
+  }
+  const p = newPool(marketId, poolId, protocolVersion);
   pools.set(poolId, p);
   return p;
 }
 
 function savePools() {
-  const list = [...pools.values()].map((p) => ({ marketId: p.marketId, poolId: p.poolId }));
-  try { writeFileSync(POOLS_FILE, JSON.stringify(list, null, 2)); } catch {}
+  const list = [...pools.values()].map((p) => ({ marketId: p.marketId, poolId: p.poolId, protocolVersion: p.protocolVersion }));
+  try {
+    mkdirSync(dirname(POOLS_FILE), { recursive: true });
+    writeFileSync(POOLS_FILE, JSON.stringify(list, null, 2));
+  } catch {}
 }
 
 function loadPools() {
@@ -63,10 +89,49 @@ function loadPools() {
   if (existsSync(POOLS_FILE)) {
     try {
       for (const p of JSON.parse(readFileSync(POOLS_FILE, "utf8"))) {
-        if (CID.test(p.marketId || "") && CID.test(p.poolId || "")) registerPool(p.marketId, p.poolId);
+        if (CID.test(p.marketId || "") && CID.test(p.poolId || "")) registerPool(p.marketId, p.poolId, p.protocolVersion === 3 ? 3 : 2);
       }
     } catch {}
   }
+}
+
+function pendingOrder(proof, publicSignals) {
+  return {
+    commitment: publicSignals[0],
+    nullifierHash: publicSignals[1],
+    cyes: { c1: ptOf(publicSignals, 2), c2: ptOf(publicSignals, 4) },
+    cno: { c1: ptOf(publicSignals, 6), c2: ptOf(publicSignals, 8) },
+    proof,
+    publicSignals,
+  };
+}
+
+function saveQueues() {
+  const state = [...pools.values()].map((pool) => ({
+    poolId: pool.poolId,
+    seen: [...pool.seen],
+    pending: pool.pending.map((order) => ({ proof: order.proof, publicSignals: order.publicSignals })),
+  }));
+  try {
+    mkdirSync(dirname(QUEUE_FILE), { recursive: true });
+    const tmp = `${QUEUE_FILE}.tmp`;
+    writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
+    renameSync(tmp, QUEUE_FILE);
+  } catch {}
+}
+
+function loadQueues() {
+  if (!existsSync(QUEUE_FILE)) return;
+  try {
+    for (const state of JSON.parse(readFileSync(QUEUE_FILE, "utf8"))) {
+      const pool = pools.get(state.poolId);
+      if (!pool || !Array.isArray(state.pending) || !Array.isArray(state.seen)) continue;
+      pool.seen = new Set(state.seen.filter((value) => typeof value === "string" && DEC.test(value)));
+      pool.pending = state.pending
+        .filter((order) => order?.proof && Array.isArray(order.publicSignals) && order.publicSignals.length === 13)
+        .map((order) => pendingOrder(order.proof, order.publicSignals));
+    }
+  } catch {}
 }
 
 async function bootstrap() {
@@ -101,14 +166,91 @@ function authed(req) {
 const ptOf = (pub, at) => [BigInt(pub[at]), BigInt(pub[at + 1])];
 const cipherJson = (c) => ({ c1: [c.c1[0].toString(), c.c1[1].toString()], c2: [c.c2[0].toString(), c.c2[1].toString()] });
 
+async function readContract(contractId, method) {
+  if (!READER_ADDRESS) throw new Error("READER_ADDRESS or FUNDER_SK is required for pool registration");
+  const server = new rpc.Server(RPC_URL);
+  const account = await server.getAccount(READER_ADDRESS);
+  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: NETWORK_PASSPHRASE })
+    .addOperation(new Contract(contractId).call(method))
+    .setTimeout(30)
+    .build();
+  const sim = await server.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(sim)) throw new Error(`${method} failed: ${sim.error}`);
+  return scValToNative(sim.result.retval);
+}
+
+async function verifyPoolRegistration(marketId, poolId, protocolVersion) {
+  if (ALLOW_UNVERIFIED_REGISTRATION) return;
+  if (protocolVersion !== 3) throw new Error("public registration only supports protocol v3 pools");
+  const [version, linkedMarket, poolCollateral, security, batcher, marketCollateral] = await Promise.all([
+    readContract(poolId, "protocol_version"),
+    readContract(poolId, "market"),
+    readContract(poolId, "collateral"),
+    readContract(poolId, "security_config"),
+    readContract(marketId, "batcher"),
+    readContract(marketId, "collateral"),
+  ]);
+  if (Number(version) !== 3 || linkedMarket !== marketId || batcher !== poolId) {
+    throw new Error("market and pool are not a linked protocol v3 deployment");
+  }
+  if (poolCollateral !== marketCollateral || (COLLATERAL_ID && poolCollateral !== COLLATERAL_ID)) {
+    throw new Error("market collateral does not match the configured asset");
+  }
+  const [committee, threshold, redeemConfigured] = security;
+  const expectedMembers = Object.keys(memberAddrs).sort();
+  const configuredMembers = [...committee].sort();
+  if (!redeemConfigured || Number(threshold) !== THRESHOLD || JSON.stringify(configuredMembers) !== JSON.stringify(expectedMembers)) {
+    throw new Error("pool security configuration does not match this committee");
+  }
+  if (POOL_WASM_HASH) {
+    const wasm = await new rpc.Server(RPC_URL).getContractWasmByContractId(poolId);
+    const actualHash = createHash("sha256").update(wasm).digest("hex");
+    if (actualHash !== POOL_WASM_HASH) throw new Error("pool WASM hash is not approved");
+  }
+}
+
 const batching = new Set();
+async function marketWindow(pool) {
+  if (!FUNDER_SK || !pool.marketId) throw new Error("market reader is not configured");
+  const server = new rpc.Server(RPC_URL);
+  const source = Keypair.fromSecret(FUNDER_SK);
+  const account = await server.getAccount(source.publicKey());
+  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: NETWORK_PASSPHRASE })
+    .addOperation(new Contract(pool.marketId).call("market_info"))
+    .setTimeout(30)
+    .build();
+  const sim = await server.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(sim)) throw new Error(`market_info failed: ${sim.error}`);
+  const info = scValToNative(sim.result.retval);
+  return { expiry: Number(info.expiry), finalizeAfter: Number(info.finalize_after ?? info.expiry) };
+}
+
 async function batchPool(pool) {
   if (batching.has(pool.poolId)) return { skipped: "in progress" };
   if (!dkg) return { skipped: "committee not ready" };
-  if (pool.pending.length < BATCH_N) return { skipped: `need ${BATCH_N}, have ${pool.pending.length}` };
+  if (pool.pending.length === 0) return { skipped: "no pending orders" };
+  let batchSize = Math.min(BATCH_N, pool.pending.length);
+  if (pool.protocolVersion === 3) {
+    let window;
+    try {
+      window = await marketWindow(pool);
+    } catch (e) {
+      return { skipped: String(e.message || e) };
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (now >= window.finalizeAfter) return { skipped: "final batch deadline passed; pending orders are refundable" };
+    if (now < window.expiry && batchSize < BATCH_N) {
+      return { skipped: `need ${BATCH_N}, have ${pool.pending.length}` };
+    }
+    if (now >= window.expiry && batchSize < 2) {
+      return { skipped: "a private final batch needs at least 2 orders; the pending order becomes refundable after the deadline" };
+    }
+  } else if (batchSize < BATCH_N) {
+    return { skipped: `need ${BATCH_N}, have ${pool.pending.length}` };
+  }
   batching.add(pool.poolId);
   try {
-    const window = pool.pending.slice(0, BATCH_N);
+    const window = pool.pending.slice(0, batchSize);
     const netYes = addCiphers(window.map((o) => o.cyes));
     const netNo = addCiphers(window.map((o) => o.cno));
     const quorum = Object.fromEntries(Object.entries(members).slice(0, THRESHOLD));
@@ -117,8 +259,9 @@ async function batchPool(pool) {
     if (yes.net === null || no.net === null) throw new Error("net decryption exceeded bound");
     console.log(`[server] pool ${pool.poolId} net: dqyes=${yes.net} dqno=${no.net}`);
 
-    if (DRY || !pool.marketId || !process.env.FUNDER_SK) {
-      pool.pending = pool.pending.slice(BATCH_N);
+    if (DRY || !pool.marketId || !FUNDER_SK) {
+      pool.pending = pool.pending.slice(batchSize);
+      saveQueues();
       return { dryRun: true, dqyes: yes.net.toString(), dqno: no.net.toString() };
     }
     const attestPayload = {
@@ -128,15 +271,21 @@ async function batchPool(pool) {
       partialsNo: no.partials,
       dqyes: yes.net.toString(),
       dqno: no.net.toString(),
+      orders: window.map((order) => ({ proof: order.proof, publicSignals: order.publicSignals })),
     };
     const nullHashes = window.map((o) => BigInt(o.nullifierHash).toString(16).padStart(64, "0"));
+    const commitments = window.map((o) => BigInt(o.commitment).toString(16).padStart(64, "0"));
+    attestPayload.nullHashes = nullHashes;
+    attestPayload.commitments = commitments;
     const out = await submitPoolBatch({
       pool: pool.poolId,
       dqyesFp: (yes.net * S).toString(),
       dqnoFp: (no.net * S).toString(),
       nullHashes,
+      commitments,
+      protocolVersion: pool.protocolVersion,
       signerAddrs: Object.keys(memberAddrs).slice(0, THRESHOLD),
-      sourceSk: process.env.FUNDER_SK,
+      sourceSk: FUNDER_SK,
       attest: async ({ address, entryXdr, validUntilLedger }) => {
         const url = memberAddrs[address];
         if (!url) throw new Error(`no member service for signer ${address}`);
@@ -144,9 +293,10 @@ async function batchPool(pool) {
         return r.signedEntryXdr;
       },
     });
-    pool.pending = pool.pending.slice(BATCH_N);
+    pool.pending = pool.pending.slice(batchSize);
+    saveQueues();
     console.log(`[server] pool ${pool.poolId} batch on-chain: tx ${out.hash}`);
-    return { batched: BATCH_N, tx: out.hash, net: out.net.toString() };
+    return { batched: batchSize, tx: out.hash, net: out.net.toString() };
   } catch (e) {
     return { error: String(e.message || e) };
   } finally {
@@ -206,7 +356,7 @@ const server = http.createServer(async (req, res) => {
       return send(200, {
         committee: { members: MEMBERS.length, threshold: THRESHOLD, ready: !!dkg },
         batchN: BATCH_N, windowMs: WINDOW_MS,
-        pools: [...pools.values()].map((p) => ({ market: p.marketId, pool: p.poolId, pending: p.pending.length })),
+        pools: [...pools.values()].map((p) => ({ market: p.marketId, pool: p.poolId, protocolVersion: p.protocolVersion, pending: p.pending.length })),
       });
     }
     if (req.method === "GET" && req.url === "/pk") {
@@ -223,13 +373,16 @@ const server = http.createServer(async (req, res) => {
       return send(404, { error: "commitment not indexed yet" });
     }
     if (req.method !== "POST") return send(404, { error: "not found" });
-    if (!authed(req)) return send(401, { error: "unauthorized" });
 
     if (req.url === "/register-pool") {
       const o = await readBody(req);
       if (!CID.test(o.marketId || "") || !CID.test(o.poolId || "")) return send(400, { error: "need valid marketId and poolId" });
-      const p = registerPool(o.marketId, o.poolId);
+      const protocolVersion = o.protocolVersion === 3 ? 3 : 2;
+      if (!pools.has(o.poolId) && pools.size >= MAX_POOLS) return send(429, { error: "pool registry full" });
+      await verifyPoolRegistration(o.marketId, o.poolId, protocolVersion);
+      const p = registerPool(o.marketId, o.poolId, protocolVersion);
       savePools();
+      saveQueues();
       await p.indexer.poll().catch(() => {});
       return send(200, { registered: true, pool: o.poolId, market: o.marketId, pools: pools.size });
     }
@@ -255,15 +408,12 @@ const server = http.createServer(async (req, res) => {
       if (!ok) return send(400, { error: "encryption-validity proof rejected" });
 
       pool.seen.add(nullifierHash);
-      pool.pending.push({
-        commitment: o.publicSignals[0],
-        nullifierHash,
-        cyes: { c1: ptOf(o.publicSignals, 2), c2: ptOf(o.publicSignals, 4) },
-        cno: { c1: ptOf(o.publicSignals, 6), c2: ptOf(o.publicSignals, 8) },
-      });
+      pool.pending.push(pendingOrder(o.proof, o.publicSignals));
+      saveQueues();
       return send(200, { queued: true, pending: pool.pending.length, note: "server holds ciphertexts only" });
     }
     if (req.url === "/batch") {
+      if (!authed(req)) return send(401, { error: "unauthorized" });
       const o = await readBody(req);
       if (o.poolId) {
         const pool = pools.get(o.poolId);
@@ -275,16 +425,17 @@ const server = http.createServer(async (req, res) => {
     if (req.url === "/redeem") {
       const o = await readBody(req);
       if (!o.proof || !o.public || typeof o.recipient !== "string") return send(400, { error: "need proof, public, recipient" });
-      const poolId = o.poolId && pools.has(o.poolId) ? o.poolId : cfg.poolId;
-      const pf = resolve(cfg.work, "redeem_proof.json");
-      const pu = resolve(cfg.work, "redeem_public.json");
+      if (o.poolId && !pools.has(o.poolId)) return send(404, { error: "pool not registered" });
+      const poolId = o.poolId || cfg.poolId;
+      const redeemDir = mkdtempSync(resolve(cfg.work, "redeem-"));
+      const pf = resolve(redeemDir, "proof.json");
+      const pu = resolve(redeemDir, "public.json");
       try {
         writeFileSync(pf, JSON.stringify(o.proof));
         writeFileSync(pu, JSON.stringify(o.public));
-        return send(200, relay(pf, pu, o.recipient, { poolId }));
+        return send(200, relay(pf, pu, o.recipient, { poolId, protocolVersion: o.protocolVersion === 3 ? 3 : 2 }));
       } finally {
-        rmSync(pf, { force: true });
-        rmSync(pu, { force: true });
+        rmSync(redeemDir, { recursive: true, force: true });
       }
     }
     return send(404, { error: "not found" });
@@ -294,6 +445,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 loadPools();
+loadQueues();
 for (const pool of pools.values()) await pool.indexer.poll().catch(() => {});
 await bootstrap();
 server.listen(PORT, () =>

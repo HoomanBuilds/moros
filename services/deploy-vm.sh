@@ -7,17 +7,12 @@ fork="$repo/inspiration/zk/soroban-privacy-pools"
 bundle="$repo/deploy-bundle.tar.gz"
 
 ARTIFACTS=(
-  "contracts/shielded-pool/circuits/build/batch_js/batch.wasm"
-  "contracts/shielded-pool/circuits/build/encrypt_order_js/encrypt_order.wasm"
-  "contracts/shielded-pool/circuits/build/encrypt_order_js/generate_witness.js"
-  "contracts/shielded-pool/circuits/build/encrypt_order_js/witness_calculator.js"
-  "contracts/shielded-pool/circuits/build/encrypt_order_final.zkey"
   "contracts/shielded-pool/circuits/build/encrypt_order_vk.json"
-  "contracts/shielded-pool/circuits/build/order_redeem_js/order_redeem.wasm"
-  "contracts/shielded-pool/circuits/build/order_redeem_js/generate_witness.js"
-  "contracts/shielded-pool/circuits/build/order_redeem_js/witness_calculator.js"
-  "contracts/shielded-pool/circuits/output/batch_final.zkey"
-  "contracts/shielded-pool/circuits/output/order_redeem_final.zkey"
+)
+
+BINS=(
+  "inspiration/zk/soroban-privacy-pools/target/release/stellar-circom2soroban"
+  "inspiration/zk/soroban-privacy-pools/target/release/tree_proof"
 )
 
 MEMBER_PORTS=(9711 9712 9713)
@@ -26,11 +21,10 @@ cmd="${1:-provision}"
 
 case "$cmd" in
 package)
-  echo "[package] bundling proving artifacts + rust bins (git-ignored, must match deployed VKs)"
+  echo "[package] bundling the order verification key and native helper binaries"
   ( cd "$repo" && tar czf "$bundle" \
       "${ARTIFACTS[@]}" \
-      inspiration/zk/soroban-privacy-pools/target/release/batch \
-      inspiration/zk/soroban-privacy-pools/target/release/stellar-circom2soroban 2>/dev/null )
+      "${BINS[@]}" 2>/dev/null )
   echo "[package] wrote $bundle - scp to the VM repo root, then: tar xzf deploy-bundle.tar.gz"
   ;;
 
@@ -40,15 +34,18 @@ provision)
   ( cd "$repo/circuits" && npm install --no-audit --no-fund )
   ( cd "$here" && npm install --no-audit --no-fund )
 
-  if [ ! -x "$fork/target/release/batch" ] || [ ! -x "$fork/target/release/stellar-circom2soroban" ]; then
+  if [ ! -x "$fork/target/release/tree_proof" ] || [ ! -x "$fork/target/release/stellar-circom2soroban" ]; then
     command -v cargo >/dev/null || { echo "install Rust (rustup) or unpack the bundle for prebuilt bins"; exit 1; }
     echo "[provision] building rust bins"
-    ( cd "$fork" && cargo build --release --bin batch --bin stellar-circom2soroban )
+    ( cd "$fork" && cargo build --release --bin tree_proof --bin stellar-circom2soroban )
   fi
 
   missing=0
   for a in "${ARTIFACTS[@]}"; do
     [ -f "$repo/$a" ] || { echo "[provision] MISSING: $a"; missing=1; }
+  done
+  for b in "${BINS[@]}"; do
+    [ -x "$repo/$b" ] || { echo "[provision] MISSING: $b"; missing=1; }
   done
   [ "$missing" = 1 ] && { echo "[provision] run './deploy-vm.sh package' on the build machine and unpack the bundle here"; exit 1; }
 

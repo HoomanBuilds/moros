@@ -5,7 +5,10 @@ import {
 } from "@stellar/stellar-sdk";
 import { fileURLToPath } from "url";
 
-export async function submitPoolBatch({ pool, dqyesFp, dqnoFp, nullHashes, signerAddrs, sourceSk, attest, rpcUrl }) {
+export async function submitPoolBatch({ pool, dqyesFp, dqnoFp, nullHashes, commitments, protocolVersion = 2, signerAddrs, sourceSk, attest, rpcUrl }) {
+  if (protocolVersion === 3 && (!Array.isArray(commitments) || commitments.length !== nullHashes.length || commitments.length < 1 || commitments.length > 4)) {
+    throw new Error("batch commitments must match 1 to 4 nullifier hashes");
+  }
   const server = new rpc.Server(rpcUrl ?? process.env.RPC_URL ?? "https://soroban-testnet.stellar.org");
   const passphrase = Networks.TESTNET;
   const sourceKp = Keypair.fromSecret(sourceSk);
@@ -17,6 +20,9 @@ export async function submitPoolBatch({ pool, dqyesFp, dqnoFp, nullHashes, signe
     nativeToScVal(BigInt(dqnoFp), { type: "i128" }),
     xdr.ScVal.scvVec(nullHashes.map((h) => xdr.ScVal.scvBytes(Buffer.from(h, "hex")))),
   ];
+  if (protocolVersion === 3) {
+    args.push(xdr.ScVal.scvVec(commitments.map((h) => xdr.ScVal.scvBytes(Buffer.from(h, "hex")))));
+  }
 
   const account = await server.getAccount(sourceKp.publicKey());
   const tx = new TransactionBuilder(account, { fee: (Number(BASE_FEE) * 10000).toString(), networkPassphrase: passphrase })

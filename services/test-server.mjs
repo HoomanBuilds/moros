@@ -12,6 +12,9 @@ const SNARKJS = resolve(REPO, "circuits/node_modules/.bin/snarkjs");
 const STOKEN = "test-service-token";
 const MTOKEN = "test-member-token";
 const SPORT = 39730;
+const TEST_MARKET = "CBKR2OYQHNBYUSHQEFEHB4GI6BMZYXP35GPYYCBKFRTZBTR6NV3P3MXS";
+const TEST_POOL = "CDUYUZEZBIWRPXM3ITDQZBANHN3Q6B6KUKCBV7MP6BGLYRQCT6QSV23E";
+const work = mkdtempSync(resolve(tmpdir(), "server-test-"));
 
 function sh(bin, args) {
   const r = spawnSync(bin, args, { encoding: "utf8" });
@@ -26,20 +29,22 @@ const procs = memberUrls.map((url, k) =>
     stdio: "ignore",
   })
 );
-procs.push(
-  spawn("node", [resolve(HERE, "server.mjs")], {
+const serverProc = spawn("node", [resolve(HERE, "server.mjs")], {
     env: {
       ...process.env, PORT: String(SPORT), SERVICE_TOKEN: STOKEN, MEMBER_TOKEN: MTOKEN,
       MEMBERS: memberUrls.join(","), THRESHOLD: "2", BATCH_N: "4", WINDOW_MS: "600000",
-      DRY_RUN: "1",
+      DRY_RUN: "1", ALLOW_UNVERIFIED_REGISTRATION: "1",
+      POOL_ID: "", MARKET: "", FUNDER_SK: "",
+      POOLS_FILE: resolve(work, "pools.json"), QUEUE_FILE: resolve(work, "queue.json"),
+      INDEXER_DIR: resolve(work, "indexer"),
     },
     stdio: ["ignore", "inherit", "inherit"],
-  })
-);
+  });
+procs.push(serverProc);
 
 const base = `http://127.0.0.1:${SPORT}`;
-const hdr = { "content-type": "application/json", authorization: `Bearer ${STOKEN}` };
-const work = mkdtempSync(resolve(tmpdir(), "server-test-"));
+const publicHdr = { "content-type": "application/json", connection: "close" };
+const hdr = { ...publicHdr, authorization: `Bearer ${STOKEN}` };
 
 try {
   let pk = null;
@@ -52,6 +57,22 @@ try {
   }
   if (!pk) throw new Error("server never became ready");
   console.log("server up; epoch committee pk fetched from /pk");
+
+  const registered = await fetch(`${base}/register-pool`, {
+    method: "POST",
+    headers: publicHdr,
+    body: JSON.stringify({ marketId: TEST_MARKET, poolId: TEST_POOL, protocolVersion: 2 }),
+  });
+  if (!registered.ok) throw new Error(`pool registration failed: ${await registered.text()}`);
+  console.log("public pool registration accepted in explicit test mode");
+
+  const wrongPoolRedeem = await fetch(`${base}/redeem`, {
+    method: "POST",
+    headers: publicHdr,
+    body: JSON.stringify({ proof: {}, public: {}, recipient: TEST_MARKET, poolId: TEST_MARKET, protocolVersion: 3 }),
+  });
+  if (wrongPoolRedeem.status !== 404) throw new Error("redemption silently fell back from an unregistered pool");
+  console.log("unregistered redemption pool rejected without fallback");
 
   const orders = [
     { amount: "10", side: "1", secret: "100", nullifier: "101" },
@@ -81,27 +102,27 @@ try {
   }
   console.log("4 order proofs generated client-side (membership + ciphertext; secrets never sent)");
 
-  const un = await fetch(`${base}/order`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(proofs[0]) });
-  if (un.status !== 401) throw new Error("unauthenticated order accepted");
-  console.log("unauthenticated /order rejected (401)");
-
   const tampered = structuredClone(proofs[0]);
   tampered.publicSignals[2] = "12345";
-  const bad = await fetch(`${base}/order`, { method: "POST", headers: hdr, body: JSON.stringify(tampered) });
+  const bad = await fetch(`${base}/order`, { method: "POST", headers: publicHdr, body: JSON.stringify({ ...tampered, poolId: TEST_POOL }) });
   if (bad.status !== 400) throw new Error(`tampered proof accepted: ${bad.status}`);
   console.log("tampered ciphertext rejected (proof verification failed)");
 
   for (const [k, p] of proofs.entries()) {
-    const r = await fetch(`${base}/order`, { method: "POST", headers: hdr, body: JSON.stringify(p) });
+    const r = await fetch(`${base}/order`, { method: "POST", headers: publicHdr, body: JSON.stringify({ ...p, poolId: TEST_POOL }) });
     if (r.status !== 200) throw new Error(`order ${k} rejected: ${await r.text()}`);
   }
   console.log("4 valid encrypted orders queued");
 
-  const dup = await fetch(`${base}/order`, { method: "POST", headers: hdr, body: JSON.stringify(proofs[0]) });
+  const dup = await fetch(`${base}/order`, { method: "POST", headers: publicHdr, body: JSON.stringify({ ...proofs[0], poolId: TEST_POOL }) });
   if (dup.status !== 409) throw new Error(`duplicate nullifier accepted: ${dup.status}`);
   console.log("duplicate nullifier rejected (409)");
 
-  const w = await (await fetch(`${base}/batch`, { method: "POST", headers: hdr })).json();
+  const unauthBatch = await fetch(`${base}/batch`, { method: "POST", headers: publicHdr, body: JSON.stringify({ poolId: TEST_POOL }) });
+  if (unauthBatch.status !== 401) throw new Error("unauthenticated force batch accepted");
+  console.log("unauthenticated force batch rejected (401)");
+
+  const w = await (await fetch(`${base}/batch`, { method: "POST", headers: hdr, body: JSON.stringify({ poolId: TEST_POOL }) })).json();
   console.log("window result:", JSON.stringify(w));
   if (!w.dryRun || w.dqyes !== "30" || w.dqno !== "20") throw new Error("window net mismatch");
   console.log("PASS: server verifies proofs, holds only ciphertexts, committee decrypts only the net (30, 20).");
