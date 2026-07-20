@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
+pyth-lazer-stellar-sdk = "0.3.0"
 
 # lmsr-market is a dev-dependency only: it is a contract crate (cdylib) and linking
 # it into the resolver's own wasm would duplicate exported symbols (e.g. `init`).

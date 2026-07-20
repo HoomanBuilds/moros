@@ -1,30 +1,53 @@
 #![no_std]
-//! Reflector-driven Resolver for LMSR markets.
+//! Quorum-based price resolver for LMSR markets.
 
+use pyth_lazer_stellar_sdk::PythLazerClient;
 use soroban_sdk::{
-    contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, Address,
-    Env, Symbol,
+    auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
+    contract, contractclient, contracterror, contractevent, contractimpl, contracttype,
+    symbol_short, vec, Address, Bytes, Env, IntoVal, Symbol, Vec,
 };
 
-const ORACLE: Symbol = symbol_short!("ORACLE");
+const TARGET_DECIMALS: u32 = 14;
+const BPS_SCALE: i128 = 10_000;
 
 #[contracttype]
 #[derive(Clone)]
+enum DataKey {
+    Oracles,
+    Quorum,
+    MaxAge,
+    MaxDeviation,
+    MaxConfidence,
+    PythVerifier,
+    PythFeeds,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Asset {
     Stellar(Address),
     Other(Symbol),
 }
 
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PriceData {
     pub price: i128,
     pub timestamp: u64,
 }
 
-#[contractclient(name = "ReflectorClient")]
-pub trait Reflector {
-    fn lastprice(env: Env, asset: Asset) -> Option<PriceData>;
+#[contractclient(name = "PriceFeedClient")]
+pub trait PriceFeed {
+    fn decimals(env: Env) -> u32;
+    fn price(env: Env, asset: Asset, timestamp: u64) -> Option<PriceData>;
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PythFeed {
+    pub asset: Symbol,
+    pub feed_id: u32,
 }
 
 #[contracttype]
@@ -35,17 +58,36 @@ pub enum Side {
 }
 
 #[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MarketOutcome {
+    Yes,
+    No,
+    Void,
+}
+
+#[contracttype]
 #[derive(Clone)]
 pub struct MarketInfo {
     pub asset: Symbol,
     pub threshold: i128,
     pub expiry: u64,
+    pub finalize_after: u64,
 }
 
 #[contractclient(name = "MarketClient")]
 pub trait Market {
     fn market_info(env: Env) -> MarketInfo;
-    fn resolve(env: Env, admin: Address, outcome: Side);
+    fn resolver(env: Env) -> Option<Address>;
+    fn resolve(env: Env, admin: Address, outcome: MarketOutcome);
+}
+
+#[contractevent(topics = ["resolved"], data_format = "vec")]
+pub struct Resolved {
+    #[topic]
+    pub market: Address,
+    pub outcome: Side,
+    pub median_price: i128,
+    pub agreeing_sources: u32,
 }
 
 #[contracterror]
@@ -53,8 +95,11 @@ pub trait Market {
 #[repr(u32)]
 pub enum Error {
     NotYetExpired = 1,
-    NoPrice = 2,
+    NoQuorum = 2,
     NotInitialized = 3,
+    InvalidConfig = 4,
+    OracleDisagreement = 5,
+    InvalidPythPayload = 6,
 }
 
 #[contract]
@@ -62,37 +107,251 @@ pub struct Resolver;
 
 #[contractimpl]
 impl Resolver {
-    /// Set the trusted Reflector oracle at deploy time (constructor — runs
-    /// atomically during deployment, so it cannot be front-run). One Resolver per oracle.
-    pub fn __constructor(env: Env, oracle: Address) {
-        env.storage().instance().set(&ORACLE, &oracle);
+    pub fn __constructor(
+        env: Env,
+        oracles: Vec<Address>,
+        quorum: u32,
+        max_age: u64,
+        max_deviation_bps: u32,
+        max_confidence_bps: u32,
+        pyth_verifier: Option<Address>,
+        pyth_feeds: Vec<PythFeed>,
+    ) {
+        let available = oracles.len() + if pyth_verifier.is_some() { 1 } else { 0 };
+        if quorum < 2
+            || available < quorum
+            || max_age == 0
+            || max_deviation_bps == 0
+            || max_deviation_bps > 10_000
+            || max_confidence_bps > 10_000
+        {
+            panic!("invalid resolver configuration");
+        }
+        let storage = env.storage().instance();
+        storage.set(&DataKey::Oracles, &oracles);
+        storage.set(&DataKey::Quorum, &quorum);
+        storage.set(&DataKey::MaxAge, &max_age);
+        storage.set(&DataKey::MaxDeviation, &max_deviation_bps);
+        storage.set(&DataKey::MaxConfidence, &max_confidence_bps);
+        storage.set(&DataKey::PythVerifier, &pyth_verifier);
+        storage.set(&DataKey::PythFeeds, &pyth_feeds);
     }
 
-    /// Resolve `market` using this Resolver's TRUSTED oracle (not caller-supplied).
-    /// Reads the market's asset/threshold/expiry, requires the market to be at/after
-    /// expiry, reads the Reflector price, and sets the outcome (YES iff price >=
-    /// threshold). Permissionless — anyone may trigger it; the outcome is oracle-set.
-    pub fn resolve_market(env: Env, market: Address) -> Result<Side, Error> {
-        let oracle: Address = env
-            .storage()
-            .instance()
-            .get(&ORACLE)
+    pub fn resolve_market(
+        env: Env,
+        market: Address,
+        pyth_payload: Option<Bytes>,
+    ) -> Result<Side, Error> {
+        let storage = env.storage().instance();
+        let oracles: Vec<Address> = storage
+            .get(&DataKey::Oracles)
             .ok_or(Error::NotInitialized)?;
-        let m = MarketClient::new(&env, &market);
-        let info = m.market_info();
-        if env.ledger().timestamp() < info.expiry {
+        let quorum: u32 = storage.get(&DataKey::Quorum).ok_or(Error::NotInitialized)?;
+        let max_age: u64 = storage.get(&DataKey::MaxAge).ok_or(Error::NotInitialized)?;
+        let max_deviation_bps: u32 = storage
+            .get(&DataKey::MaxDeviation)
+            .ok_or(Error::NotInitialized)?;
+
+        let market_client = MarketClient::new(&env, &market);
+        let info = market_client.market_info();
+        if market_client.resolver() != Some(env.current_contract_address()) {
+            return Err(Error::InvalidConfig);
+        }
+        if env.ledger().timestamp() < info.finalize_after {
             return Err(Error::NotYetExpired);
         }
-        let price = ReflectorClient::new(&env, &oracle)
-            .lastprice(&Asset::Other(info.asset))
-            .ok_or(Error::NoPrice)?;
-        let outcome = if price.price >= info.threshold {
+
+        let mut prices = Vec::new(&env);
+        for oracle in oracles.iter() {
+            let client = PriceFeedClient::new(&env, &oracle);
+            let decimals = match client.try_decimals() {
+                Ok(Ok(value)) => value,
+                _ => continue,
+            };
+            let data = match client.try_price(&Asset::Other(info.asset.clone()), &info.expiry) {
+                Ok(Ok(Some(value))) => value,
+                _ => continue,
+            };
+            if !Self::fresh_at_expiry(data.timestamp, info.expiry, max_age) {
+                continue;
+            }
+            if let Some(normalized) = Self::normalize_decimals(data.price, decimals) {
+                prices.push_back(normalized);
+            }
+        }
+
+        if let Some(payload) = pyth_payload {
+            if let Some(price) = Self::read_pyth(&env, &info, &payload, max_age)? {
+                prices.push_back(price);
+            }
+        }
+
+        if prices.len() < quorum {
+            return Err(Error::NoQuorum);
+        }
+        Self::sort(&mut prices);
+        let median = prices.get(prices.len() / 2).ok_or(Error::NoQuorum)?;
+        let agreeing_sources = Self::count_agreeing(&prices, median, max_deviation_bps);
+        if agreeing_sources < quorum {
+            return Err(Error::OracleDisagreement);
+        }
+
+        let outcome = if median >= info.threshold {
             Side::Yes
         } else {
             Side::No
         };
-        m.resolve(&env.current_contract_address(), &outcome);
+        let market_outcome = match outcome {
+            Side::Yes => MarketOutcome::Yes,
+            Side::No => MarketOutcome::No,
+        };
+        let current = env.current_contract_address();
+        env.authorize_as_current_contract(vec![
+            &env,
+            InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context: ContractContext {
+                    contract: market_client.address.clone(),
+                    fn_name: symbol_short!("resolve"),
+                    args: (current.clone(), market_outcome).into_val(&env),
+                },
+                sub_invocations: vec![&env],
+            }),
+        ]);
+        market_client.resolve(&current, &market_outcome);
+        Resolved {
+            market,
+            outcome,
+            median_price: median,
+            agreeing_sources,
+        }
+        .publish(&env);
         Ok(outcome)
+    }
+}
+
+impl Resolver {
+    fn read_pyth(
+        env: &Env,
+        info: &MarketInfo,
+        payload: &Bytes,
+        max_age: u64,
+    ) -> Result<Option<i128>, Error> {
+        let storage = env.storage().instance();
+        let verifier: Option<Address> = storage
+            .get(&DataKey::PythVerifier)
+            .ok_or(Error::NotInitialized)?;
+        let verifier = match verifier {
+            Some(value) => value,
+            None => return Ok(None),
+        };
+        let feeds: Vec<PythFeed> = storage
+            .get(&DataKey::PythFeeds)
+            .ok_or(Error::NotInitialized)?;
+        let feed_id = match feeds.iter().find(|feed| feed.asset == info.asset) {
+            Some(feed) => feed.feed_id,
+            None => return Ok(None),
+        };
+        let update = PythLazerClient::new(env, &verifier)
+            .verify_update(payload)
+            .map_err(|_| Error::InvalidPythPayload)?;
+        let feed = match update.feeds.iter().find(|feed| feed.feed_id == feed_id) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
+        let price = match feed.price {
+            Some(value) if value > 0 => value as i128,
+            _ => return Ok(None),
+        };
+        let exponent = match feed.exponent {
+            Some(value) => value as i32,
+            None => return Ok(None),
+        };
+        let timestamp = match feed.feed_update_timestamp {
+            Some(value) => value / 1_000_000,
+            None => return Ok(None),
+        };
+        if !Self::fresh_at_expiry(timestamp, info.expiry, max_age) {
+            return Ok(None);
+        }
+        let confidence = match feed.confidence {
+            Some(value) if value >= 0 => value as i128,
+            _ => return Ok(None),
+        };
+        let max_confidence_bps: u32 = storage
+            .get(&DataKey::MaxConfidence)
+            .ok_or(Error::NotInitialized)?;
+        if confidence.checked_mul(BPS_SCALE).unwrap_or(i128::MAX)
+            > price
+                .checked_mul(max_confidence_bps as i128)
+                .unwrap_or(i128::MAX)
+        {
+            return Ok(None);
+        }
+        Ok(Self::normalize_exponent(price, exponent))
+    }
+
+    fn fresh_at_expiry(timestamp: u64, expiry: u64, max_age: u64) -> bool {
+        timestamp <= expiry && expiry - timestamp <= max_age
+    }
+
+    fn normalize_decimals(price: i128, decimals: u32) -> Option<i128> {
+        if price <= 0 || decimals > 38 {
+            return None;
+        }
+        if decimals == TARGET_DECIMALS {
+            return Some(price);
+        }
+        if decimals < TARGET_DECIMALS {
+            price.checked_mul(10i128.checked_pow(TARGET_DECIMALS - decimals)?)
+        } else {
+            Some(price / 10i128.checked_pow(decimals - TARGET_DECIMALS)?)
+        }
+    }
+
+    fn normalize_exponent(price: i128, exponent: i32) -> Option<i128> {
+        let target_power = TARGET_DECIMALS as i32 + exponent;
+        if target_power >= 0 {
+            price.checked_mul(10i128.checked_pow(target_power as u32)?)
+        } else {
+            Some(price / 10i128.checked_pow((-target_power) as u32)?)
+        }
+    }
+
+    fn sort(values: &mut Vec<i128>) {
+        let len = values.len();
+        let mut i = 0;
+        while i < len {
+            let mut j = i + 1;
+            while j < len {
+                let left = values.get(i).unwrap();
+                let right = values.get(j).unwrap();
+                if right < left {
+                    values.set(i, right);
+                    values.set(j, left);
+                }
+                j += 1;
+            }
+            i += 1;
+        }
+    }
+
+    fn count_agreeing(values: &Vec<i128>, median: i128, max_deviation_bps: u32) -> u32 {
+        let mut count = 0;
+        for value in values.iter() {
+            let difference = if value >= median {
+                value - median
+            } else {
+                median - value
+            };
+            if difference.checked_mul(BPS_SCALE).unwrap_or(i128::MAX)
+                <= median
+                    .checked_mul(max_deviation_bps as i128)
+                    .unwrap_or(i128::MAX)
+            {
+                count += 1;
+            }
+        }
+        count
     }
 }
 

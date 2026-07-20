@@ -1,8 +1,8 @@
 #![cfg(test)]
 extern crate std;
 
-use crate::{math, LmsrMarket, LmsrMarketClient, Side};
-use soroban_sdk::testutils::{Address as _, Events as _};
+use crate::{math, LmsrMarket, LmsrMarketClient, MarketStatus, Outcome, Side};
+use soroban_sdk::testutils::{Address as _, Events as _, Ledger};
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
 use soroban_sdk::{symbol_short, vec, Address, Env, IntoVal, Symbol};
 
@@ -12,23 +12,42 @@ const S: i128 = 1 << 32; // 2^32 fixed-point scale
 const ASSET: Symbol = symbol_short!("XLM");
 const THRESHOLD: i128 = 25_000_000_000_000; // 0.25 with Reflector's 14 decimals
 const EXPIRY: u64 = 2_000_000_000; // unix seconds
+const BATCH_GRACE: u64 = 300;
 
 /// Register a market with a fresh SAC collateral token, and a funded trader.
 /// Returns (market client, collateral token address, trader address, admin address).
 fn setup(env: &Env) -> (LmsrMarketClient<'_>, Address, Address, Address) {
     env.mock_all_auths();
     let admin = Address::generate(env);
-    let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
+    let token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let trader = Address::generate(env);
     StellarAssetClient::new(env, &token).mint(&trader, &(1_000_000 * S));
     let client = LmsrMarketClient::new(
         env,
         &env.register(
             LmsrMarket {},
-            (admin.clone(), token.clone(), 100i128 * S, ASSET, THRESHOLD, EXPIRY),
+            (
+                admin.clone(),
+                token.clone(),
+                100i128 * S,
+                ASSET,
+                THRESHOLD,
+                EXPIRY,
+                BATCH_GRACE,
+            ),
         ),
     );
     (client, token, trader, admin)
+}
+
+fn set_time(env: &Env, timestamp: u64) {
+    env.ledger().with_mut(|ledger| ledger.timestamp = timestamp);
+}
+
+fn finalize(env: &Env) {
+    set_time(env, EXPIRY + BATCH_GRACE);
 }
 
 #[test]
@@ -52,9 +71,14 @@ fn rejects_bad_liquidity_param() {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
+    let token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     // b = 0 -> the constructor panics, so registration fails
-    env.register(LmsrMarket {}, (admin, token, 0i128, ASSET, THRESHOLD, EXPIRY));
+    env.register(
+        LmsrMarket {},
+        (admin, token, 0i128, ASSET, THRESHOLD, EXPIRY, BATCH_GRACE),
+    );
 }
 
 #[test]
@@ -65,6 +89,7 @@ fn init_stores_market_metadata() {
     assert_eq!(info.asset, ASSET);
     assert_eq!(info.threshold, THRESHOLD);
     assert_eq!(info.expiry, EXPIRY);
+    assert_eq!(info.finalize_after, EXPIRY + BATCH_GRACE);
 }
 
 #[test]
@@ -157,12 +182,17 @@ fn apply_batch_committee_moves_q_with_quorum() {
     let m3 = Address::generate(&env);
     let funder = Address::generate(&env);
     StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
+    client.set_batcher(&admin, &funder);
     client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
 
     let quoted = client.quote_batch(&(30 * S), &(20 * S));
     let start = tok.balance(&funder);
-    let net =
-        client.apply_batch_committee(&vec![&env, m1.clone(), m3.clone()], &funder, &(30 * S), &(20 * S));
+    let net = client.apply_batch_committee(
+        &vec![&env, m1.clone(), m3.clone()],
+        &funder,
+        &(30 * S),
+        &(20 * S),
+    );
 
     assert_eq!(net, quoted);
     assert_eq!(client.get_state(), (30 * S, 20 * S, 100 * S));
@@ -181,7 +211,8 @@ fn apply_batch_committee_rejects_below_threshold() {
     StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
     client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
 
-    let r = client.try_apply_batch_committee(&vec![&env, m1.clone()], &funder, &(30 * S), &(20 * S));
+    let r =
+        client.try_apply_batch_committee(&vec![&env, m1.clone()], &funder, &(30 * S), &(20 * S));
     assert!(r.is_err() || r.unwrap().is_err());
     assert_eq!(client.get_state(), (0, 0, 100 * S));
 }
@@ -198,8 +229,12 @@ fn apply_batch_committee_rejects_non_member() {
     StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
     client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
 
-    let r =
-        client.try_apply_batch_committee(&vec![&env, m1.clone(), mallory.clone()], &funder, &(30 * S), &(20 * S));
+    let r = client.try_apply_batch_committee(
+        &vec![&env, m1.clone(), mallory.clone()],
+        &funder,
+        &(30 * S),
+        &(20 * S),
+    );
     assert!(r.is_err() || r.unwrap().is_err());
     assert_eq!(client.get_state(), (0, 0, 100 * S));
 }
@@ -215,8 +250,12 @@ fn apply_batch_committee_rejects_duplicate_signer() {
     StellarAssetClient::new(&env, &token).mint(&funder, &(1_000_000 * S));
     client.set_committee(&admin, &vec![&env, m1.clone(), m2.clone(), m3.clone()], &2);
 
-    let r =
-        client.try_apply_batch_committee(&vec![&env, m1.clone(), m1.clone()], &funder, &(30 * S), &(20 * S));
+    let r = client.try_apply_batch_committee(
+        &vec![&env, m1.clone(), m1.clone()],
+        &funder,
+        &(30 * S),
+        &(20 * S),
+    );
     assert!(r.is_err() || r.unwrap().is_err());
     assert_eq!(client.get_state(), (0, 0, 100 * S));
 }
@@ -252,8 +291,9 @@ fn resolve_sets_the_winning_outcome() {
     let env = Env::default();
     let (client, _token, _trader, admin) = setup(&env);
     assert_eq!(client.outcome(), None);
-    client.resolve(&admin, &Side::Yes);
-    assert_eq!(client.outcome(), Some(Side::Yes));
+    finalize(&env);
+    client.resolve(&admin, &Outcome::Yes);
+    assert_eq!(client.outcome(), Some(Outcome::Yes));
 }
 
 #[test]
@@ -261,7 +301,8 @@ fn resolve_rejects_non_admin() {
     let env = Env::default();
     let (client, _token, _trader, _admin) = setup(&env);
     let stranger = Address::generate(&env);
-    assert!(client.try_resolve(&stranger, &Side::Yes).is_err());
+    finalize(&env);
+    assert!(client.try_resolve(&stranger, &Outcome::Yes).is_err());
 }
 
 #[test]
@@ -270,8 +311,9 @@ fn resolve_accepts_registered_resolver() {
     let (client, _token, _trader, admin) = setup(&env);
     let resolver = Address::generate(&env);
     client.set_resolver(&admin, &resolver);
-    client.resolve(&resolver, &Side::No);
-    assert_eq!(client.outcome(), Some(Side::No));
+    finalize(&env);
+    client.resolve(&resolver, &Outcome::No);
+    assert_eq!(client.outcome(), Some(Outcome::No));
 }
 
 #[test]
@@ -281,15 +323,84 @@ fn resolve_rejects_unregistered_resolver() {
     let resolver = Address::generate(&env);
     let stranger = Address::generate(&env);
     client.set_resolver(&admin, &resolver);
-    assert!(client.try_resolve(&stranger, &Side::Yes).is_err());
+    finalize(&env);
+    assert!(client.try_resolve(&stranger, &Outcome::Yes).is_err());
 }
 
 #[test]
 fn cannot_resolve_twice() {
     let env = Env::default();
     let (client, _token, _trader, admin) = setup(&env);
-    client.resolve(&admin, &Side::Yes);
-    assert!(client.try_resolve(&admin, &Side::No).is_err());
+    finalize(&env);
+    client.resolve(&admin, &Outcome::Yes);
+    assert!(client.try_resolve(&admin, &Outcome::No).is_err());
+}
+
+#[test]
+fn lifecycle_status_tracks_open_closed_resolved_and_voided() {
+    let env = Env::default();
+    let (resolved, token, _trader, admin) = setup(&env);
+    assert_eq!(resolved.status(), MarketStatus::Open);
+    fund_subsidy(&env, &resolved, &token, &admin);
+    set_time(&env, EXPIRY);
+    assert_eq!(resolved.status(), MarketStatus::Closed);
+    finalize(&env);
+    resolved.resolve(&admin, &Outcome::Yes);
+    assert_eq!(resolved.status(), MarketStatus::Resolved);
+
+    let void_env = Env::default();
+    let (voided, _token, _trader, void_admin) = setup(&void_env);
+    finalize(&void_env);
+    voided.void(&void_admin);
+    assert_eq!(voided.status(), MarketStatus::Voided);
+}
+
+#[test]
+fn direct_trading_stops_at_expiry() {
+    let env = Env::default();
+    let (client, _token, trader, _admin) = setup(&env);
+    set_time(&env, EXPIRY);
+    assert!(client.try_quote_buy(&Side::Yes, &S).is_err());
+    assert!(client.try_buy(&trader, &Side::Yes, &S).is_err());
+}
+
+#[test]
+fn batch_grace_accepts_final_batch_then_closes() {
+    let env = Env::default();
+    let (client, token, _trader, admin) = setup(&env);
+    let batcher = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&batcher, &(1_000 * S));
+    client.set_batcher(&admin, &batcher);
+
+    set_time(&env, EXPIRY);
+    assert!(client.apply_batch(&batcher, &S, &0) > 0);
+
+    finalize(&env);
+    assert!(client.try_apply_batch(&batcher, &S, &0).is_err());
+}
+
+#[test]
+fn resolution_waits_for_final_batch_window() {
+    let env = Env::default();
+    let (client, _token, _trader, admin) = setup(&env);
+    set_time(&env, EXPIRY);
+    assert!(client.try_resolve(&admin, &Outcome::Yes).is_err());
+    finalize(&env);
+    client.resolve(&admin, &Outcome::Yes);
+}
+
+#[test]
+fn resolver_address_is_permanently_locked() {
+    let env = Env::default();
+    let (client, _token, _trader, admin) = setup(&env);
+    let resolver = Address::generate(&env);
+    client.set_resolver(&admin, &resolver);
+    assert!(client
+        .try_set_resolver(&admin, &Address::generate(&env))
+        .is_err());
+    finalize(&env);
+    assert!(client.try_resolve(&admin, &Outcome::Yes).is_err());
+    client.resolve(&resolver, &Outcome::Yes);
 }
 
 /// Fund the pool subsidy with >= b*ln2 so winning payouts are always solvent.
@@ -299,13 +410,55 @@ fn fund_subsidy(env: &Env, client: &LmsrMarketClient, token: &Address, admin: &A
 }
 
 #[test]
+fn void_refunds_batch_collateral_subsidy_and_direct_trader() {
+    let env = Env::default();
+    let (client, token, trader, admin) = setup(&env);
+    let tok = TokenClient::new(&env, &token);
+    let batcher = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&batcher, &(1_000 * S));
+    client.set_batcher(&admin, &batcher);
+    fund_subsidy(&env, &client, &token, &admin);
+
+    let trader_before = tok.balance(&trader);
+    let batcher_before = tok.balance(&batcher);
+    let direct_cost = client.buy(&trader, &Side::Yes, &(10 * S));
+    let batch_cost = client.apply_batch(&batcher, &(10 * S), &0);
+    assert_eq!(tok.balance(&trader), trader_before - direct_cost);
+    assert_eq!(tok.balance(&batcher), batcher_before - batch_cost);
+
+    finalize(&env);
+    client.void(&admin);
+    assert_eq!(tok.balance(&admin), 100 * S);
+    assert_eq!(tok.balance(&batcher), batcher_before);
+    assert_eq!(tok.balance(&client.address), direct_cost);
+
+    assert_eq!(client.redeem(&trader, &Side::Yes), direct_cost);
+    assert_eq!(tok.balance(&trader), trader_before);
+    assert_eq!(tok.balance(&client.address), 0);
+}
+
+#[test]
+fn one_sided_market_settles_normally() {
+    let env = Env::default();
+    let (client, token, trader, admin) = setup(&env);
+    fund_subsidy(&env, &client, &token, &admin);
+    client.buy(&trader, &Side::Yes, &(25 * S));
+    assert_eq!(client.get_state().1, 0);
+
+    finalize(&env);
+    client.resolve(&admin, &Outcome::Yes);
+    assert!(client.redeem(&trader, &Side::Yes) > 0);
+}
+
+#[test]
 fn redeem_pays_winning_shares_and_burns_them() {
     let env = Env::default();
     let (client, token, trader, admin) = setup(&env);
     let tok = TokenClient::new(&env, &token);
     fund_subsidy(&env, &client, &token, &admin);
     client.buy(&trader, &Side::Yes, &(60 * S));
-    client.resolve(&admin, &Side::Yes);
+    finalize(&env);
+    client.resolve(&admin, &Outcome::Yes);
     let before = tok.balance(&trader);
     let pow = 10i128.pow(tok.decimals());
 
@@ -323,7 +476,8 @@ fn redeem_losing_side_pays_nothing() {
     let tok = TokenClient::new(&env, &token);
     fund_subsidy(&env, &client, &token, &admin);
     client.buy(&trader, &Side::No, &(60 * S));
-    client.resolve(&admin, &Side::Yes); // NO loses
+    finalize(&env);
+    client.resolve(&admin, &Outcome::Yes); // NO loses
     let before = tok.balance(&trader);
 
     let payout = client.redeem(&trader, &Side::No);
@@ -350,7 +504,8 @@ fn resolve_rejects_when_pool_cannot_cover_payouts() {
     // Buy 60 YES but DON'T fund the subsidy: the pool holds only the buy proceeds
     // (~34 units) while a YES win owes 60 -> resolution must be rejected as insolvent.
     client.buy(&trader, &Side::Yes, &(60 * S));
-    assert!(client.try_resolve(&admin, &Side::Yes).is_err());
+    finalize(&env);
+    assert!(client.try_resolve(&admin, &Outcome::Yes).is_err());
 }
 
 #[test]
@@ -406,7 +561,8 @@ fn sell_emits_trade_event() {
 fn resolve_emits_event() {
     let env = Env::default();
     let (client, _token, _trader, admin) = setup(&env);
-    client.resolve(&admin, &Side::Yes);
+    finalize(&env);
+    client.resolve(&admin, &Outcome::Yes);
     assert_eq!(
         env.events().all().filter_by_contract(&client.address),
         vec![
@@ -414,7 +570,7 @@ fn resolve_emits_event() {
             (
                 client.address.clone(),
                 (symbol_short!("resolved"),).into_val(&env),
-                Side::Yes.into_val(&env),
+                Outcome::Yes.into_val(&env),
             )
         ]
     );
@@ -426,7 +582,8 @@ fn redeem_emits_event() {
     let (client, token, trader, admin) = setup(&env);
     fund_subsidy(&env, &client, &token, &admin);
     client.buy(&trader, &Side::Yes, &(60 * S));
-    client.resolve(&admin, &Side::Yes);
+    finalize(&env);
+    client.resolve(&admin, &Outcome::Yes);
     let payout = client.redeem(&trader, &Side::Yes);
     assert_eq!(
         env.events().all().filter_by_contract(&client.address),

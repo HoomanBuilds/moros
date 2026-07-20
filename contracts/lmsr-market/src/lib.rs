@@ -16,6 +16,23 @@ pub enum Side {
     No,
 }
 
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Outcome {
+    Yes,
+    No,
+    Void,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MarketStatus {
+    Open,
+    Closed,
+    Resolved,
+    Voided,
+}
+
 /// Resolution parameters: the market resolves YES iff the Reflector price of
 /// `asset` at/after `expiry` is >= `threshold` (threshold in the oracle's decimals).
 #[contracttype]
@@ -24,6 +41,7 @@ pub struct MarketInfo {
     pub asset: Symbol,
     pub threshold: i128,
     pub expiry: u64,
+    pub finalize_after: u64,
 }
 
 #[contracttype]
@@ -37,11 +55,15 @@ enum DataKey {
     Asset,
     Threshold,
     Expiry,
+    FinalizeAfter,
     Decimals,
     Batcher,
     Committee,
     CommitteeT,
     Resolver,
+    Funding,
+    BatchCollateral,
+    Refund(Address),
     Shares(Address, Side),
 }
 
@@ -60,6 +82,9 @@ pub enum Error {
     AlreadyResolved = 6,
     NotResolved = 7,
     Undersolvent = 8,
+    MarketClosed = 9,
+    TooEarlyToResolve = 10,
+    ResolverLocked = 11,
 }
 
 #[contractevent(topics = ["created"], data_format = "vec")]
@@ -67,6 +92,7 @@ pub struct Created {
     pub asset: Symbol,
     pub threshold: i128,
     pub expiry: u64,
+    pub finalize_after: u64,
     pub b: i128,
 }
 
@@ -101,7 +127,13 @@ pub struct Fund {
 
 #[contractevent(topics = ["resolved"], data_format = "single-value")]
 pub struct Resolved {
-    pub outcome: Side,
+    pub outcome: Outcome,
+}
+
+#[contractevent(topics = ["voided"], data_format = "vec")]
+pub struct Voided {
+    pub pool_refund: i128,
+    pub sponsor_refund: i128,
 }
 
 #[contractevent(topics = ["batch"], data_format = "vec")]
@@ -152,10 +184,14 @@ impl LmsrMarket {
         asset: Symbol,
         threshold: i128,
         expiry: u64,
+        batch_grace: u64,
     ) {
-        if b <= 0 || b > MAX_Q {
+        if b <= 0 || b > MAX_Q || batch_grace > 86_400 {
             panic_with_error!(&env, Error::InvalidParams);
         }
+        let finalize_after = expiry
+            .checked_add(batch_grace)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidParams));
         let decimals = token::Client::new(&env, &collateral).decimals();
         if decimals > 18 {
             panic_with_error!(&env, Error::InvalidParams);
@@ -169,11 +205,15 @@ impl LmsrMarket {
         s.set(&DataKey::Asset, &asset);
         s.set(&DataKey::Threshold, &threshold);
         s.set(&DataKey::Expiry, &expiry);
+        s.set(&DataKey::FinalizeAfter, &finalize_after);
         s.set(&DataKey::Decimals, &decimals);
+        s.set(&DataKey::Funding, &0i128);
+        s.set(&DataKey::BatchCollateral, &0i128);
         Created {
             asset,
             threshold,
             expiry,
+            finalize_after,
             b,
         }
         .publish(&env);
@@ -187,6 +227,9 @@ impl LmsrMarket {
             asset: s.get(&DataKey::Asset).ok_or(Error::NotInitialized)?,
             threshold: s.get(&DataKey::Threshold).ok_or(Error::NotInitialized)?,
             expiry: s.get(&DataKey::Expiry).ok_or(Error::NotInitialized)?,
+            finalize_after: s
+                .get(&DataKey::FinalizeAfter)
+                .ok_or(Error::NotInitialized)?,
         })
     }
 
@@ -214,7 +257,8 @@ impl LmsrMarket {
     /// Collateral cost to buy `shares` (fixed-point) of `side`.
     /// Rounded UP by one unit (pool-favoring) so per-trade truncation never undercharges.
     pub fn quote_buy(env: Env, side: Side, shares: i128) -> Result<i128, Error> {
-        if shares <= 0 {
+        Self::ensure_open(&env)?;
+        if shares <= 0 || shares > MAX_Q {
             return Err(Error::InvalidParams);
         }
         let (qy, qn, b) = Self::state(&env)?;
@@ -235,7 +279,8 @@ impl LmsrMarket {
 
         let key = DataKey::Shares(trader.clone(), side);
         let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-        env.storage().persistent().set(&key, &(held + shares));
+        let updated_held = held.checked_add(shares).ok_or(Error::InvalidParams)?;
+        env.storage().persistent().set(&key, &updated_held);
 
         let (qy, qn, _b) = Self::state(&env)?;
         let (qy2, qn2) = Self::apply(qy, qn, side, shares);
@@ -254,6 +299,11 @@ impl LmsrMarket {
             &env.current_contract_address(),
             &cost,
         );
+        let refund_key = DataKey::Refund(trader.clone());
+        let refundable: i128 = env.storage().persistent().get(&refund_key).unwrap_or(0);
+        let updated_refund = refundable.checked_add(cost).ok_or(Error::InvalidParams)?;
+        env.storage().persistent().set(&refund_key, &updated_refund);
+        Self::bump_shares(&env, &refund_key);
 
         Buy {
             trader,
@@ -270,6 +320,7 @@ impl LmsrMarket {
     /// Collateral refunded to sell `shares` (fixed-point) of `side`.
     /// Rounded DOWN by one unit (pool-favoring). Errors if it would drive q negative.
     pub fn quote_sell(env: Env, side: Side, shares: i128) -> Result<i128, Error> {
+        Self::ensure_open(&env)?;
         if shares <= 0 {
             return Err(Error::InvalidParams);
         }
@@ -315,6 +366,15 @@ impl LmsrMarket {
             &trader,
             &refund,
         );
+        let refund_key = DataKey::Refund(trader.clone());
+        let refundable: i128 = env.storage().persistent().get(&refund_key).unwrap_or(0);
+        if refund > refundable {
+            return Err(Error::Undersolvent);
+        }
+        env.storage()
+            .persistent()
+            .set(&refund_key, &(refundable - refund));
+        Self::bump_shares(&env, &refund_key);
 
         Sell {
             trader,
@@ -336,8 +396,6 @@ impl LmsrMarket {
             .unwrap_or(0)
     }
 
-    /// Settle the market on `outcome`. Admin-only (the Resolver/Reflector wiring
-    /// replaces this driver in a later phase). Cannot be resolved twice.
     pub fn set_resolver(env: Env, admin: Address, resolver: Address) -> Result<(), Error> {
         admin.require_auth();
         let stored: Address = env
@@ -348,29 +406,33 @@ impl LmsrMarket {
         if admin != stored {
             return Err(Error::Unauthorized);
         }
+        if env.storage().instance().has(&DataKey::Resolver) {
+            return Err(Error::ResolverLocked);
+        }
         env.storage().instance().set(&DataKey::Resolver, &resolver);
         Self::bump(&env);
         Ok(())
     }
 
-    pub fn resolve(env: Env, admin: Address, outcome: Side) -> Result<(), Error> {
-        admin.require_auth();
-        let stored: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        let resolver: Option<Address> = env.storage().instance().get(&DataKey::Resolver);
-        if admin != stored && resolver != Some(admin.clone()) {
-            return Err(Error::Unauthorized);
-        }
+    pub fn resolver(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Resolver)
+    }
+
+    pub fn resolve(env: Env, caller: Address, outcome: Outcome) -> Result<(), Error> {
+        caller.require_auth();
+        Self::require_resolver(&env, &caller)?;
         if env.storage().instance().has(&DataKey::Outcome) {
             return Err(Error::AlreadyResolved);
         }
+        if outcome == Outcome::Void {
+            return Err(Error::InvalidParams);
+        }
+        Self::ensure_finalizable(&env)?;
         let (qy, qn, _b) = Self::state(&env)?;
         let q_win = match outcome {
-            Side::Yes => qy,
-            Side::No => qn,
+            Outcome::Yes => qy,
+            Outcome::No => qn,
+            Outcome::Void => 0,
         };
         let liability = Self::to_atomic(&env, q_win, true);
         let token_addr: Address = env
@@ -388,17 +450,104 @@ impl LmsrMarket {
         Ok(())
     }
 
-    /// The winning outcome, or `None` if the market is still open.
-    pub fn outcome(env: Env) -> Option<Side> {
+    pub fn outcome(env: Env) -> Option<Outcome> {
         env.storage().instance().get(&DataKey::Outcome)
+    }
+
+    pub fn status(env: Env) -> MarketStatus {
+        match Self::outcome(env.clone()) {
+            Some(Outcome::Void) => MarketStatus::Voided,
+            Some(_) => MarketStatus::Resolved,
+            None => {
+                let expiry: u64 = env.storage().instance().get(&DataKey::Expiry).unwrap_or(0);
+                if env.ledger().timestamp() < expiry {
+                    MarketStatus::Open
+                } else {
+                    MarketStatus::Closed
+                }
+            }
+        }
+    }
+
+    pub fn void(env: Env, caller: Address) -> Result<(), Error> {
+        caller.require_auth();
+        Self::require_resolver(&env, &caller)?;
+        if env.storage().instance().has(&DataKey::Outcome) {
+            return Err(Error::AlreadyResolved);
+        }
+        Self::ensure_finalizable(&env)?;
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        let held = token::Client::new(&env, &token_addr).balance(&env.current_contract_address());
+        let funding: i128 = env.storage().instance().get(&DataKey::Funding).unwrap_or(0);
+        if held < funding {
+            return Err(Error::Undersolvent);
+        }
+        let pool_refund: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::BatchCollateral)
+            .unwrap_or(0);
+        let reserved = funding
+            .checked_add(pool_refund)
+            .ok_or(Error::Undersolvent)?;
+        if held < reserved {
+            return Err(Error::Undersolvent);
+        }
+        let sponsor: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        if pool_refund > 0 {
+            let batcher: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Batcher)
+                .ok_or(Error::NotInitialized)?;
+            token::Client::new(&env, &token_addr).transfer(
+                &env.current_contract_address(),
+                &batcher,
+                &pool_refund,
+            );
+        }
+        if funding > 0 {
+            token::Client::new(&env, &token_addr).transfer(
+                &env.current_contract_address(),
+                &sponsor,
+                &funding,
+            );
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::Outcome, &Outcome::Void);
+        Voided {
+            pool_refund,
+            sponsor_refund: funding,
+        }
+        .publish(&env);
+        Self::bump(&env);
+        Ok(())
     }
 
     /// Add collateral subsidy/liquidity to the pool. Fund at least `b * ln 2`
     /// (the LMSR worst-case loss) so winning redemptions are always solvent.
     pub fn fund(env: Env, from: Address, amount: i128) -> Result<(), Error> {
         from.require_auth();
+        Self::ensure_open(&env)?;
         if amount <= 0 {
             return Err(Error::InvalidParams);
+        }
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        if from != admin {
+            return Err(Error::Unauthorized);
         }
         let token_addr: Address = env
             .storage()
@@ -410,6 +559,11 @@ impl LmsrMarket {
             &env.current_contract_address(),
             &amount,
         );
+        let funding: i128 = env.storage().instance().get(&DataKey::Funding).unwrap_or(0);
+        let updated_funding = funding.checked_add(amount).ok_or(Error::InvalidParams)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::Funding, &updated_funding);
         Fund { from, amount }.publish(&env);
         Self::bump(&env);
         Ok(())
@@ -431,12 +585,13 @@ impl LmsrMarket {
     }
 
     pub fn quote_batch(env: Env, dqyes: i128, dqno: i128) -> Result<i128, Error> {
+        Self::ensure_batchable(&env)?;
         if dqyes < 0 || dqno < 0 {
             return Err(Error::InvalidParams);
         }
         let (qy, qn, b) = Self::state(&env)?;
-        let qy2 = qy + dqyes;
-        let qn2 = qn + dqno;
+        let qy2 = qy.checked_add(dqyes).ok_or(Error::InvalidParams)?;
+        let qn2 = qn.checked_add(dqno).ok_or(Error::InvalidParams)?;
         if qy2 > MAX_Q || qn2 > MAX_Q {
             return Err(Error::InvalidParams);
         }
@@ -455,13 +610,11 @@ impl LmsrMarket {
         if batcher != stored {
             return Err(Error::Unauthorized);
         }
-        if env.storage().instance().has(&DataKey::Outcome) {
-            return Err(Error::AlreadyResolved);
-        }
+        Self::ensure_batchable(&env)?;
         let net = Self::quote_batch(env.clone(), dqyes, dqno)?;
         let (qy, qn, _b) = Self::state(&env)?;
-        let qy2 = qy + dqyes;
-        let qn2 = qn + dqno;
+        let qy2 = qy.checked_add(dqyes).ok_or(Error::InvalidParams)?;
+        let qn2 = qn.checked_add(dqno).ok_or(Error::InvalidParams)?;
 
         let token_addr: Address = env
             .storage()
@@ -473,6 +626,17 @@ impl LmsrMarket {
             &env.current_contract_address(),
             &net,
         );
+        let batch_collateral: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::BatchCollateral)
+            .unwrap_or(0);
+        let updated_collateral = batch_collateral
+            .checked_add(net)
+            .ok_or(Error::InvalidParams)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::BatchCollateral, &updated_collateral);
 
         env.storage().instance().set(&DataKey::QYes, &qy2);
         env.storage().instance().set(&DataKey::QNo, &qn2);
@@ -524,7 +688,9 @@ impl LmsrMarket {
             return Err(Error::InvalidParams);
         }
         env.storage().instance().set(&DataKey::Committee, &members);
-        env.storage().instance().set(&DataKey::CommitteeT, &threshold);
+        env.storage()
+            .instance()
+            .set(&DataKey::CommitteeT, &threshold);
         Self::bump(&env);
         Ok(())
     }
@@ -557,14 +723,20 @@ impl LmsrMarket {
             s.require_auth();
             seen.push_back(s);
         }
-        if env.storage().instance().has(&DataKey::Outcome) {
-            return Err(Error::AlreadyResolved);
-        }
+        Self::ensure_batchable(&env)?;
         funder.require_auth();
+        let batcher: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Batcher)
+            .ok_or(Error::NotInitialized)?;
+        if funder != batcher {
+            return Err(Error::Unauthorized);
+        }
         let net = Self::quote_batch(env.clone(), dqyes, dqno)?;
         let (qy, qn, _b) = Self::state(&env)?;
-        let qy2 = qy + dqyes;
-        let qn2 = qn + dqno;
+        let qy2 = qy.checked_add(dqyes).ok_or(Error::InvalidParams)?;
+        let qn2 = qn.checked_add(dqno).ok_or(Error::InvalidParams)?;
 
         let token_addr: Address = env
             .storage()
@@ -576,6 +748,17 @@ impl LmsrMarket {
             &env.current_contract_address(),
             &net,
         );
+        let batch_collateral: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::BatchCollateral)
+            .unwrap_or(0);
+        let updated_collateral = batch_collateral
+            .checked_add(net)
+            .ok_or(Error::InvalidParams)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::BatchCollateral, &updated_collateral);
 
         env.storage().instance().set(&DataKey::QYes, &qy2);
         env.storage().instance().set(&DataKey::QNo, &qn2);
@@ -598,7 +781,7 @@ impl LmsrMarket {
     /// collateral each; losing shares pay 0. Shares are burned either way.
     pub fn redeem(env: Env, trader: Address, side: Side) -> Result<i128, Error> {
         trader.require_auth();
-        let winning: Side = env
+        let winning: Outcome = env
             .storage()
             .instance()
             .get(&DataKey::Outcome)
@@ -608,10 +791,17 @@ impl LmsrMarket {
         let held: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         env.storage().persistent().set(&key, &0i128); // burn regardless of outcome
 
-        let payout = if side == winning {
-            Self::to_atomic(&env, held, false)
-        } else {
-            0
+        let payout = match winning {
+            Outcome::Void => {
+                let refund_key = DataKey::Refund(trader.clone());
+                let refundable: i128 = env.storage().persistent().get(&refund_key).unwrap_or(0);
+                env.storage().persistent().set(&refund_key, &0i128);
+                Self::bump_shares(&env, &refund_key);
+                refundable
+            }
+            Outcome::Yes if side == Side::Yes => Self::to_atomic(&env, held, false),
+            Outcome::No if side == Side::No => Self::to_atomic(&env, held, false),
+            _ => 0,
         };
         if payout > 0 {
             let token_addr: Address = env
@@ -647,6 +837,62 @@ impl LmsrMarket {
         env.storage()
             .persistent()
             .extend_ttl(key, TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+
+    fn require_resolver(env: &Env, caller: &Address) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        let resolver: Option<Address> = env.storage().instance().get(&DataKey::Resolver);
+        match resolver {
+            Some(address) if &address == caller => Ok(()),
+            None if &admin == caller => Ok(()),
+            _ => Err(Error::Unauthorized),
+        }
+    }
+
+    fn ensure_open(env: &Env) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Outcome) {
+            return Err(Error::AlreadyResolved);
+        }
+        let expiry: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Expiry)
+            .ok_or(Error::NotInitialized)?;
+        if env.ledger().timestamp() >= expiry {
+            return Err(Error::MarketClosed);
+        }
+        Ok(())
+    }
+
+    fn ensure_batchable(env: &Env) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Outcome) {
+            return Err(Error::AlreadyResolved);
+        }
+        let finalize_after: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::FinalizeAfter)
+            .ok_or(Error::NotInitialized)?;
+        if env.ledger().timestamp() >= finalize_after {
+            return Err(Error::MarketClosed);
+        }
+        Ok(())
+    }
+
+    fn ensure_finalizable(env: &Env) -> Result<(), Error> {
+        let finalize_after: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::FinalizeAfter)
+            .ok_or(Error::NotInitialized)?;
+        if env.ledger().timestamp() < finalize_after {
+            return Err(Error::TooEarlyToResolve);
+        }
+        Ok(())
     }
 
     fn state(env: &Env) -> Result<(i128, i128, i128), Error> {

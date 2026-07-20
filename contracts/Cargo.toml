@@ -4,7 +4,7 @@ members = ["lmsr-market", "resolver"]
 exclude = ["shielded-pool"]
 
 [workspace.dependencies]
-soroban-sdk = "25.1.0"
+soroban-sdk = "26.1.0"
 
 # Soroban release profile. NOTE: overflow-checks = true is a deliberate solvency
 # fix — a silent i128 wrap on the money path could mis-price a trade. Keep it on.
