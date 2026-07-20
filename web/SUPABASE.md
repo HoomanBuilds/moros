@@ -17,4 +17,4 @@ This app can optionally use Supabase for a public social layer: profiles, market
 
 ## Privacy boundary
 
-The social layer is public and opt-in, tied only to a connected wallet address, and is completely separate from the private trade path. No order openings, amounts, sides, or any other private trade data are ever sent to Supabase. A user can deposit, bet, and redeem privately end to end without ever touching Supabase or opting into the social layer.
+The social layer is public and opt-in, tied only to a connected wallet address, and is completely separate from the trade path. No order openings, amounts, sides, secrets, nullifiers, or proof witnesses are sent to Supabase. A user can create, bet, resolve, claim, and refund without touching Supabase, though a market will not appear in the shared off-chain catalog until its public metadata is listed.

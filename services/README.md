@@ -1,86 +1,124 @@
-# Off-chain batcher + relayer
+# Moros committee and resolution services
 
-Orchestrates the ZK-batched market. **Correctness is trustless** (the net update is a
-Groth16 proof verified on-chain), but the batcher is **trusted with order privacy** -
-see "Trust model" below. Run it as one-shot scripts (`batcher.mjs` / `relayer.mjs`) or
-as a long-running intake service (`server.mjs`).
+These Node.js services support the Moros testnet beta. They do not custody plaintext order openings. The browser sends an encrypted order and a Groth16 proof that binds it to an on-chain commitment and the current committee key.
 
-## Setup
-Create `services/.env` (git-ignored) with your deployment:
-```
-POOL_ID=CB555GWM...        # the shielded pool contract id
-NETWORK=testnet
-SOURCE=deployer            # stellar CLI identity that pays fees (the relayer/batcher account)
-```
-Prereqs (already built in this repo): the `batch` bin and `stellar-circom2soroban`
-under `inspiration/.../target/release`, snarkjs under `circuits/node_modules`, and the
-compiled batch circuit + zkey under `contracts/shielded-pool/circuits/{build,output}`.
+## Components
 
-## Batcher
-Collects a window's orders (each trader's opening: `amount, side, secret, nullifier`),
-builds the order tree, proves the net `(dQYes, dQNo)`, and submits `submit_batch`.
-```
-node services/batcher.mjs services/orders.example.json
-```
-The traders must have already placed the matching commitments on-chain via
-`place_order` (the batcher builds the same tree from the openings, so the on-chain
-order root matches the proof). With `POOL_ID` unset it prints the submit args instead
-of submitting (dry run).
+- server.mjs runs multi-pool registration, event indexing, encrypted order intake, persistent queues, batch coordination, and redemption relay.
+- committee/member.mjs holds one DKG share, verifies exact encrypted orders and aggregate decryptions, and signs only valid batch authorization entries.
+- resolve-keeper.mjs calls the configured price resolver after eligible price markets expire.
+- relayer.mjs submits proof-bound redemption transactions.
 
-## Relayer
-Submits a winner's redeem proof so the recipient bound in the proof is paid, with no
-signature from the recipient (unlinkable).
-```
-node services/relayer.mjs redeem_proof.json redeem_public.json GRECIPIENT...
-```
+## Testnet configuration
 
-## Hosted service (`server.mjs`)
-A long-running HTTP service: intake for orders + redeem proofs, plus a batch-window
-loop that auto-batches when `BATCH_N` orders are pending.
-```
-POOL_ID=... SOURCE=deployer PORT=8787 WINDOW_MS=60000 node services/server.mjs
-```
-Endpoints:
-- `POST /order`  `{amount, side, secret, nullifier}` (decimal strings) - queue a trader's opening. The trader must have already `place_order`'d the matching commitment on-chain, in the same order.
-- `POST /batch`  - force a batch now (needs `BATCH_N` pending). The window loop also fires every `WINDOW_MS`.
-- `POST /redeem` `{proof, public, recipient}` - relay a winner's redeem proof (JSON objects from snarkjs).
-- `GET  /status` - pending count + config.
+Copy .env.example to .env and fill secret values locally.
 
-## Hosting on a VM (`deploy-vm.sh`)
-The proving artifacts (`*.zkey`, `batch.wasm`) are git-ignored AND must match the
-deployed contracts' embedded VKs, so they cannot be regenerated on the VM. Ship them:
-```
-# on the build machine:
-./services/deploy-vm.sh package        # -> deploy-bundle.tar.gz (artifacts + rust bins)
-# on the VM (after git clone + scp/untar the bundle at repo root):
-./services/deploy-vm.sh provision      # installs snarkjs, builds/uses bins, verifies artifacts
-./services/deploy-vm.sh service        # installs + starts a systemd unit (journalctl -u zkmarket-batcher -f)
-```
+Required production-like settings:
 
-## Trust model + security (read this)
-- **The batcher learns order openings.** To prove the net, the batcher receives each
-  order's `amount, side, secret, nullifier`. That means the operator sees individual
-  positions (privacy is from the *chain/public*, not from the operator) AND, because it
-  holds the `secret`, it could in principle craft a redeem proof for a winning order to
-  an address it controls. So the batcher is a **trusted party for privacy + custody**,
-  even though it cannot forge an incorrect net (the chain rejects that). The production
-  fix is client-side / per-trader proving with proof aggregation so the operator never
-  sees secrets - that is roadmap, not built here.
-- **Auth**: set `SERVICE_TOKEN` in `.env`; all mutating endpoints require
-  `Authorization: Bearer <token>`. Without it they are open (dev only, warned at start).
-- **Secrets handling**: the pending queue is in-memory only (not persisted); the witness
-  input + `.wtns` (which contain openings) and the redeem temp files are deleted after
-  each use. Restarting the server drops the queue (traders resubmit).
-- **Hot key**: `SOURCE` is a funded signing key on the box that pays fees - fund it
-  minimally and rotate it. **Terminate TLS in front** (reverse proxy); the intake
-  carries secrets, so never expose it over plaintext HTTP.
-- Input is validated (decimal fields, `side ∈ {0,1}`), body size and queue length are
-  capped.
+    RPC_URL=https://soroban-testnet.stellar.org
+    NETWORK_PASSPHRASE=Test SDF Network ; September 2015
+    ORACLE_MODE=free
+    FREE_RESOLVER_ID=CCLZEQIQLPJVFDQCAMFC3A3S6HIRQ2ZIAICC2NH3D3U4ZCCXZI2RU6TQ
+    POOL_WASM_HASH=ec67aee3f9391ca358e52cfad5ac05c39ea9b09dc4abc575177272f2b79b5ef3
+    COLLATERAL_ID=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
+    ALLOW_UNVERIFIED_REGISTRATION=0
+    SERVICE_TOKEN=<random operator token>
+    MEMBER_TOKEN=<different random committee token>
+    FUNDER_SK=<testnet fee payer secret>
+    READER_ADDRESS=<testnet public address>
+    MEMBERS=http://member1:9711,http://member2:9712,http://member3:9713
 
-## Notes
-- Demo scale: fixed N=4 orders per batch (depth-2 order tree). Larger N needs a bigger
-  circuit + ptau; proving is server-side (snarkjs, BLS12-381) - the 4 GB VM target.
-- Batch amounts should be fixed-point shares (`share * 2^32`) for meaningful odds/cost;
-  the example uses raw values (net LMSR cost ~0).
-- The `SOURCE` identity is a funded key on the box (pays fees) - treat it as a hot key.
-- Unaudited research prototype, testnet only.
+Keep FUNDER_SK and every MEMBER_SK out of git, logs, browser variables, and shared configuration.
+
+## Free and paid oracle modes
+
+Free Reflector mode is mandatory for the current beta:
+
+    ORACLE_MODE=free
+
+Pyth Pro support remains in the keeper for future use. It runs only when all of these are explicitly configured:
+
+    ORACLE_MODE=pyth_pro
+    PYTH_PRO_RESOLVER_ID=<paid resolver contract>
+    PYTH_ACCESS_TOKEN=<paid access token>
+
+There is no paid resolver default and no generic resolver override.
+
+## Public HTTP endpoints
+
+- GET /health returns service health.
+- GET /pk returns the current committee encryption key.
+- GET /status returns pool and queue status.
+- GET /proof/:commitment returns a persisted Merkle membership proof.
+- POST /register-pool registers a protocol v3 market and pool after on-chain validation.
+- POST /order verifies and queues an encrypted order.
+- POST /redeem relays a proof-bound redemption.
+
+POST /batch is an operator action and requires SERVICE_TOKEN.
+
+Public pool registration validates:
+
+- Protocol version 3
+- Two-way market and pool linkage
+- Matching collateral
+- Expected 2-of-3 committee configuration
+- Configured v3 redemption verification key
+- Approved pool WASM hash
+
+ALLOW_UNVERIFIED_REGISTRATION=1 bypasses these checks and is allowed only in local tests.
+
+## Batch behavior
+
+- Open markets settle full batches of four.
+- Closed markets may settle a final private batch of two to four before finalize_after.
+- A single pending order is never decrypted as its own batch.
+- Pending orders become refundable after finalize_after.
+- Queues and used nullifiers persist across restarts.
+- Each pool has an isolated queue and event index.
+- Committee members recompute the proof-bound commitments, nullifier hashes, aggregate ciphertext, decrypted net, and authorization entry before signing.
+
+## Running locally
+
+Install dependencies:
+
+    npm install
+
+Run the hosted service test:
+
+    node test-server.mjs
+
+Run service syntax checks:
+
+    node --check server.mjs
+    node --check resolve-keeper.mjs
+    node --check relayer.mjs
+    node --check indexer.mjs
+    node --check committee/member.mjs
+    node --check committee/submit-multisig.mjs
+
+The test server uses ALLOW_UNVERIFIED_REGISTRATION=1, DRY_RUN=1, temporary queue files, and temporary committee shares. Those values are not production settings.
+
+## VM packaging
+
+The proving artifacts and native helper binaries must match the deployed verification keys.
+
+On the build machine:
+
+    ./services/deploy-vm.sh package
+
+On the testnet VM after unpacking the bundle:
+
+    ./services/deploy-vm.sh provision
+    ./services/deploy-vm.sh service
+
+Terminate TLS in front of the public service. Run committee members on independently operated hosts before treating threshold privacy as meaningful. The bundled single-VM setup is for testnet operations only.
+
+## Operational limits
+
+- Current services and contracts are unaudited.
+- The committee is a fixed 2-of-3 set.
+- A colluding quorum can break threshold privacy.
+- Stellar RPC event retention requires the persistent index to stay healthy and backed up.
+- The final order queue must be monitored so eligible short batches settle before finalize_after.
+- Price resolution and redemption are permissionless calls, but they still require a keeper, relayer, or user to submit transactions.
+- Nothing runs automatically merely because a market has expired or resolved.
