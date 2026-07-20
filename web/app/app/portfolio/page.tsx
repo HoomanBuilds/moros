@@ -4,7 +4,7 @@ import { PositionsList } from "@/components/portfolio/positions-list";
 export default function PortfolioPage() {
   return (
     <div>
-      <PageHeader label="Moros" title="Portfolio" description="Your private positions, stored only in this browser" />
+      <PageHeader label="Moros" title="Position history" description="Track every private USDC position, claim, recovery, and refund" />
       <div className="mt-8">
         <PositionsList />
       </div>

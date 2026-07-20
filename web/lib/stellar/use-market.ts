@@ -1,6 +1,6 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
-import { getMarketState, getPriceYes, getOutcome, getMarketInfo, getPoolBalance, getMarketResolver, getEventRulesHash } from "./read";
+import { getMarketState, getPriceYes, getOutcome, getMarketInfo, getPoolBalance, getMarketResolver, getEventRulesHash, getFeeConfig } from "./read";
 import { probFromFixed, fixedToNumber, outcomeLabel, marketQuestion, marketStrike, formatCountdown } from "./derive";
 import { useActiveMarket } from "@/lib/markets/market-context";
 import { NETWORK, type CollateralAsset } from "@/lib/network";
@@ -12,10 +12,10 @@ import { eventRulesHashHex } from "@/lib/markets/rules";
 export async function fetchMarket(
   marketId: string,
   poolId: string,
-  collateral: CollateralAsset = NETWORK.legacyCollateral,
+  collateral: CollateralAsset = NETWORK.collateral,
   fallback: MarketDescriptor = {},
 ) {
-  const [state, priceYes, outcome, info, poolBal, storedMeta, resolverId] = await Promise.all([
+  const [state, priceYes, outcome, info, poolBal, storedMeta, resolverId, feeConfig] = await Promise.all([
     getMarketState(marketId),
     getPriceYes(marketId),
     getOutcome(marketId),
@@ -23,6 +23,7 @@ export async function fetchMarket(
     getPoolBalance(poolId, collateral),
     getMarketMeta(marketId).catch(() => null),
     getMarketResolver(marketId).catch(() => null),
+    getFeeConfig(poolId),
   ]);
   const meta = {
     title: storedMeta?.title ?? fallback.title,
@@ -73,6 +74,7 @@ export async function fetchMarket(
     strike: marketStrike(info),
     poolSize: Number(formatTokenAmount(poolBal, collateral.decimals, 7)),
     collateral,
+    feeBps: Number(feeConfig[1]),
     expiry,
     finalizeAfter: Number(info.finalize_after ?? info.expiry),
     secondsLeft,
@@ -89,7 +91,7 @@ export async function fetchMarket(
 export function useMarket() {
   const { marketId, poolId, collateral, descriptor } = useActiveMarket();
   return useQuery({
-    queryKey: ["market", marketId, collateral.sac],
+    queryKey: ["market", marketId, poolId, collateral.sac],
     refetchInterval: 15000,
     queryFn: () => fetchMarket(marketId, poolId, collateral, descriptor),
   });

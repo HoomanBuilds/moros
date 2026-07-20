@@ -82,7 +82,7 @@ export async function voteEventResult(
   ]);
 }
 
-export async function placeOrder(commitmentDec: string, stakeAtomic: bigint, poolId: string = NETWORK.poolId): Promise<string> {
+export async function placeOrder(commitmentDec: string, stakeAtomic: bigint, poolId: string): Promise<string> {
   const kit = getKit();
   const { address } = await kit.getAddress();
   const account = await server.getAccount(address);
@@ -110,7 +110,7 @@ export async function placeOrder(commitmentDec: string, stakeAtomic: bigint, poo
   throw new Error("place_order timed out");
 }
 
-export async function refundOrder(commitmentDec: string, poolId: string = NETWORK.poolId): Promise<string> {
+export async function refundOrder(commitmentDec: string, poolId: string): Promise<string> {
   const kit = getKit();
   const { address } = await kit.getAddress();
   const account = await server.getAccount(address);

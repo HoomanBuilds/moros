@@ -53,7 +53,7 @@ export default function MarketTerminal() {
   };
 
   return (
-    <MarketProvider marketId={entry.marketId} poolId={entry.poolId} collateral={collateralForEntry(entry)} protocolVersion={entry.protocolVersion} descriptor={descriptor}>
+    <MarketProvider marketId={entry.marketId} poolId={entry.poolId} collateral={collateralForEntry(entry)} descriptor={descriptor}>
       <div className="space-y-6">
         <MarketHeader />
         <MetricRow />

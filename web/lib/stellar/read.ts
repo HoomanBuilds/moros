@@ -34,19 +34,28 @@ export async function getEventConfig(resolverId: string): Promise<{
 export async function getEventProposal(resolverId: string, marketId: string): Promise<unknown | null> {
   return readContract(resolverId, "proposal", [nativeToScVal(Address.fromString(marketId), { type: "address" })]);
 }
-export async function getClearingPrice(poolId: string = NETWORK.poolId): Promise<bigint> {
+export async function getClearingPrice(poolId: string): Promise<bigint> {
   return readContract(poolId, "get_price");
 }
 export async function getFeeConfig(poolId: string): Promise<[string, number]> {
   return readContract(poolId, "fee_config");
 }
-export async function getOrder(commitmentDec: string, poolId: string = NETWORK.poolId): Promise<unknown> {
+export async function getPoolMarket(poolId: string): Promise<string> {
+  return readContract(poolId, "market");
+}
+export async function getPoolCollateral(poolId: string): Promise<string> {
+  return readContract(poolId, "collateral");
+}
+export async function getMarketCollateral(marketId: string): Promise<string> {
+  return readContract(marketId, "collateral");
+}
+export async function getOrder(commitmentDec: string, poolId: string): Promise<unknown> {
   const commitment = Buffer.from(BigInt(commitmentDec).toString(16).padStart(64, "0"), "hex");
   return readContract(poolId, "get_order", [nativeToScVal(commitment, { type: "bytes" })]);
 }
 export async function getPoolBalance(
-  poolId: string = NETWORK.poolId,
-  collateral: CollateralAsset = NETWORK.legacyCollateral,
+  poolId: string,
+  collateral: CollateralAsset = NETWORK.collateral,
 ): Promise<bigint> {
   const arg = nativeToScVal(Address.fromString(poolId), { type: "address" });
   return readContract(collateral.sac, "balance", [arg]);

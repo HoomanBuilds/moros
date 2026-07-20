@@ -3,9 +3,11 @@ import { computeCommitment } from "@/lib/zk/commit";
 import { proveEncryptOrder } from "@/lib/zk/prove";
 import { getPk, getProof, postOrder, registerPool } from "@/lib/committee/client";
 import { placeOrder } from "@/lib/stellar/write";
-import { addPosition } from "@/lib/positions/book";
+import { addPosition, updatePosition } from "@/lib/positions/book";
+import { savePositionBackup } from "@/lib/positions/backup";
+import type { Position } from "@/lib/positions/book";
 import { NETWORK, type CollateralAsset } from "@/lib/network";
-import { parseWholeOrderAmount, privacyStakeForOrder } from "@/lib/stellar/amount";
+import { privacyStakeForOrder } from "@/lib/stellar/amount";
 
 const R = 6554484396890773809930967563523245729705921265872317281365359162392183254199n;
 
@@ -17,34 +19,115 @@ function rand(): string {
 }
 
 export type BetSide = "0" | "1";
-export type BetStage = "hashing" | "placing" | "proving" | "submitting" | "done";
+export type BetStage = "securing" | "hashing" | "placing" | "proving" | "submitting" | "done";
 
 export async function runBet(
-  { side, amount, address, collateral = NETWORK.legacyCollateral, marketId = NETWORK.marketId, poolId = NETWORK.poolId, protocolVersion = 2, onStage }:
-  { side: BetSide; amount: string; address: string; collateral?: CollateralAsset; marketId?: string; poolId?: string; protocolVersion?: 2 | 3; onStage: (s: BetStage) => void }
+  { side, amount, address, collateral, marketId, poolId, backupKey, onStage }:
+  { side: BetSide; amount: string; address: string; collateral: CollateralAsset; marketId: string; poolId: string; backupKey: CryptoKey; onStage: (s: BetStage) => void }
 ) {
-  const registered = await registerPool(marketId, poolId, protocolVersion);
+  if (collateral.sac !== NETWORK.collateral.sac) throw new Error("Moros testnet markets require Stellar USDC");
+  const registered = await registerPool(marketId, poolId);
   const pk = await getPk();
   if (!registered) {
     throw new Error("committee could not register this market - it may be offline; nothing was placed");
   }
 
-  const wholeAmount = parseWholeOrderAmount(amount, collateral.decimals);
-  const privateStake = protocolVersion === 3
-    ? privacyStakeForOrder(amount, collateral.decimals)
-    : { orderAmount: wholeAmount.orderAmount, stakeAmount: wholeAmount.orderAmount, stakeAtomic: wholeAmount.atomic };
+  const privateStake = privacyStakeForOrder(amount, collateral.decimals);
   const secret = rand();
   const nullifier = rand();
   onStage("hashing");
   const { commitment } = await computeCommitment({ amount: privateStake.orderAmount, side, secret, nullifier });
   onStage("placing");
   const txHash = await placeOrder(commitment, privateStake.stakeAtomic, poolId);
-  addPosition({ address, market: marketId, side, amount: privateStake.orderAmount, stakeAmount: privateStake.stakeAmount, collateralCode: collateral.code, secret, nullifier, commitment, txHash, status: "placed" });
+  const position: Position = {
+    address,
+    market: marketId,
+    pool: poolId,
+    side,
+    amount: privateStake.orderAmount,
+    stakeAmount: privateStake.stakeAmount,
+    collateralCode: collateral.code,
+    secret,
+    nullifier,
+    commitment,
+    txHash,
+    placedAt: Date.now(),
+    status: "placed",
+    backupStatus: "local",
+  };
+  addPosition(position);
+  let backupSynced = false;
+  try {
+    await savePositionBackup(position, backupKey);
+    backupSynced = true;
+  } catch (cause) {
+    updatePosition(address, commitment, {
+      backupStatus: "local",
+      backupError: cause instanceof Error ? cause.message : "Encrypted backup failed",
+    });
+  }
   onStage("proving");
-  const { pathIndex, siblings, orderRoot } = await getProof(commitment);
+  const { pathIndex, siblings, orderRoot } = await getProof(commitment, poolId);
   const input = { orderRoot, amount: privateStake.orderAmount, side, secret, nullifier, ryes: rand(), rno: rand(), pk, pathIndex, siblings };
   const { proof, publicSignals } = await proveEncryptOrder(input);
   onStage("submitting");
+  try {
+    await postOrder({ proof, publicSignals, poolId });
+    updatePosition(address, commitment, { status: "submitted", submissionError: undefined });
+    if (backupSynced) {
+      try {
+        await savePositionBackup({ ...position, status: "submitted", backupStatus: "synced" }, backupKey);
+      } catch (cause) {
+        backupSynced = false;
+        updatePosition(address, commitment, {
+          backupStatus: "local",
+          backupError: cause instanceof Error ? cause.message : "Encrypted backup update failed",
+        });
+      }
+    }
+  } catch (cause) {
+    updatePosition(address, commitment, {
+      submissionError: cause instanceof Error ? cause.message : "Committee submission failed",
+    });
+    throw cause;
+  }
+  onStage("done");
+  return { backupSynced };
+}
+
+export async function retryBetSubmission({
+  position,
+  poolId,
+  backupKey,
+  onStage,
+}: {
+  position: Position;
+  poolId: string;
+  backupKey?: CryptoKey;
+  onStage: (stage: BetStage) => void;
+}) {
+  if (!await registerPool(position.market, poolId)) throw new Error("Committee could not register this market");
+  const pk = await getPk();
+  onStage("proving");
+  const { pathIndex, siblings, orderRoot } = await getProof(position.commitment, poolId);
+  const input = {
+    orderRoot,
+    amount: position.amount,
+    side: position.side,
+    secret: position.secret,
+    nullifier: position.nullifier,
+    ryes: rand(),
+    rno: rand(),
+    pk,
+    pathIndex,
+    siblings,
+  };
+  const { proof, publicSignals } = await proveEncryptOrder(input);
+  onStage("submitting");
   await postOrder({ proof, publicSignals, poolId });
+  updatePosition(position.address, position.commitment, { status: "submitted", submissionError: undefined });
+  if (backupKey) {
+    await savePositionBackup({ ...position, pool: poolId, status: "submitted" }, backupKey);
+  }
   onStage("done");
 }

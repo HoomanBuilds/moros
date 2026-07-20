@@ -15,10 +15,13 @@ import {
   getCollateralAccountState,
   type CollateralAccountState,
 } from "@/lib/stellar/collateral-account";
-import { formatTokenAmount, parseWholeOrderAmount, privacyStakeForOrder } from "@/lib/stellar/amount";
+import { formatTokenAmount, privacyStakeForOrder } from "@/lib/stellar/amount";
 import { NETWORK } from "@/lib/network";
+import { unlockPositionBackup } from "@/lib/positions/backup";
+import { PLATFORM_FEE_BPS } from "@/lib/markets/deploy-constants";
 
 const STAGES: { key: BetStage; label: string }[] = [
+  { key: "securing", label: "Securing encrypted position recovery" },
   { key: "hashing", label: "Hashing commitment" },
   { key: "placing", label: "Placing order on-chain" },
   { key: "proving", label: "Proving privately in your browser - this can take a few minutes" },
@@ -60,12 +63,13 @@ function SideButton({
 
 export function BetPanel() {
   const { data } = useMarket();
-  const { marketId, poolId, collateral, protocolVersion } = useActiveMarket();
+  const { marketId, poolId, collateral } = useActiveMarket();
   const address = useWalletAddress();
   const [side, setSide] = useState<BetSide>("1");
   const [amount, setAmount] = useState("10");
   const [stage, setStage] = useState<BetStage | null>(null);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [accountState, setAccountState] = useState<CollateralAccountState | null>(null);
   const [accountLoading, setAccountLoading] = useState(false);
   const [trustlineLoading, setTrustlineLoading] = useState(false);
@@ -75,21 +79,18 @@ export function BetPanel() {
 
   const prob = side === "1" ? data?.probYes ?? null : data ? 1 - data.probYes : null;
   const positionSize = Number(amount);
+  const feeBps = data?.feeBps ?? PLATFORM_FEE_BPS;
+  const feeRate = feeBps / 10_000;
+  const feeLabel = `${feeBps / 100}%`;
   const grossProfit = prob !== null && positionSize > 0 ? positionSize * (1 - prob) : null;
-  const fee = grossProfit === null ? null : protocolVersion === 3 ? grossProfit * 0.02 : 0;
+  const fee = grossProfit === null ? null : grossProfit * feeRate;
   const netProfit = grossProfit === null || fee === null ? null : grossProfit - fee;
   let stakeAtomic: bigint | null = null;
   let stakeAmount: string | null = null;
   try {
-    if (protocolVersion === 3) {
-      const parsed = privacyStakeForOrder(amount, collateral.decimals);
-      stakeAtomic = parsed.stakeAtomic;
-      stakeAmount = parsed.stakeAmount;
-    } else {
-      const parsed = parseWholeOrderAmount(amount, collateral.decimals);
-      stakeAtomic = parsed.atomic;
-      stakeAmount = parsed.orderAmount;
-    }
+    const parsed = privacyStakeForOrder(amount, collateral.decimals);
+    stakeAtomic = parsed.stakeAtomic;
+    stakeAmount = parsed.stakeAmount;
   } catch {
     stakeAtomic = null;
   }
@@ -126,11 +127,15 @@ export function BetPanel() {
 
   async function submit() {
     setError("");
+    setWarning("");
     setStage(null);
     try {
       if (!accountState?.hasTrustline) throw new Error(`Enable ${collateral.code} before placing a bet`);
       if (insufficient) throw new Error(`Insufficient ${collateral.code} balance`);
-      await runBet({ side, amount, address, collateral, marketId, poolId, protocolVersion, onStage: setStage });
+      setStage("securing");
+      const backupKey = await unlockPositionBackup(address);
+      const result = await runBet({ side, amount, address, collateral, marketId, poolId, backupKey, onStage: setStage });
+      if (!result.backupSynced) setWarning("Position placed, but encrypted cloud backup needs attention in Portfolio. Keep this browser data safe.");
       setAccountState(await getCollateralAccountState(address, collateral));
     } catch (e) {
       setError(e instanceof Error ? e.message : "private bet failed");
@@ -154,6 +159,7 @@ export function BetPanel() {
   function reset() {
     setStage(null);
     setError("");
+    setWarning("");
     setAmount("10");
   }
 
@@ -212,16 +218,12 @@ export function BetPanel() {
             <span>Estimated profit after fee</span>
             <span className="text-foreground">{netProfit !== null ? `~${netProfit.toFixed(2)} ${collateral.code}` : "--"}</span>
           </div>
-          {protocolVersion === 3 && (
-            <div className="flex items-center justify-between">
-              <span>Privacy bucket locked</span>
-              <span className="text-foreground">{stakeAmount ? `${stakeAmount} ${collateral.code}` : "--"}</span>
-            </div>
-          )}
+          <div className="flex items-center justify-between">
+            <span>Privacy bucket locked</span>
+            <span className="text-foreground">{stakeAmount ? `${stakeAmount} ${collateral.code}` : "--"}</span>
+          </div>
           <p className="text-[10px] leading-snug text-muted-foreground/70">
-            {protocolVersion === 3
-              ? "Your exact position amount stays encrypted inside a public collateral bucket. Unused collateral is returned at redemption. Moros charges 2% only on winning profit."
-              : `Each winning share redeems for 1 ${collateral.code}. Final count is set at the batch clearing price.`}
+            Your exact position amount stays encrypted inside a public collateral bucket. Unused collateral is returned at redemption. Moros charges {feeLabel} only on winning profit.
           </p>
           {address && accountState?.hasTrustline && (
             <p className="text-[10px] leading-snug text-muted-foreground/70">
@@ -302,6 +304,7 @@ export function BetPanel() {
       )}
 
       {error && <p className="text-sm" style={{ color: NO }}>{error}</p>}
+      {warning && <p className="text-sm text-amber-300">{warning}</p>}
     </Panel>
   );
 }
