@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["lmsr-market", "resolver"]
+members = ["event-resolver", "lmsr-market", "resolver"]
 exclude = ["shielded-pool"]
 
 [workspace.dependencies]
 soroban-sdk = "26.1.0"
 
 # Soroban release profile. NOTE: overflow-checks = true is a deliberate solvency
-# fix — a silent i128 wrap on the money path could mis-price a trade. Keep it on.
+# fix because a silent i128 wrap on the money path could mis-price a trade. Keep it on.
 [profile.release]
 opt-level = "z"
 overflow-checks = true

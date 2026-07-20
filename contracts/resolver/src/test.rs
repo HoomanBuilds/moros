@@ -125,6 +125,7 @@ fn setup<'a>(
                 oracle_addresses,
                 quorum,
                 300u64,
+                3_600u64,
                 100u32,
                 100u32,
                 Option::<Address>::None,
@@ -168,6 +169,23 @@ fn resolves_with_two_agreeing_sources_and_ignores_outlier() {
     let (resolver, market, _) = setup(&env, &values, 2, expiry);
     assert_eq!(resolver.resolve_market(&market.address, &None), Side::Yes);
     assert_eq!(market.outcome(), Some(MarketOutcome::Yes));
+}
+
+#[test]
+fn config_exposes_immutable_resolution_policy() {
+    let env = Env::default();
+    let expiry = 1_000;
+    let values = [(101 * 100_000_000_000_000, expiry, 14)];
+    let (resolver, _, oracles) = setup(&env, &values, 1, expiry);
+    let config = resolver.config();
+    assert_eq!(config.oracles, oracles);
+    assert_eq!(config.quorum, 1);
+    assert_eq!(config.max_age, 300);
+    assert_eq!(config.resolution_timeout, 3_600);
+    assert_eq!(config.max_deviation_bps, 100);
+    assert_eq!(config.max_confidence_bps, 100);
+    assert_eq!(config.pyth_verifier, None);
+    assert!(config.pyth_feeds.is_empty());
 }
 
 #[test]
@@ -241,6 +259,7 @@ fn combines_sep40_and_verified_pyth_price() {
                 vec![&env, oracle.address.clone()],
                 2u32,
                 300u64,
+                3_600u64,
                 100u32,
                 100u32,
                 Some(verifier),
@@ -283,18 +302,63 @@ fn combines_sep40_and_verified_pyth_price() {
 
 #[test]
 #[should_panic(expected = "invalid resolver configuration")]
-fn constructor_rejects_single_source_quorum() {
+fn constructor_rejects_zero_source_quorum() {
     let env = Env::default();
     env.register(
         Resolver {},
         (
-            vec![&env, Address::generate(&env)],
-            1u32,
+            Vec::<Address>::new(&env),
+            0u32,
             300u64,
+            3_600u64,
             100u32,
             100u32,
             Option::<Address>::None,
             Vec::<PythFeed>::new(&env),
         ),
     );
+}
+
+#[test]
+fn single_consensus_oracle_free_mode_resolves() {
+    let env = Env::default();
+    let expiry = 1_000;
+    let values = [(101 * 100_000_000_000_000i128, expiry, 14u32)];
+    let (resolver, market, _) = setup(&env, &values, 1, expiry);
+    assert_eq!(resolver.resolve_market(&market.address, &None), Side::Yes);
+}
+
+#[test]
+#[should_panic(expected = "duplicate oracle source")]
+fn constructor_rejects_duplicate_oracle_addresses() {
+    let env = Env::default();
+    let oracle = Address::generate(&env);
+    env.register(
+        Resolver {},
+        (
+            vec![&env, oracle.clone(), oracle],
+            2u32,
+            300u64,
+            3_600u64,
+            100u32,
+            100u32,
+            Option::<Address>::None,
+            Vec::<PythFeed>::new(&env),
+        ),
+    );
+}
+
+#[test]
+fn stale_market_can_only_be_voided_after_resolution_timeout() {
+    let env = Env::default();
+    let expiry = 1_000;
+    let values = [(101 * 100_000_000_000_000i128, expiry - 301, 14u32)];
+    let (resolver, market, _) = setup(&env, &values, 1, expiry);
+    env.ledger()
+        .with_mut(|ledger| ledger.timestamp = expiry + 3_599);
+    assert!(resolver.try_void_stale_market(&market.address).is_err());
+    env.ledger()
+        .with_mut(|ledger| ledger.timestamp = expiry + 3_600);
+    resolver.void_stale_market(&market.address);
+    assert_eq!(market.outcome(), Some(MarketOutcome::Void));
 }

@@ -10,6 +10,8 @@ use soroban_sdk::{
 
 const TARGET_DECIMALS: u32 = 14;
 const BPS_SCALE: i128 = 10_000;
+const TTL_THRESHOLD: u32 = 120_960;
+const TTL_EXTEND_TO: u32 = 6_307_200;
 
 #[contracttype]
 #[derive(Clone)]
@@ -17,6 +19,7 @@ enum DataKey {
     Oracles,
     Quorum,
     MaxAge,
+    ResolutionTimeout,
     MaxDeviation,
     MaxConfidence,
     PythVerifier,
@@ -51,6 +54,19 @@ pub struct PythFeed {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Config {
+    pub oracles: Vec<Address>,
+    pub quorum: u32,
+    pub max_age: u64,
+    pub resolution_timeout: u64,
+    pub max_deviation_bps: u32,
+    pub max_confidence_bps: u32,
+    pub pyth_verifier: Option<Address>,
+    pub pyth_feeds: Vec<PythFeed>,
+}
+
+#[contracttype]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Side {
     Yes,
@@ -79,6 +95,7 @@ pub trait Market {
     fn market_info(env: Env) -> MarketInfo;
     fn resolver(env: Env) -> Option<Address>;
     fn resolve(env: Env, admin: Address, outcome: MarketOutcome);
+    fn void(env: Env, caller: Address);
 }
 
 #[contractevent(topics = ["resolved"], data_format = "vec")]
@@ -88,6 +105,12 @@ pub struct Resolved {
     pub outcome: Side,
     pub median_price: i128,
     pub agreeing_sources: u32,
+}
+
+#[contractevent(topics = ["voided"], data_format = "vec")]
+pub struct Voided {
+    #[topic]
+    pub market: Address,
 }
 
 #[contracterror]
@@ -112,29 +135,75 @@ impl Resolver {
         oracles: Vec<Address>,
         quorum: u32,
         max_age: u64,
+        resolution_timeout: u64,
         max_deviation_bps: u32,
         max_confidence_bps: u32,
         pyth_verifier: Option<Address>,
         pyth_feeds: Vec<PythFeed>,
     ) {
         let available = oracles.len() + if pyth_verifier.is_some() { 1 } else { 0 };
-        if quorum < 2
+        if quorum == 0
             || available < quorum
             || max_age == 0
+            || resolution_timeout < 300
+            || resolution_timeout > 2_592_000
             || max_deviation_bps == 0
             || max_deviation_bps > 10_000
             || max_confidence_bps > 10_000
         {
             panic!("invalid resolver configuration");
         }
+        let mut unique = Vec::new(&env);
+        for oracle in oracles.iter() {
+            if unique.contains(&oracle) {
+                panic!("duplicate oracle source");
+            }
+            unique.push_back(oracle);
+        }
         let storage = env.storage().instance();
         storage.set(&DataKey::Oracles, &oracles);
         storage.set(&DataKey::Quorum, &quorum);
         storage.set(&DataKey::MaxAge, &max_age);
+        storage.set(&DataKey::ResolutionTimeout, &resolution_timeout);
         storage.set(&DataKey::MaxDeviation, &max_deviation_bps);
         storage.set(&DataKey::MaxConfidence, &max_confidence_bps);
         storage.set(&DataKey::PythVerifier, &pyth_verifier);
         storage.set(&DataKey::PythFeeds, &pyth_feeds);
+        Self::bump(&env);
+    }
+
+    pub fn extend_ttl(env: Env) {
+        Self::bump(&env);
+    }
+
+    pub fn config(env: Env) -> Result<Config, Error> {
+        let storage = env.storage().instance();
+        Ok(Config {
+            oracles: storage
+                .get(&DataKey::Oracles)
+                .ok_or(Error::NotInitialized)?,
+            quorum: storage
+                .get(&DataKey::Quorum)
+                .ok_or(Error::NotInitialized)?,
+            max_age: storage
+                .get(&DataKey::MaxAge)
+                .ok_or(Error::NotInitialized)?,
+            resolution_timeout: storage
+                .get(&DataKey::ResolutionTimeout)
+                .ok_or(Error::NotInitialized)?,
+            max_deviation_bps: storage
+                .get(&DataKey::MaxDeviation)
+                .ok_or(Error::NotInitialized)?,
+            max_confidence_bps: storage
+                .get(&DataKey::MaxConfidence)
+                .ok_or(Error::NotInitialized)?,
+            pyth_verifier: storage
+                .get(&DataKey::PythVerifier)
+                .ok_or(Error::NotInitialized)?,
+            pyth_feeds: storage
+                .get(&DataKey::PythFeeds)
+                .ok_or(Error::NotInitialized)?,
+        })
     }
 
     pub fn resolve_market(
@@ -225,11 +294,54 @@ impl Resolver {
             agreeing_sources,
         }
         .publish(&env);
+        Self::bump(&env);
         Ok(outcome)
+    }
+
+    pub fn void_stale_market(env: Env, market: Address) -> Result<(), Error> {
+        let market_client = MarketClient::new(&env, &market);
+        let info = market_client.market_info();
+        if market_client.resolver() != Some(env.current_contract_address()) {
+            return Err(Error::InvalidConfig);
+        }
+        let resolution_timeout: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ResolutionTimeout)
+            .ok_or(Error::NotInitialized)?;
+        let void_after = info
+            .finalize_after
+            .checked_add(resolution_timeout)
+            .ok_or(Error::InvalidConfig)?;
+        if env.ledger().timestamp() < void_after {
+            return Err(Error::NotYetExpired);
+        }
+        let current = env.current_contract_address();
+        env.authorize_as_current_contract(vec![
+            &env,
+            InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context: ContractContext {
+                    contract: market.clone(),
+                    fn_name: symbol_short!("void"),
+                    args: (current.clone(),).into_val(&env),
+                },
+                sub_invocations: vec![&env],
+            }),
+        ]);
+        market_client.void(&current);
+        Voided { market }.publish(&env);
+        Self::bump(&env);
+        Ok(())
     }
 }
 
 impl Resolver {
+    fn bump(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+
     fn read_pyth(
         env: &Env,
         info: &MarketInfo,
