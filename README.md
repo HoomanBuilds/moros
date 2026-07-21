@@ -182,7 +182,7 @@ The canonical record is [deployments/platform-hardening-testnet.json](deployment
 | Market WASM | 7afca617a67b7f2d2dab4e9dc6836779871dff77fd876a2d83d62b435f5fa06a |
 | Shielded pool WASM | 617e3d7e152b03ad53f5704abe92295ccfaa538771835c7b2174f00396af9363 |
 | Price resolver WASM | fa2feaedc7622d45729e39e30a37946789934340a83bdd778981e7442194c06c |
-| Event resolver WASM | 55f8711add9d5a8f8a9b865def5b0bbed3f8f9e1293d4392e533c555e4e5e3fa |
+| Event resolver WASM | 64956727fbd1561c405f5aac91cd0275f31292e5d110a9f12244a6aa0d5c6f11 |
 
 The active testnet registry accepts only new Circle USDC markets built from the approved contract hashes above. Older XLM experiments are not active product markets.
 
