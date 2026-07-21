@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "overrides": {
+    "axios": "1.18.1",
+    "bfj": "7.0.2",
+    "ws": "8.21.1"
+  },
   "scripts": {
     "test": "node test-oracle-config.mjs",
     "verify:oracles": "node verify-oracles.mjs"

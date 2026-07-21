@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "overrides": {
+    "axios": "1.18.1",
     "protobufjs": "7.6.5",
     "underscore": "1.13.8"
   },

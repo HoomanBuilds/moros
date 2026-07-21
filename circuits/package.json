@@ -2,6 +2,9 @@
   "name": "prediction-market-circuits",
   "private": true,
   "version": "0.1.0",
+  "overrides": {
+    "bfj": "7.0.2"
+  },
   "dependencies": {
     "circomlib": "^2.0.5",
     "snarkjs": "^0.7.5"
