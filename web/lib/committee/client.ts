@@ -49,15 +49,31 @@ export async function postRedeem(body: { proof: unknown; publicSignals: string[]
   return r.json();
 }
 
-export async function registerPool(marketId: string, poolId: string): Promise<boolean> {
+async function registrationError(response: Response): Promise<string> {
+  const body = await response.text().catch(() => "");
+  if (!body) return `service returned HTTP ${response.status}`;
   try {
-    const r = await fetch(`${COMMITTEE_URL}/register-pool`, {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    if (typeof parsed.error === "string" && parsed.error.trim()) return parsed.error.trim();
+  } catch {
+    return body.slice(0, 240);
+  }
+  return body.slice(0, 240);
+}
+
+export async function registerPool(marketId: string, poolId: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${COMMITTEE_URL}/register-pool`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ marketId, poolId }),
     });
-    return r.ok;
   } catch {
-    return false;
+    throw new Error("The market contracts are confirmed, but Moros services could not be reached. Retry market setup to register them.");
+  }
+  if (!response.ok) {
+    const detail = await registrationError(response);
+    throw new Error(`The market contracts are confirmed, but service registration was rejected: ${detail}. Retry market setup after the service is ready.`);
   }
 }

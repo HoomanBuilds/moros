@@ -26,11 +26,8 @@ export async function runBet(
   { side: BetSide; amount: string; address: string; collateral: CollateralAsset; marketId: string; poolId: string; backupKey: CryptoKey; onStage: (s: BetStage) => void }
 ) {
   if (collateral.sac !== NETWORK.collateral.sac) throw new Error("Moros testnet markets require Stellar USDC");
-  const registered = await registerPool(marketId, poolId);
+  await registerPool(marketId, poolId);
   const pk = await getPk();
-  if (!registered) {
-    throw new Error("committee could not register this market - it may be offline; nothing was placed");
-  }
 
   const privateStake = privacyStakeForOrder(amount, collateral.decimals);
   const secret = rand();
@@ -106,7 +103,7 @@ export async function retryBetSubmission({
   backupKey?: CryptoKey;
   onStage: (stage: BetStage) => void;
 }) {
-  if (!await registerPool(position.market, poolId)) throw new Error("Committee could not register this market");
+  await registerPool(position.market, poolId);
   const pk = await getPk();
   onStage("proving");
   const { pathIndex, siblings, orderRoot } = await getProof(position.commitment, poolId);

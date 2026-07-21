@@ -47,6 +47,7 @@ import { addMarket, refreshMarkets } from "@/lib/markets/registry";
 import { saveMarketToRegistry } from "@/lib/supabase/markets-meta";
 import { uploadMarketBanner } from "@/lib/supabase/market-media";
 import { registerPool } from "@/lib/committee/client";
+import { activateMarket } from "@/lib/markets/activation";
 import { cn } from "@/lib/utils";
 import { NETWORK } from "@/lib/network";
 import {
@@ -80,6 +81,8 @@ const STEPS: { key: DeployStep; label: string }[] = [
   { key: "committee", label: "Configuring threshold committee" },
   { key: "redeemvk", label: "Installing redeem verifying key" },
   { key: "resolver", label: "Wiring the resolution contract" },
+  { key: "registration", label: "Registering market services" },
+  { key: "listing", label: "Publishing the market" },
   { key: "done", label: "Shielded market live" },
 ];
 
@@ -240,6 +243,11 @@ export default function CreatePage() {
   const hasSubsidy = !!accountState?.hasTrustline && accountState.balanceAtomic >= subsidy;
   const canFundDeployment = pendingDeployment?.funded || hasSubsidy;
   const activeIndex = stage ? STEPS.findIndex((s) => s.key === stage) : -1;
+  const busyLabel = stage === "registration"
+    ? "Registering market services"
+    : stage === "listing"
+      ? "Publishing market"
+      : "Deploying market";
   const categoryMode = isPriceMarket ? "price" : "event";
   const categoryPresentation = CATEGORY_PRESENTATION[category];
   const outcomeComplete = isPriceMarket ? strikeComplete : subjectComplete && questionComplete;
@@ -393,6 +401,33 @@ export default function CreatePage() {
       });
       const collateral = NETWORK.collateral;
       const marketMetadata = deployment.metadata;
+      await activateMarket({
+        register: () => registerPool(marketId, poolId),
+        save: () => saveMarketToRegistry({
+          marketId,
+          poolId,
+          asset: deployment.asset,
+          collateralCode: collateral.code,
+          collateralIssuer: collateral.issuer,
+          collateralSac: collateral.sac,
+          collateralDecimals: collateral.decimals,
+          creator: address,
+          title: marketMetadata.title,
+          category: marketMetadata.category,
+          subject: marketMetadata.subject,
+          bannerSourceUrl: marketMetadata.bannerSourceUrl,
+          bannerAttribution: marketMetadata.bannerAttribution,
+          bannerLicense: marketMetadata.bannerLicense,
+          bannerLicenseUrl: marketMetadata.bannerLicenseUrl,
+          resolverType: deployment.resolverType,
+          resolutionSource: marketMetadata.resolutionSource,
+          backupResolutionSources: marketMetadata.backupResolutionSources,
+          resolutionRules: marketMetadata.resolutionRules,
+          voidRules: marketMetadata.voidRules,
+          rulesHash: deployment.rulesHash,
+        }),
+        onStage: setStage,
+      });
       addMarket({
         marketId,
         poolId,
@@ -417,52 +452,24 @@ export default function CreatePage() {
         voidRules: marketMetadata.voidRules,
         rulesHash: deployment.rulesHash,
       });
-      await registerPool(marketId, poolId);
+      const bannerSource = selectedImage
+        ? selectedImage.kind === "upload"
+          ? { kind: "upload" as const, file: selectedImage.file }
+          : { kind: "commons" as const, downloadUrl: selectedImage.downloadUrl }
+        : marketMetadata.bannerDownloadUrl
+          ? { kind: "commons" as const, downloadUrl: marketMetadata.bannerDownloadUrl }
+          : null;
+      if (bannerSource) {
+        try {
+          await uploadMarketBanner({ address, marketId, source: bannerSource });
+        } catch (cause) {
+          setError(cause instanceof Error ? cause.message : "The market is live, but its image could not be attached.");
+        }
+      }
+      await refreshMarkets();
       clearPendingDeployment(address);
       setPendingDeployment(null);
-      try {
-        const saved = await saveMarketToRegistry({
-          marketId,
-          poolId,
-          asset: deployment.asset,
-          collateralCode: collateral.code,
-          collateralIssuer: collateral.issuer,
-          collateralSac: collateral.sac,
-          collateralDecimals: collateral.decimals,
-          creator: address,
-          title: marketMetadata.title,
-          category: marketMetadata.category,
-          subject: marketMetadata.subject,
-          bannerSourceUrl: marketMetadata.bannerSourceUrl,
-          bannerAttribution: marketMetadata.bannerAttribution,
-          bannerLicense: marketMetadata.bannerLicense,
-          bannerLicenseUrl: marketMetadata.bannerLicenseUrl,
-          resolverType: deployment.resolverType,
-          resolutionSource: marketMetadata.resolutionSource,
-          backupResolutionSources: marketMetadata.backupResolutionSources,
-          resolutionRules: marketMetadata.resolutionRules,
-          voidRules: marketMetadata.voidRules,
-          rulesHash: deployment.rulesHash,
-        });
-        if (!saved) throw new Error("The public registry rejected the market metadata");
-        const bannerSource = selectedImage
-          ? selectedImage.kind === "upload"
-            ? { kind: "upload" as const, file: selectedImage.file }
-            : { kind: "commons" as const, downloadUrl: selectedImage.downloadUrl }
-          : marketMetadata.bannerDownloadUrl
-            ? { kind: "commons" as const, downloadUrl: marketMetadata.bannerDownloadUrl }
-            : null;
-        if (bannerSource) {
-          try {
-            await uploadMarketBanner({ address, marketId, source: bannerSource });
-          } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "The market is live, but its image could not be attached.");
-          }
-        }
-        await refreshMarkets();
-      } catch {
-        setError("Market is live but could not be listed for others. It is saved locally.");
-      }
+      setStage("done");
       setResult({ marketId });
     } catch (e) {
       setError(e instanceof Error ? e.message : "deploy failed");
@@ -952,9 +959,13 @@ export default function CreatePage() {
                   <div className="flex items-start gap-3">
                     <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-200" aria-hidden="true" />
                     <div>
-                      <p className="text-sm font-medium text-amber-100">Incomplete market setup found</p>
+                      <p className="text-sm font-medium text-amber-100">
+                        {pendingDeployment.complete ? "Market activation needs attention" : "Incomplete market setup found"}
+                      </p>
                       <p className="mt-2 text-xs leading-relaxed text-foreground/55">
-                        Resume the saved {pendingDeployment.metadata.category} market from its last confirmed transaction. Moros reuses the deployed contracts and does not charge the creator subsidy twice.
+                        {pendingDeployment.complete
+                          ? "The contracts are confirmed on Stellar. Retry service registration and public listing without repeating transactions or paying the creator subsidy again."
+                          : `Resume the saved ${pendingDeployment.metadata.category} market from its last confirmed transaction. Moros reuses the deployed contracts and does not charge the creator subsidy twice.`}
                       </p>
                       {pendingDeployment.marketId && (
                         <p className="mt-2 break-all font-mono text-[10px] text-foreground/50">Market: {pendingDeployment.marketId}</p>
@@ -994,7 +1005,7 @@ export default function CreatePage() {
                 <Button type="submit" size="lg" className="h-12 w-full" disabled={busy || !canFundDeployment}>
                   {busy && <Spinner />}
                   {busy
-                    ? "Deploying market"
+                    ? busyLabel
                     : !canFundDeployment
                       ? "Insufficient USDC for subsidy"
                       : pendingDeployment

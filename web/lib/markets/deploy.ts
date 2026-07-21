@@ -30,7 +30,7 @@ import {
 
 const server = new rpc.Server(NETWORK.rpcUrl);
 
-export type DeployStep = "market" | "funding" | "pool" | "batcher" | "committee" | "redeemvk" | "resolver" | "done";
+export type DeployStep = "market" | "funding" | "pool" | "batcher" | "committee" | "redeemvk" | "resolver" | "registration" | "listing" | "done";
 
 export type DeploymentMetadata = {
   title: string;
@@ -302,7 +302,6 @@ export async function deployShieldedMarket({
     checkpoint({ eventRegistered: true });
   }
 
-  onStep("done");
   checkpoint({ complete: true });
   return { marketId, poolId, deployment };
 }
