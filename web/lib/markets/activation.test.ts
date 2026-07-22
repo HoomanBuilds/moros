@@ -32,6 +32,15 @@ async function main() {
     /public registry rejected the listing.*Retry market setup/,
   );
 
+  await assert.rejects(
+    activateMarket({
+      register: async () => {},
+      save: async () => { throw new Error("database rejected field 23514"); },
+      onStage: () => {},
+    }),
+    /database rejected field 23514/,
+  );
+
   console.log("market activation flow ok");
 }
 

@@ -1,7 +1,55 @@
 "use client";
 
 import { getBrowserClient } from "./client";
-import { signInWithWallet } from "./auth";
+import { signInWithWallet, type SocialAuthResult } from "./auth";
+
+type RegistryAuthClient = {
+  auth: {
+    getUser: () => Promise<{
+      data: { user: { app_metadata?: Record<string, unknown> } | null };
+      error: { message: string } | null;
+    }>;
+  };
+};
+
+type RegistryWriteError = {
+  code?: string;
+  message: string;
+};
+
+export async function ensureMarketRegistrySession(
+  client: RegistryAuthClient,
+  creator: string,
+  signIn: (expectedAddress?: string) => Promise<SocialAuthResult> = signInWithWallet,
+): Promise<void> {
+  const current = await client.auth.getUser();
+  if (!current.error && current.data.user?.app_metadata?.wallet === creator) return;
+
+  const result = await signIn(creator);
+  if (!result.ok) throw new Error(result.error);
+
+  const verified = await client.auth.getUser();
+  if (verified.error) {
+    throw new Error(`Wallet sign-in could not be verified: ${verified.error.message}`);
+  }
+  if (verified.data.user?.app_metadata?.wallet !== creator) {
+    throw new Error("The registry session does not match the connected Stellar wallet. Retry market setup.");
+  }
+}
+
+export function marketRegistryErrorMessage(error: RegistryWriteError): string {
+  if (error.code === "42501") {
+    return "The public registry could not authorize this wallet. Retry market setup and approve wallet sign-in.";
+  }
+  if (error.code === "PGRST204" || error.code === "42703") {
+    return "The public market registry is missing a required database migration.";
+  }
+  if (error.code === "23514") {
+    return "The public registry rejected the market metadata because it did not satisfy the listing rules.";
+  }
+  const code = error.code ? ` (${error.code})` : "";
+  return `The public registry could not list this market: ${error.message}${code}`;
+}
 
 export type MarketMeta = {
   market_id: string;
@@ -210,18 +258,13 @@ export async function saveMarketToRegistry(entry: {
   resolutionRules?: string;
   voidRules?: string;
   rulesHash?: string;
-}): Promise<boolean> {
+}): Promise<void> {
   const client = getBrowserClient();
-  if (!client) return false;
+  if (!client) throw new Error("The public market registry is not configured.");
 
-  const { data } = await client.auth.getSession();
-  const sessionWallet = data.session?.user.app_metadata?.wallet;
-  if (sessionWallet !== entry.creator) {
-    const result = await signInWithWallet(entry.creator);
-    if (!result.ok) return false;
-  }
+  await ensureMarketRegistrySession(client, entry.creator);
 
-  const { error } = await client.from("markets_meta").upsert(
+  const { data, error } = await client.from("markets_meta").upsert(
     {
       market_id: entry.marketId,
       pool_id: entry.poolId,
@@ -247,7 +290,10 @@ export async function saveMarketToRegistry(entry: {
       rules_hash: entry.rulesHash ?? null,
     },
     { onConflict: "market_id" },
-  );
+  ).select("market_id").maybeSingle();
 
-  return !error;
+  if (error) throw new Error(marketRegistryErrorMessage(error));
+  if (data?.market_id !== entry.marketId) {
+    throw new Error("The public registry did not confirm the market listing. Retry market setup.");
+  }
 }
