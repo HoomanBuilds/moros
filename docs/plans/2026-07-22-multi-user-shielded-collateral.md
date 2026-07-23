@@ -18,6 +18,7 @@ This plan covers design validation and testnet implementation. It does not autho
 - Prefer existing libraries and upstream Stellar privacy work over new cryptography.
 - Pin every adopted upstream release and commit. Isolate it behind Moros-owned adapters.
 - Do not require a paid service for the testnet privacy flow.
+- Do not use the privacy factory to bypass oracle capability gating. Sports, politics, weather, and other event categories remain unavailable until their tracked resolution stack passes its own release gates.
 - Run `cargo clean` after every Rust build or test session and verify no `target` directory remains before handoff.
 
 ## Delivery decision
@@ -31,10 +32,15 @@ The new flow is:
 1. User deposits USDC into the shared vault and receives private balance notes.
 2. User creates a private order and change note locally.
 3. A relayer submits the proof-bound order intent.
-4. The router and committee batch many users' orders and update each LMSR market with aggregate quantities.
-5. Resolution returns aggregate winning value to the shared vault.
-6. Each user claims into a new private balance note.
-7. The user may reuse that balance or withdraw publicly later.
+4. Offchain coordinators and the committee form a valid mixed batch, and a relayer submits it to the vault.
+5. The vault acts as the market's sole batcher, funds the exact aggregate LMSR charge, and receives aggregate outcome shares.
+6. Resolution returns aggregate winning value to the shared vault.
+7. Each user claims into a new private balance note.
+8. The user may reuse that balance or withdraw publicly later.
+
+Do not deploy a separate custody router in the first implementation. The current LMSR contract requires its configured batcher to fund each batch, receive both outcome shares, receive VOID batch-collateral refunds, and redeem aggregate winnings. The vault therefore owns the onchain routing module and is the exact batcher address. Offchain coordinators have no custody or contract authority.
+
+Deploy a noncustodial `MarketFactory` for permissionless user-created markets. The factory deploys only approved market WASM and atomically completes vault batcher, USDC, resolver, fee, timing, rules, subsidy, and vault-registration checks. It never holds shared shielded balances.
 
 ## Work package 0: Freeze the baseline and add privacy regression tests
 
@@ -62,6 +68,8 @@ The baseline test must prove that the current wallet-to-pool stake transfer is o
 - Add a fixture decoder for Soroban transaction envelopes, auth entries, contract events, and SAC transfer events.
 - Add a log scan that fails if test output contains known note secrets, nullifiers, exact private amounts, or committee shares.
 - Add an assertion that the current cloud backup exposes market and transaction metadata even though its payload is encrypted.
+- Add regression fixtures proving that one global stored execution price can overwrite an earlier batch, that post-batch spot price does not allocate exact LMSR cost, and that resolved creator subsidy currently has no terminal recovery path.
+- Resolve the ignored local draft `docs/specs/2026-07-20-economics-and-lifecycle.md`, which currently contradicts the tracked testnet specification and contract on one-sided markets. It is not a release source until the user deliberately approves a corrected tracked copy.
 - Record current proof generation time, verification resources, transaction size, queue throughput, and event volume.
 
 ### Gate
@@ -90,6 +98,7 @@ Create an isolated spike that must pass:
 ### Review checklist
 
 - Pin the latest reviewed Stellar Private Payments tag and exact commit.
+- Record that upstream currently labels its latest release `v0.1.0`, remains work in progress and unaudited, and warns that breaking changes are expected. Recheck this fact when the spike begins.
 - Record Apache, GPL, LGPL, and generated-artifact obligations for each reused component.
 - Compare its curve, hash, proof serialization, key format, and SDK with Moros's current BLS12-381 pipeline.
 - Benchmark its verifier against Moros's current verifier on the active Stellar protocol.
@@ -97,6 +106,7 @@ Create an isolated spike that must pass:
 - Confirm auth-entry relaying works with a distinct transaction source.
 - Evaluate Association Set Provider and selective-disclosure support without allowing policy changes to trap existing notes.
 - Verify that upstream output-note recovery does not depend on one browser tab or short RPC event retention.
+- Do not adopt an upstream public address-to-shielded-key registry for private Moros actions because it would recreate a wallet linkage.
 - Review all open upstream security warnings relevant to the selected commit.
 
 ### Decision record
@@ -119,23 +129,34 @@ Prevent contract, circuit, service, and browser implementations from drifting.
 
 Create cross-language fixtures that are consumed by Circom, Rust, and TypeScript. The fixtures cover:
 
-- Domain-separated balance, position, payout, refund, treasury, and padding commitments.
+- Domain-separated balance, position, service escrow, operator compensation, payout, refund, treasury, and padding commitments.
 - Nullifier derivation.
+- Per-market accepted-position tree construction, sparse included-set membership and non-membership, and final root sealing.
 - One-input and two-input spends.
 - One-output and two-output change.
 - Maximum USDC value, zero value, one atomic unit, and overflow attempts.
+- Whole-share to USDC atomic conversion and rejection of unsupported fractional share quantities.
 - Network, vault, asset, purpose, market, and operation-context mismatch.
 - Public-signal ordering and byte conversion.
 - Deterministic encrypted output-note recovery.
+- Separate input-note, position-note, and action identifiers with no early publication of a position spend nullifier.
+- One path-independent terminal nullifier for winning claim, losing recovery, pending refund, and VOID refund of the same position.
+- Signed relayer quote replay, expiry, operation, beneficiary key, and zero-fee cases.
+- Service-escrow release on successful batch and full return on deadline refund.
 
 ### Work
 
 - Define one canonical field encoding document.
 - Define USDC atomic-unit range and every multiplication bound before writing constraints.
+- Keep whole-share quantities for the first shared-vault testnet. Record the exact Q32-to-USDC conversion rule and block finer precision until aggregate payout conversion is exact in every differential fixture.
 - Define fixed input and output counts for each action to reduce metadata leakage.
 - Bind network passphrase, vault ID, USDC SAC ID, operation type, market context, relayer policy, and expiry into an operation-context hash.
 - Bind every output note to its owner viewing and spending keys.
+- Fix a reviewed authenticated-encryption envelope with an ephemeral key, nonce, fixed ciphertext length, and no stable public viewing-key identifier.
 - Represent platform and relayer compensation as shielded fee notes so per-action fees do not create identifying public transfers.
+- Keep any future batch service budget in a separate shielded escrow note. Release it only on valid inclusion and return it on an unbatched refund.
+- Define signed relayer quotes that bind vault, operation, action ID, fee-note key, exact fee or maximum fee, and quote expiry. Testnet permits zero-fee quotes.
+- Consume funding-note nullifiers when an order becomes pending. Do not reveal the position-note nullifier until claim or refund.
 - Define root-history acceptance and maximum proof age in ledgers.
 - Define padding-note rules and ensure zero-value notes cannot create spendable value.
 - Create a circuit manifest containing source hashes, R1CS hash, proving key hash, verification key hash, public-signal schema hash, and build command.
@@ -159,8 +180,9 @@ Add Soroban tests for every state and action pair:
 - Deposit transfers exactly the public amount and appends exactly the proven outputs.
 - Private transfer consumes each nullifier once and appends proof-bound outputs.
 - Withdrawal binds recipient, amount, change, fee, relayer policy, network, vault, and expiry.
+- Private transfer, order, claim, and refund require no public user-address authorization entry.
 - Wrong roots, old roots outside the accepted window, duplicate roots, malformed proofs, duplicate nullifiers, and duplicate output commitments fail.
-- A failed nested token or router call leaves inputs unspent and outputs absent.
+- A failed nested token or market call leaves inputs unspent and outputs absent.
 - Deposits and new orders can pause while private transfer, claim, refund, and withdrawal exits remain available.
 - Treasury actions cannot touch user notes.
 - Persistent state restoration and TTL behavior cannot make a spent nullifier reusable.
@@ -174,61 +196,87 @@ Generate long mixed action sequences across many users and assert:
 - Every accepted output is backed by accepted inputs or a public deposit.
 - Every spent note remains spent.
 - Asset, network, and vault domains never mix.
-- Total deposits plus market receipts equal withdrawals plus vault balance.
+- User deposits, creator subsidies, and explicit operations funding equal user, treasury, operator, and creator withdrawals plus vault balance plus collateral still held by registered markets.
+- For every batch, gross entitlements for YES and NO each equal locked position budgets minus the exact allocated market charge plus that outcome's aggregate redemption.
+- VOID returns the exact aggregate market charge and preserves full position budgets before any optional relayer fee.
+- Platform, relayer, service-escrow, and operator notes are included in liabilities and cannot be withdrawn from another user's backing.
+- Any defensive reconciliation residual has a proved source and bound and cannot be withdrawn by treasury or governance while it may back user liabilities.
 - Pausing cannot block exits.
 
 Use the existing Rust test framework. Do not add a new test framework solely for this package.
 
 ### Contract work
 
-- Store immutable network, USDC, treasury key, router, and proof configuration.
+- Store immutable network, USDC, treasury key, and proof configuration.
 - Store commitment frontier, current root, bounded root history, and capacity.
-- Use a nullifier accumulator or another TTL-safe representation. Do not rely on expiring temporary entries for double-spend safety.
+- Store each spent nullifier under its own persistent key, never delete it, and restore it before use if archived. Reconfirm on the active protocol that an archived persistent key cannot be recreated or interpreted as absent.
+- Store each market's accepted-position root, sparse included-position set root, immutable per-batch allocation roots, and sealed final roots after batching closes.
 - Store data in bounded keys so one global entry does not grow with users.
-- Emit commitment, leaf index, root, encrypted output payload, and action ID without plaintext owner or value.
-- Support public deposit, private transfer, router-bound spend, shielded credit, and public withdrawal.
+- Persist commitment, leaf index, root, fixed-length encrypted output envelope, and action ID without plaintext owner or value. Events mirror recovery data but are not its only durable source.
+- Support public deposit, private transfer, market-bound spend, shielded credit, and public withdrawal.
 - Make relayer submission permissionless after proof verification.
 - Make TTL extension permissionless and safe.
+- Verify that the configured USDC SAC and network match the deployment manifest. Document issuer freeze and clawback risk without claiming the vault can bypass it.
 
 ### Performance gate
 
-Measure contract resources for deposit, transfer, order spend, claim credit, and withdrawal at empty, half-full, and high tree counts. Do not choose tree depth or root-history length before these measurements.
+Measure contract resources for deposit, transfer, order spend, batch routing, claim credit, persistent ciphertext recovery, and withdrawal at empty, half-full, and high tree counts. Measure WASM size and storage rent. Do not choose tree depth or root-history length before these measurements.
 
-## Work package 4: Build the PrivateOrderRouter
+## Work package 4: Build vault routing and market settlement
 
 ### Planned location
 
-- `contracts/private-order-router/`
+- `contracts/shielded-collateral-vault/src/router.rs`
+- `contracts/market-factory/`
+- Required settlement changes under `contracts/lmsr-market/`
 
 ### Contract tests first
 
-- Register only exact approved market WASM, resolver, collateral, fee, treasury, close time, and LMSR configuration.
-- Reject a market that does not designate the router as batcher.
-- Accept a proof-bound private position from the vault without a wallet owner.
+- Deploy and register only exact approved market WASM, resolver, collateral, fee, treasury, close time, rules hash, and LMSR configuration through the approved factory.
+- Let any user create and atomically register a qualifying market without a Moros operator transaction.
+- Reject direct self-reported WASM identity or registration without an authenticated factory deployment record.
+- Bind deployment salt or nonce to creator, vault, network, rules hash, and market configuration. Reject duplicates without moving subsidy.
+- Revert market deployment, configuration, subsidy transfer, and vault registration together when any nested step fails.
+- Keep onchain activation independent from offchain metadata listing, and retry listing without contract redeployment or another subsidy transfer.
+- Reject registration until the creator subsidy covers the rounded-up LMSR worst-case loss and the market permanently designates the shared vault as batcher.
+- Reject a market that does not designate the vault as its sole batcher.
+- Accept a proof-bound private position without a wallet owner and consume its funding-note nullifiers atomically.
 - Reject orders at and after market close.
-- Reject duplicate commitments and nullifiers.
-- Apply a batch only once and only with the required committee threshold or aggregate proof.
-- Reject a batch whose quantities, commitments, nullifiers, market, epoch, or signer set differ from the attested statement.
-- Process a full batch while open and a minimum safe short batch after close.
-- Never decrypt or settle a single final order.
+- Reject duplicate commitments, input nullifiers, and action IDs while keeping the position spend nullifier private until claim or refund.
+- Apply a batch only once and only when the mandatory aggregate proof and required committee threshold statement both verify.
+- Reject a batch whose quantities, commitments, batch allocation root, market, epoch, backing statement, or signer set differs from the attested statement.
+- Reject a batch unless every included commitment belongs to the accepted-position tree and changes from absent to present under the sparse included-position set root.
+- Process normal batches of four while open. During the final window, process a short batch of two or three only when both aggregate YES and NO quantities are nonzero.
+- Never settle a lone order or a one-sided aggregate. Make every affected position shielded-refund eligible after the deadline.
+- Authorize only the exact vault-to-market USDC transfer returned by `quote_batch`, call `apply_batch` as the vault, and assert the returned charge.
+- Deterministically assign the exact atomic LMSR charge across included positions, prove `sum(c_i) = M_B`, and record one immutable batch allocation root.
+- Derive allocation from the pre-batch state, aggregate quantities, exact market charge, and a domain-separated order of commitments so a coordinator cannot favor one position.
+- Record an informative average execution price for UI display, but make the private assigned charge under the allocation root authoritative for claims.
+- Prove before acceptance that gross entitlements equal `locked budget - market charge + market redemption` for both YES and NO outcomes.
 - Make an unbatched order shielded-refund eligible after the deadline.
-- Pull aggregate winning value once after resolution.
+- Make the finalization transaction close batching before it seals the accepted and included roots. Test the exact boundary against concurrent final-batch and pending-refund submissions.
+- Pull aggregate winning value once after resolution and record the exact receipt.
+- On VOID, recognize the market's atomic batch-collateral return before enabling included-position refunds.
 - Create claim and refund rights that can only become proof-verified vault notes.
-- Preserve the existing LMSR solvency formula for one-sided and mixed batches.
+- Return remaining creator subsidy only after aggregate winning redemption, with no path to consume user or treasury note backing.
+- Exercise one relayer, coordinator, committee member, keeper, and RPC outage independently.
 
 ### Contract work
 
-- Keep per-market state in persistent keys under one router contract.
+- Keep per-market state in bounded persistent keys under the vault contract.
+- Store policy capabilities, not an operator-curated list of individual markets. Approved factory, WASM hashes, resolver types, USDC, timing bounds, and fee caps are governance parameters; qualifying market creation and registration are permissionless.
+- Preserve the testnet platform fee at 200 basis points of positive winning profit with a 1,000 basis point contract cap. Fix it before the first order and never apply it to principal, losses, pending refunds, or VOID refunds.
 - Keep order commitments and statuses independent of wallet addresses.
-- Call the vault atomically for note spending and output creation.
 - Call each LMSR market with aggregate values only.
-- Store clearing price, batch roots, inclusion state, aggregate market receipts, and claim-finalization state.
+- Store per-batch allocation root, informative average execution price, sparse included-set state, aggregate market receipts, and claim-finalization state.
 - Expose permissionless close, final-batch, refund-enable, aggregate-redeem, and TTL functions.
-- Ensure a router or committee outage cannot block refunds after the defined deadline.
+- Ensure a coordinator or committee outage cannot block refunds after the defined deadline.
+- Keep the offchain coordinator stateless with respect to custody. Any relayer can call the vault with the mandatory proof and required threshold statement.
 
 ### Existing contract changes
 
-- Extend `contracts/lmsr-market` only where needed to accept the shared router as its batcher.
+- Use the current `contracts/lmsr-market` batcher flow with the vault as batcher. Change it only for tested terminal accounting, including safe remaining-subsidy recovery after sole-batcher redemption.
+- Prefer atomic constructor or factory initialization for batcher, resolver, creator, collateral, timing, rules, fee, and subsidy so a new market cannot exist in a partially configured state.
 - Do not alter already deployed instances.
 - Keep `contracts/shielded-pool` operational for existing markets and add no new users to it after the shared flow is enabled.
 
@@ -240,12 +288,15 @@ Measure contract resources for deposit, transfer, order spend, claim credit, and
 - Private balance transfer.
 - Balance-to-position spend.
 - Position encryption consistency.
+- Mixed-batch aggregation, exact LMSR cost allocation, and two-outcome backing.
+- Accepted-position membership and sparse included-set non-membership for pending refunds.
 - Shielded winning claim.
 - Shielded losing-value recovery.
 - Full void refund.
 - Never-included order refund.
 - Public withdrawal with private change.
 - Treasury fee note creation.
+- Service-escrow release and refund.
 
 Prefer one composed private-order proof that covers balance spending, change, position commitment, and ciphertext consistency. If resource measurements require split proofs, both proofs must be verified atomically and bound to the same operation context.
 
@@ -262,8 +313,16 @@ For every circuit, include positive and negative witness tests for:
 - Operation-context binding.
 - Side range.
 - Amount, stake, payout, fee, decimal, and field bounds.
-- Outcome and clearing-price binding.
+- Whole-share quantity enforcement and unsupported fractional-share rejection.
+- Outcome and private assigned-charge binding.
+- Batch-specific allocation-root binding across two or more batches.
+- Private membership in included and refundable position roots without exposing the position commitment.
+- Private membership in an immutable batch root, or accepted membership plus included non-membership under sealed final roots, with unique position-nullifier replay protection.
+- Nonzero aggregate YES and NO enforcement.
+- Exact atomic charge allocation and two-outcome entitlement equality.
 - Fee-free void and principal refund.
+- Signed relayer quote, fee-note beneficiary, operation, expiry, and replay binding.
+- Batch operator compensation from proved service escrow and no compensation on failed inclusion.
 - Wrong recipient or relayer substitution.
 - Cross-market and cross-contract replay.
 - Zero-value padding behavior.
@@ -279,6 +338,8 @@ Compute every payout and fee in:
 - Committee service validation.
 
 All results must match exactly at atomic-unit precision for a generated corpus of market states and order values.
+
+The differential corpus must include several batches at different market states. For each batch, compute every private `c_i` plus `S_B`, `M_B`, `W_B(YES)`, `W_B(NO)`, `E_B(YES)`, and `E_B(NO)`. Require `sum(c_i) = M_B` and exact entitlement equality for both outcomes. Reject any case where allocation depends on coordinator choice, a later spot price changes an earlier entitlement, or a residual is treated as revenue without a proved accounting source.
 
 ### Trusted setup rule
 
@@ -300,12 +361,16 @@ Add tests for:
 - Two relayer instances receiving the same action ID.
 - Duplicate, reordered, delayed, and expired intents.
 - Concurrent nullifier conflicts.
+- Concurrent final-batch-versus-refundable-root sealing and duplicate claim or refund nullifier conflicts.
 - Process termination during every database transition.
 - Queue restart with no lost or duplicated orders.
 - Two batch workers competing for the same market window.
 - Committee member timeout and quorum recovery.
 - RPC timeout after submission but before transaction confirmation.
 - Indexer reset and restore from a durable checkpoint.
+- Clean-wallet recovery after remaining offline longer than public RPC transaction and event retention.
+- Two indexers using independent RPC or raw-ledger sources and detecting a deliberately corrupted checkpoint.
+- Signed relayer quote expiry, replay, wrong beneficiary, wrong operation, and zero-fee behavior.
 - Maliciously large bodies, invalid proof encodings, and rate-limit abuse.
 - Log redaction for every public endpoint.
 
@@ -317,29 +382,39 @@ Add tests for:
 - Persist encrypted intents and public proof data only as long as required for batching and recovery.
 - Define cleanup and retention jobs with tests.
 
+### Testnet operating budget
+
+- Keep relayer, coordinator, committee, keeper, and TTL service fees at zero for the free testnet.
+- Fund service accounts only with testnet XLM and publish their low-balance health state.
+- Do not infer a mainnet fee from testnet usage. Measure XLM and service costs, then implement the shielded service-escrow model before any nonzero batch compensation is enabled.
+
 ### Relayer API
 
 - `POST /intents` accepts a proof-bound opaque action.
 - `GET /intents/:actionId` returns received, validating, submitted, confirmed, rejected, or expired.
 - `GET /relayers` publishes supported vaults, fee policy, limits, and health.
+- `GET /relayers` returns a signed operation-specific quote with quote ID, fee-note key, amount, and ledger expiry.
 - Submission is idempotent.
 - A user may choose another relayer without creating a different spend.
 - The fee payer validates the entire invocation tree and rejects any authorization involving the fee-payer address.
+- Private actions reject any unexpected public user-address authorization entry. Only public deposit authorization and the public withdrawal recipient are wallet-visible boundaries.
 
-### Committee and batcher
+### Committee, coordinator, and batch submitter
 
-- Register the shared vault and router through exact onchain linkage and approved WASM hashes.
+- Register the shared vault, its approved markets, and the internal routing capability through exact onchain linkage and approved WASM hashes.
 - Queue across all registered markets.
 - Build windows fairly so one high-volume market cannot starve another.
-- Maintain minimum batch privacy and never process a single final order.
-- Persist DKG epoch, used order nullifiers, batch membership, and transaction results.
-- Add a permissionless or paid fallback batch call where possible.
+- Maintain minimum batch privacy, require nonzero YES and NO aggregate quantities, and never process a single or one-sided final set.
+- Persist DKG epoch, consumed funding-note nullifiers, action IDs, batch membership, and transaction results without storing future position spend nullifiers.
+- Allow any relayer to submit a valid aggregate proof with the required threshold statement. Do not require an admin endpoint for fallback.
 
 ### Indexers
 
 - Run two independent commitment and market indexers.
+- Use independent RPC or raw-ledger sources so both indexers do not share one availability and integrity failure.
 - Verify roots against the contract after every append.
-- Save signed or hash-addressed checkpoints.
+- Rebuild fixed-length encrypted output envelopes from persistent contract entries by default.
+- Save hash-addressed checkpoints that are reproducibly verified against onchain roots. A Moros signature alone is insufficient.
 - Alert and stop serving witnesses on any root divergence.
 - Support pagination and bounded-memory rebuilds for large user counts.
 
@@ -348,7 +423,8 @@ Add tests for:
 ### Tests first
 
 - Deterministic key recovery across supported Stellar wallets.
-- Clean-browser recovery from encrypted output events and checkpoints.
+- Clean-browser recovery from persistent encrypted output records and independently verifiable checkpoints.
+- Recovery after the wallet was offline longer than public RPC retention.
 - Two-device note discovery and conflict resolution.
 - Browser crash before submission, during submission, after chain confirmation, and before local commit.
 - Wallet switch, network switch, vault switch, and locked wallet.
@@ -360,6 +436,7 @@ Add tests for:
 - Replace wallet-keyed position records with an encrypted note database keyed by opaque note identifiers.
 - Add an encrypted intent journal written before submission.
 - Derive separate spending, viewing, backup, and sync keys from domain-separated wallet signatures.
+- Label the wallet signature as local unlock and recovery. Do not treat it as authorization for private vault actions.
 - Authenticate private backup synchronization with an opaque sync capability, not the social wallet session.
 - Scan encrypted output payloads and verify every discovered commitment locally.
 - Reconcile nullifiers and outputs against the chain before selecting notes.
@@ -386,14 +463,17 @@ Add tests for:
 - Select and lock notes locally.
 - Generate order, encryption, balance-conservation, and change proofs locally.
 - Show proving progress, relayer selection, queue status, batch status, and recoverability.
+- Show the signed relayer quote, expiry, and fee before proving or note locking.
 - Never show success before the nullifier and outputs are confirmed.
 - Handle insufficient shielded balance without falling back to a direct public stake.
+- Explain that one-sided pending demand may remain unbatched and will become fully refundable after the deadline.
 
 #### Claim or refund
 
 - Default to receiving a new shielded USDC balance note.
 - Show the expected private balance change locally.
 - Keep winning profit, fee, refund, and payout note values out of public calls.
+- Use the immutable private assigned charge from the position's own batch allocation root, not the latest displayed odds.
 - Allow losing positions with recoverable value and voided positions to create shielded balance notes.
 - Clearly show terminal claimed, recovered, refunded, or lost states.
 
@@ -425,7 +505,7 @@ Add tests for:
 
 ### Reason for a separate gate
 
-The shared vault hides the wallet-to-market link from the public ledger, but the relayer still receives a target market and the chain sees the set of markets touched by a batch.
+The shared vault hides the wallet-to-market link from the public ledger, but the first flow exposes the target market of a relayed intent, the relayer receives that target, and the chain sees the markets touched by each batch.
 
 Hiding each selected market requires a bounded cross-market construction. It must not be promised until measured.
 
@@ -456,23 +536,24 @@ Do not enable a UI statement that market choice is hidden from the relayer until
 - Existing positions are never converted automatically.
 - Existing users finish claims or refunds through the current path.
 - New shared-vault markets are selected by an explicit capability field, not a public release number.
-- Market creation cannot select shared shielded collateral until vault, router, committee, relayers, indexers, keeper, frontend, and registry all report the same approved deployment identifiers and WASM hashes.
+- User-created qualifying markets deploy and register permissionlessly through the approved factory after atomic subsidy and linkage checks. Unsupported resolver categories remain unavailable before deployment.
+- Market creation cannot select shared shielded collateral until factory, vault, market, committee, coordinators, relayers, indexers, keeper, frontend, and registry all report the same approved deployment identifiers and WASM hashes.
 
 ### Deployment order
 
-1. Upload reviewed vault and router WASM.
-2. Deploy the shared USDC vault with development verification keys.
-3. Deploy and bind the private order router.
-4. Configure multisig, timelock, treasury shielded key, relayers, committee, and resolver registry.
-5. Deploy one test market and verify exact cross-contract links.
-6. Start two indexers, two relayers, committee members, batch workers, and resolution keeper.
+1. Upload reviewed factory, vault, and market WASM.
+2. Deploy the factory with the approved market WASM hash and supported resolver policy.
+3. Deploy the shared USDC vault with development verification keys and the approved factory address.
+4. Configure multisig, timelock, immutable treasury shielded key, relayers, committee, and resolver registry.
+5. Create one market through the factory and verify its atomic subsidy, vault batcher, resolver, USDC, rules, fee, timing, deployment record, and vault registration.
+6. Start two indexers, two relayers, two coordinator instances, committee members, batch workers, and resolution keeper.
 7. Publish frontend configuration only after service health and contract hashes match.
 8. Run multi-user live testnet scenarios.
 9. Enable creation of additional shared-vault markets only after the first market passes every lifecycle path.
 
 ### No partial activation
 
-If any component reports the wrong vault, router, collateral, committee, verification key, resolver, treasury, network, or WASM hash, market creation and betting fail closed.
+If any component reports the wrong factory, deployment record, vault, market batcher, collateral, subsidy, committee, verification key, resolver, rules hash, treasury, network, or WASM hash, market creation and betting fail closed.
 
 ## Work package 11: Full verification
 
@@ -492,16 +573,20 @@ If any component reports the wrong vault, router, collateral, committee, verific
 Use independently generated test accounts, not one wallet repeated:
 
 - 100 users deposit and restore shielded balances.
-- 100 users place mixed and one-sided bets across multiple markets.
+- Multiple users create supported markets through the factory without a Moros operator transaction. A failed metadata listing retries without redeploying or paying subsidy again.
+- 100 users place mixed and one-sided demand across multiple markets. Mixed batches settle, while demand that cannot form a privacy-safe two-sided batch becomes privately refundable.
 - 20 clients submit concurrently against recent accepted roots.
 - Full and short final batches settle.
-- Lone final orders receive shielded refunds.
+- Lone and one-sided final sets receive shielded refunds without revealing a public user address.
+- Multiple batches at different market states retain separate exact batch allocation roots and informative average execution prices.
 - YES, NO, VOID, stale-oracle, and delayed-resolution paths complete.
 - Winners claim into shielded balances.
-- Losers recover any defined residual value.
+- Losers recover their exact unused position budget, equal to budget minus assigned market charge.
 - Treasury receives exact shielded fee notes.
 - Users reuse payouts in another market without a public wallet transaction.
 - Users withdraw partial and full balances through different relayers.
+- A clean wallet offline beyond public RPC retention restores every unspent note from persistent or independently archived ledger data.
+- Remaining creator subsidy is released only after aggregate winning redemption and does not change vault liability coverage.
 - Duplicate nullifier, replay, wrong network, wrong market, stale root, and tampered recipient attacks fail.
 - A relayer, committee member, keeper, indexer, and RPC endpoint each fail during active use.
 
@@ -517,6 +602,7 @@ Record:
 - Root-history miss rate.
 - Queue depth, retries, failures, and duplicates.
 - Vault asset and aggregate liability reconciliation.
+- Exact per-batch charge allocation, backing for both possible outcomes, and any defensive reconciliation reserve.
 - Effective anonymity set by action window.
 
 No performance or privacy number is published before it is measured.
@@ -540,7 +626,7 @@ No performance or privacy number is published before it is measured.
 2. `docs: record Stellar privacy compatibility decision`
 3. `test: add shielded note conformance fixtures`
 4. `feat: add shared shielded collateral vault`
-5. `feat: add private order router`
+5. `feat: add private market factory and routing`
 6. `feat: add shielded collateral circuits`
 7. `feat: add durable private intent services`
 8. `feat: add shielded note recovery`
@@ -555,14 +641,17 @@ Exact commits may be split further when a change has an independently testable b
 This work is complete only when a clean testnet user can:
 
 1. Connect a Stellar wallet.
-2. Deposit USDC once into the shared vault.
-3. Disconnect the wallet from transaction submission.
-4. Place multiple bets across markets through relayers using shielded balance.
-5. Recover the same notes in a clean browser.
-6. Receive a winning claim or refund as shielded USDC.
-7. Reuse that USDC in another market without a public wallet transfer.
-8. Withdraw later to a chosen public address.
-9. See accurate history and recovery state.
-10. Complete every action when one relayer or one committee member is unavailable.
+2. Create and atomically register a supported market through the approved factory without a Moros operator transaction.
+3. Deposit USDC once into the shared vault.
+4. Disconnect the wallet from transaction submission. A later deterministic wallet signature may unlock and recover local shielded keys but does not authorize a private action transaction.
+5. Place multiple bets across markets through relayers using shielded balance.
+6. Recover the same notes in a clean browser.
+7. Receive a winning claim or refund as shielded USDC.
+8. Reuse that USDC in another market without a public wallet transfer.
+9. Withdraw later to a chosen public address.
+10. See accurate history and recovery state.
+11. Complete every action when one relayer or one committee member is unavailable.
+12. Recover one-sided pending demand as a full shielded refund after the deadline.
+13. Restore all unspent notes after remaining offline longer than public RPC retention.
 
 The ledger must show the original deposit and final withdrawal, but it must not contain a protocol-level link from the user's wallet to an individual bet, shielded claim, or private balance.
