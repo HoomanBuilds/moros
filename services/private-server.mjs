@@ -616,7 +616,14 @@ async function main() {
       const relative = decodeURIComponent(
         requestUrl.pathname.slice("/zk/private/".length),
       );
-      if (artifacts.serve(request, response, relative)) return;
+      if (
+        artifacts.serve(
+          request,
+          response,
+          relative,
+          responseHeaders(request),
+        )
+      ) return;
       sendJson(request, response, 404, { error: "artifact not found" });
       return;
     }

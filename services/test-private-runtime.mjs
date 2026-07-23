@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import {
   mkdtempSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { StrKey } from "@stellar/stellar-sdk";
-import { parseRange } from "./private-artifacts.mjs";
+import {
+  parseRange,
+  PrivateArtifactStore,
+} from "./private-artifacts.mjs";
 import { PrivateAllocationRegistry } from "./private-allocation-registry.mjs";
 import { PrivateExitRegistry } from "./private-exit-registry.mjs";
 import { PrivateMarketRegistry } from "./private-market-registry.mjs";
@@ -30,6 +34,51 @@ assert.deepEqual(
 );
 assert.throws(() => parseRange("bytes=100-101", 100), /outside/);
 assert.throws(() => parseRange("items=1-2", 100), /invalid/);
+
+const artifactDirectory = mkdtempSync(resolve(tmpdir(), "moros-private-artifacts-"));
+try {
+  writeFileSync(
+    resolve(artifactDirectory, "manifest.json"),
+    JSON.stringify({
+      network: "testnet",
+      mainnet_ready: false,
+      setup_manifest_sha256: "setup-hash",
+      circuits: [],
+    }),
+  );
+  const artifacts = new PrivateArtifactStore({
+    root: artifactDirectory,
+    deployment: { provingManifestSha256: "setup-hash" },
+  });
+  let responseStatus;
+  let responseHeaders;
+  assert.equal(
+    artifacts.serve(
+      { headers: {}, method: "HEAD" },
+      {
+        writeHead(status, headers) {
+          responseStatus = status;
+          responseHeaders = headers;
+        },
+        end() {},
+      },
+      "manifest.json",
+      {
+        "access-control-allow-origin": "https://moros.example",
+        vary: "origin",
+      },
+    ),
+    true,
+  );
+  assert.equal(responseStatus, 200);
+  assert.equal(
+    responseHeaders["access-control-allow-origin"],
+    "https://moros.example",
+  );
+  assert.equal(responseHeaders.vary, "origin");
+} finally {
+  rmSync(artifactDirectory, { recursive: true, force: true });
+}
 
 const directory = mkdtempSync(resolve(tmpdir(), "moros-private-markets-"));
 const stateFile = resolve(directory, "markets.json");

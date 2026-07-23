@@ -98,7 +98,7 @@ export class PrivateArtifactStore {
     return this.files.get(relative);
   }
 
-  serve(request, response, relative) {
+  serve(request, response, relative, responseHeaders = {}) {
     const path = this.path(relative);
     if (!path) return false;
     const size = statSync(path).size;
@@ -106,7 +106,10 @@ export class PrivateArtifactStore {
     try {
       range = parseRange(request.headers.range, size);
     } catch {
-      response.writeHead(416, { "content-range": `bytes */${size}` });
+      response.writeHead(416, {
+        ...responseHeaders,
+        "content-range": `bytes */${size}`,
+      });
       response.end();
       return true;
     }
@@ -114,6 +117,7 @@ export class PrivateArtifactStore {
       ? "application/json; charset=utf-8"
       : "application/octet-stream";
     const headers = {
+      ...responseHeaders,
       "accept-ranges": "bytes",
       "cache-control": relative === "manifest.json"
         ? "no-cache"
