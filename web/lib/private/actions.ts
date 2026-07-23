@@ -41,7 +41,11 @@ import {
   type Point,
 } from "./primitives";
 import { provePrivateAction } from "./prover";
-import { openPrivateWallet, type OwnedIndexedNote } from "./wallet";
+import {
+  openPrivateWallet,
+  type OwnedIndexedNote,
+  type PrivateWalletSnapshot,
+} from "./wallet";
 
 const MAX_NOTE_AMOUNT = (1n << 60n) - 1n;
 const VIRTUAL_ASSETS = 1_000_000n;
@@ -708,8 +712,9 @@ export type OwnedLiquidityShare = {
 export async function getOwnedLiquidityShares(
   address: string,
   liquidityVaultIds: string[],
+  snapshot?: PrivateWalletSnapshot,
 ): Promise<OwnedLiquidityShare[]> {
-  const wallet = await openPrivateWallet(address);
+  const wallet = snapshot ?? await openPrivateWallet(address);
   const payloads = new Map<string, string>();
   for (const liquidityVaultId of liquidityVaultIds) {
     const fields = await addressLimbs(liquidityVaultId);
@@ -962,9 +967,10 @@ async function liquidityExitState(
 export async function getPrivateLiquidityExitOffers(
   address: string,
   market?: string,
+  snapshot?: PrivateWalletSnapshot,
 ): Promise<PrivateLiquidityExitOffer[]> {
   const [wallet, entries] = await Promise.all([
-    openPrivateWallet(address),
+    snapshot ?? openPrivateWallet(address),
     getPrivateLiquidityExits({ market }),
   ]);
   const vaultFields = new Map<string, Point>();

@@ -168,15 +168,16 @@ export default function LiquidityPage() {
     setUnlocking(true);
     setPageError("");
     try {
-      const [wallet, shares, offers] = await Promise.all([
-        openPrivateWallet(address),
+      const wallet = await openPrivateWallet(address);
+      const [shares, offers] = await Promise.all([
         getOwnedLiquidityShares(
           address,
           markets.flatMap((market) =>
             market.liquidityVaultId ? [market.liquidityVaultId] : []
           ),
+          wallet,
         ),
-        getPrivateLiquidityExitOffers(address),
+        getPrivateLiquidityExitOffers(address, undefined, wallet),
       ]);
       setPrivateBalance(wallet.balance);
       setOwnedShares(shares);
@@ -215,15 +216,16 @@ export default function LiquidityPage() {
 
   async function refreshPrivateLiquidityState() {
     if (!address) throw new Error("Connect a wallet first");
-    const [wallet, shares, offers] = await Promise.all([
-      openPrivateWallet(address),
+    const wallet = await openPrivateWallet(address);
+    const [shares, offers] = await Promise.all([
       getOwnedLiquidityShares(
         address,
         markets.flatMap((entry) =>
           entry.liquidityVaultId ? [entry.liquidityVaultId] : []
         ),
+        wallet,
       ),
-      getPrivateLiquidityExitOffers(address),
+      getPrivateLiquidityExitOffers(address, undefined, wallet),
     ]);
     setPrivateBalance(wallet.balance);
     setOwnedShares(shares);

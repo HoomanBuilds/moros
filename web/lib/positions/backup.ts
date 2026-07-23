@@ -17,8 +17,9 @@ import {
 import { resolveArchiveVault } from "./backup-vault";
 import { backupMessage, decryptPosition, encryptPosition } from "./crypto";
 import { listPositions, mergePositions, updatePosition, type Position } from "./book";
+import { createAsyncValueCache } from "./unlock-cache";
 
-const unlockedKeys = new Map<string, PrivateArchiveKeys>();
+const unlockedKeys = createAsyncValueCache<string, PrivateArchiveKeys>();
 
 async function archiveVault(): Promise<string> {
   const configured = process.env.NEXT_PUBLIC_SHARED_VAULT_ID;
@@ -31,13 +32,11 @@ async function archiveVault(): Promise<string> {
 export async function unlockPositionBackup(address: string): Promise<PrivateArchiveKeys> {
   const vault = await archiveVault();
   const cacheKey = `${address}:${NETWORK.id}:${vault}`;
-  const existing = unlockedKeys.get(cacheKey);
-  if (existing) return existing;
-  const message = backupMessage(address, NETWORK.id, vault);
-  const { signedMessage } = await getKit().signMessage(message, { address });
-  const keys = await derivePrivateArchiveKeys(address, NETWORK.id, vault, signedMessage);
-  unlockedKeys.set(cacheKey, keys);
-  return keys;
+  return unlockedKeys.getOrCreate(cacheKey, async () => {
+    const message = backupMessage(address, NETWORK.id, vault);
+    const { signedMessage } = await getKit().signMessage(message, { address });
+    return derivePrivateArchiveKeys(address, NETWORK.id, vault, signedMessage);
+  });
 }
 
 export async function preparePositionBackup(address: string): Promise<PrivateArchiveKeys> {
