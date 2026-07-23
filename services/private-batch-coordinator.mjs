@@ -60,6 +60,7 @@ export class PrivateBatchCoordinator {
     committeeSecret,
     marketClient,
     prove,
+    submit = send,
     now = () => Math.floor(Date.now() / 1_000),
   }) {
     if (
@@ -78,6 +79,7 @@ export class PrivateBatchCoordinator {
     this.committeeSecret = committeeSecret;
     this.marketClient = marketClient;
     this.prove = prove;
+    this.submit = submit;
     this.now = now;
     this.processing = new Set();
   }
@@ -117,7 +119,7 @@ export class PrivateBatchCoordinator {
         now >= Number(epoch.cutoff)
       )
     ) {
-      await send(this.vault.seal_epoch({
+      await this.submit(this.vault.seal_epoch({
         market,
         epoch_number: epochNumber,
       }));
@@ -139,7 +141,7 @@ export class PrivateBatchCoordinator {
     }
 
     if (phase === "Sealed" && now >= Number(epoch.refund_at)) {
-      await send(this.vault.make_epoch_refundable({
+      await this.submit(this.vault.make_epoch_refundable({
         market,
         epoch_number: epochNumber,
       }));
@@ -199,7 +201,7 @@ export class PrivateBatchCoordinator {
         committeeSecret: this.committeeSecret,
       });
       const proof = await this.prove(statement.witness);
-      await send(this.vault.submit_batch({
+      await this.submit(this.vault.submit_batch({
         market,
         epoch_number: epochNumber,
         submission: {
@@ -240,7 +242,7 @@ export class PrivateBatchCoordinator {
       now < Number(registration.expiry)
     ) {
       const next = resultValue(
-        await send(this.vault.open_next_epoch({
+        await this.submit(this.vault.open_next_epoch({
           market,
           prior_epoch: epochNumber,
         })),

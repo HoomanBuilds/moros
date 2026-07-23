@@ -9,7 +9,8 @@
     "ws": "8.21.1"
   },
   "scripts": {
-    "test": "node test-oracle-config.mjs && node test-deployment-utils.mjs && node test-private-protocol.mjs && node test-private-indexer.mjs && node test-private-relayer.mjs && node test-private-batch-coordinator.mjs && node economics/baseline.test.mjs && node economics/model.test.mjs && node committee/test-bn254-babyjub.mjs",
+    "test": "node test-oracle-config.mjs && node test-deployment-utils.mjs && node test-private-protocol.mjs && node test-private-indexer.mjs && node test-private-relayer.mjs && node test-private-batch-coordinator.mjs && node test-private-runtime.mjs && node economics/baseline.test.mjs && node economics/model.test.mjs && node committee/test-bn254-babyjub.mjs",
+    "start:private": "node private-server.mjs",
     "deploy:private-testnet": "node deploy-private-testnet.mjs",
     "zk:register-verifier": "node zk/register-verifier.mjs",
     "verify:oracles": "node verify-oracles.mjs"
