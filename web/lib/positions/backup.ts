@@ -2,6 +2,7 @@
 
 import { getKit } from "@/lib/wallet";
 import { NETWORK } from "@/lib/network";
+import { getPrivateConfig } from "@/lib/private/client";
 import {
   readPrivateArchive,
   registerPrivateArchive,
@@ -13,20 +14,22 @@ import {
   splitArchivePages,
   type PrivateArchiveKeys,
 } from "@/lib/private-sync/crypto";
+import { resolveArchiveVault } from "./backup-vault";
 import { backupMessage, decryptPosition, encryptPosition } from "./crypto";
 import { listPositions, mergePositions, updatePosition, type Position } from "./book";
 
 const unlockedKeys = new Map<string, PrivateArchiveKeys>();
-const CONTRACT = /^C[A-Z2-7]{55}$/u;
 
-function archiveVault(): string {
-  const configured = process.env.NEXT_PUBLIC_SHARED_VAULT_ID || NETWORK.poolId;
-  if (!CONTRACT.test(configured)) throw new Error("Private activity sync vault is not configured");
-  return configured;
+async function archiveVault(): Promise<string> {
+  const configured = process.env.NEXT_PUBLIC_SHARED_VAULT_ID;
+  const deploymentVault = configured
+    ? undefined
+    : (await getPrivateConfig()).contracts.sharedVault;
+  return resolveArchiveVault(configured, deploymentVault);
 }
 
 export async function unlockPositionBackup(address: string): Promise<PrivateArchiveKeys> {
-  const vault = archiveVault();
+  const vault = await archiveVault();
   const cacheKey = `${address}:${NETWORK.id}:${vault}`;
   const existing = unlockedKeys.get(cacheKey);
   if (existing) return existing;
