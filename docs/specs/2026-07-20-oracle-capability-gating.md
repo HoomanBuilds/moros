@@ -271,7 +271,7 @@ No real-USDC mainnet market opens until all applicable gates pass.
 - Mainnet-specific deployment manifest with no testnet fallback IDs
 - Verified Circle USDC SAC and all resolver dependencies on mainnet
 - At least five independently controlled privacy or arbitration operators where applicable
-- Full USDC lifecycle evidence for creation, one-sided betting, final short batch, price resolution, winning claim, stale-oracle VOID, pending-order refund, and replay rejection
+- Full USDC lifecycle evidence for creation, complete privacy-safe batching, one-sided and sparse-order refund, price resolution, winning claim, stale-oracle VOID, pending-order refund, and replay rejection
 - Fault tests for RPC outage, source outage, stale data, disagreement, malicious proposal, committee member loss, keeper loss, and evidence-storage loss
 - Testnet soak for every enabled capability version
 - Monitoring, alerts, backups, key rotation, operator runbooks, and public status page

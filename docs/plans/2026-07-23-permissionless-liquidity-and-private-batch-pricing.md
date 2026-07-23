@@ -15,6 +15,7 @@ The completed testnet flow must let a user create an eligible market without USD
 - Do not add active LP minting against an unreviewed internal NAV.
 - Do not promise immediate USDC for capital that still secures an open market.
 - Do not enable custom private limits until their enforcement preserves individual side privacy.
+- Do not execute batches below eight positions or with fewer than two positions on either side. If resource tests cannot support that floor, block the private release.
 - Keep unsupported resolver categories unavailable.
 - Use Stellar USDC as collateral. XLM is only for Stellar fees and account reserve.
 - Preserve claim and refund paths for existing deployed markets.
@@ -82,8 +83,10 @@ Implement one exact integer reference for:
 - Exact rounding-reserve contribution.
 - Trade-fee curve.
 - LP and protocol fee split.
+- Rounding-reserve advance and exact reimbursement before fee splitting.
 - YES, NO, and VOID bettor liabilities.
 - YES, NO, and VOID LP equity.
+- Conditional unvested LP fee accrual and normal-resolution vesting.
 - Funding-stage share mint and burn.
 - Replacement LP exit.
 - Terminal LP share redemption.
@@ -96,6 +99,7 @@ Implement one exact integer reference for:
 - Rounding contribution is nonnegative and less than batch size atomic units.
 - `equity_if_yes` and `equity_if_no` are nonnegative for every accepted state.
 - Vested fees never include voided trade fees.
+- Every rounding advance is repaid exactly once on normal resolution or VOID.
 - Total system USDC is conserved across every transition.
 - Larger `b` reduces price movement for the same fixed-lot batch.
 - No state permits LP or protocol withdrawal from bettor backing.
@@ -120,6 +124,7 @@ Run at least:
 - Active exit request before and after large price movement.
 - Committee and resolution delays.
 - Fee rates from zero through the contract cap.
+- Complementary self-crossing, repeated wash batches, LP-owned bettor accounts, and attempted rounding-reserve extraction.
 
 ### Gate
 
@@ -143,17 +148,24 @@ Rust, circuit, TypeScript, and UI implementations must consume the same fixture 
 - Mint exact LP shares.
 - Reject zero deposits and zero-share mints.
 - Ignore direct token donations in share accounting.
+- Verify immutable virtual-share constants create no redeemable owner and permit exact final funding-stage redemption.
 - Burn funding-stage shares for exact proportional USDC.
 - Cancel an underfunded expired proposal permissionlessly.
 - Refund every LP after cancellation.
 - Reject activation below target.
 - Recheck every capability during activation.
+- Reject activation after the minimum open-trading window or after a capability is withdrawn, then permit deterministic LP refunds.
 - Activate atomically at target.
+- Race funding withdrawal, proposal cancellation, and activation against one state version.
 - Roll back deployment, reserve transfer, and registration when any nested call fails.
 - Freeze direct share minting after activation.
 - Create and cancel an active exit request with share amount, minimum USDC, destination, and expiry without double use.
 - Fill active exit shares at or above the stated minimum with replacement USDC atomically.
+- Bind replacement acceptance to the exit terms, exact market state version, scenario equity, fees, expiry, and maximum state age.
+- Reject a match after a batch, close, resolution, cancellation, or prior partial fill changes the bound state.
 - Reject duplicate, stale, overfilled, and self-inconsistent exit matches.
+- Verify the replacement payment goes to the seller's shielded output while the existing reserve stays unchanged and fee rights follow the transferred shares.
+- Reject unsupported USDC contracts, decimals, negative amounts, standing allowances, and accounting based on raw donated balance.
 
 ### Contract work
 
@@ -161,10 +173,12 @@ Rust, circuit, TypeScript, and UI implementations must consume the same fixture 
 - Bind proposal ID to creator, network, collateral, resolver, rules hash, timing, liquidity tier, fee policy, and batch policy.
 - Derive the deployment salt from the immutable proposal.
 - Track funded assets from accepted transfers, not raw SAC balance.
+- Freeze the exact USDC SAC and decimals, validate exact transfer effects, and record unallocated balance differences separately.
 - Store total LP shares and private LP note root.
 - Store exit intent nullifiers and remaining shares.
 - Emit proposal, funded, unfunded, ready, activated, exit-requested, exit-matched, cancelled, and finalized events.
 - Keep every time transition permissionless.
+- Charge proposal, deployment, activation, keeper, and TTL XLM only to the caller or an explicit operations budget, never to LP USDC or bettor collateral.
 - Extend TTLs without unbounded map walks.
 
 ### Gate
@@ -193,6 +207,7 @@ A creator can reach `Funding` with no USDC, three LPs can fund the proposal, one
 - Release vested fees only after normal resolution.
 - Prevent LP terminal settlement before the aggregate bettor redemption is complete.
 - Prevent a second terminal settlement.
+- Keep active code, collateral, resolver, batch policy, fee policy, and custody links immutable.
 - Round LP withdrawals down and preserve the final residual exactly.
 - Complete the market when the final LP share redeems.
 
@@ -228,7 +243,8 @@ All YES, NO, and VOID sequences reconcile bettor assets, LP assets, fees, and ma
 - Prove monotonicity and price bounds.
 - Prove side-cost sum against the existing LMSR aggregate cost.
 - Prove the largest-remainder atomic side split and fixed YES tie break.
-- Prove commitment-order independence for every permutation of four orders.
+- Prove price and charge independence across permutations of minimum-size and maximum-size accepted sets.
+- Prove complete eligible-set inclusion for variable batches from eight through the measured maximum.
 - Prove exact atomic reconciliation.
 - Reject overflow, division by zero, invalid lot, invalid count, and invalid aggregate.
 
@@ -236,23 +252,34 @@ All YES, NO, and VOID sequences reconcile bettor assets, LP assets, fees, and ma
 
 - Bind a batch to one pre-state version.
 - Reject concurrent reuse of the same pre-state.
+- Enforce one sequential `Collecting`, `Sealed`, and terminal epoch per market.
+- Seal the exact accepted root and count at the ledger-time cutoff and reject every later insertion.
+- Reject next-epoch acceptance until the sealed epoch executes or becomes refundable.
 - Require both `nY > 0` and `nN > 0`.
+- Require at least eight positions and at least two positions on each side.
 - Require every included order to use the same lot.
 - Require aggregate quantities to match lot times side counts.
-- Enforce normal and final batch-size policies.
+- Reject every short final batch and make its orders refundable.
+- Enable one configured lot per market epoch, cap accepted orders at the measured maximum, and reject later orders without consuming notes.
+- Require every eligible commitment accepted for the epoch to be included.
+- Reject skipped, substituted, duplicated, reordered, expired, refunded, or post-cutoff commitments.
 - Enforce the public maximum adverse movement.
 - Transfer exact user charge plus exact rounding reserve.
 - Fail before nullifier consumption when the rounding reserve is insufficient.
 - Store one immutable batch execution record.
 - Update spot price only after the batch succeeds.
 - Reject a stale epoch or expired order.
+- Reject early cancellation of an accepted first-release order and enable its permissionless shielded refund only at the bound deadline.
+- Verify canonical ciphertext encodings, curve and subgroup membership, non-identity points, DKG epoch, and aggregate-decryption proof.
+- Reject a false aggregate even when it carries enough committee signatures.
 
 ### Service work
 
 - Group orders by market, epoch, and lot.
-- Never sort for economic advantage.
-- Verify every encryption proof before aggregation.
-- Produce aggregate quantities and threshold statements.
+- Reconstruct the public onchain acceptance sequence and derive the complete eligible epoch set.
+- Never choose or sort a subset after aggregate directions are known.
+- Verify each order proof at acceptance and persist its fixed-length ciphertext onchain or in independently reconstructable ledger data.
+- Produce aggregate quantities, verifiable homomorphic aggregation, verified threshold-decryption evidence, and threshold statements.
 - Submit the exact reference-model batch fields.
 - Persist idempotent state before submission.
 - Recover cleanly when another worker wins the state race.
@@ -291,6 +318,7 @@ Every proof binds:
 - Expiry.
 - Market or proposal domain.
 - Fee and batch policy hash.
+- Circuit and verification-key identifier.
 
 The order proof additionally binds:
 
@@ -316,6 +344,14 @@ The terminal LP proof additionally binds:
 - Exact shares burned.
 - Withdrawal output.
 
+The batch proof additionally binds:
+
+- The first and last acceptance sequences, exact queue count, and proof that no eligible epoch order was skipped.
+- The exact accepted ciphertext set and its homomorphic sum.
+- The public DKG transcript and verification-share commitments.
+- Correct aggregate threshold decryption.
+- Minimum total and per-side anonymity floors.
+
 ### Negative tests
 
 - Wrong network, asset, vault, market, proposal, batch, or epoch.
@@ -331,6 +367,10 @@ The terminal LP proof additionally binds:
 - Integer overflow and field aliasing.
 - Malformed proof encoding.
 - Proof from another verification key.
+- Malformed, noncanonical, identity, or wrong-subgroup ciphertext point.
+- Aggregate not equal to the exact accepted ciphertext set.
+- Correct committee signatures over a false aggregate.
+- DKG epoch rotation while bound orders remain pending.
 
 ### Prover feasibility gate
 
@@ -350,9 +390,11 @@ Benchmark browser proving and Soroban verification before fixing tree depth or b
 - Vest fee only on normal resolution.
 - Return fee on VOID.
 - Split vested value exactly between LP and protocol.
+- Repay the exact batch rounding advance before splitting distributable fees.
 - Keep zero service fees on testnet.
 - Reject any fee on failed, pending, refunded, or cancelled orders.
 - Reject fee withdrawal from principal.
+- Reject any batch with a rounding advance greater than its fee escrow.
 
 ### Work
 
@@ -360,6 +402,7 @@ Benchmark browser proving and Soroban verification before fixing tree depth or b
 - Add vested LP fee balance.
 - Add shielded protocol treasury fee notes.
 - Add exact remainder policy to the reference fixtures.
+- Track rounding advances as non-revenue receivables and repay them from normal-resolution fee escrow or VOID return.
 - Display fee preview from the same fixed-point implementation.
 - Log only aggregate public fee fields.
 
@@ -398,6 +441,7 @@ Every keeper action is permissionless and idempotent. At least two independently
 - Restore bettor change and position notes independently.
 - Keep cloud backups opaque.
 - Provide a CLI for funding refund, exit status, terminal LP redemption, pending-order refund, change recovery, and position claim.
+- Make exit discovery ledger-reconstructable and allow a replacement LP to accept directly without the Moros matcher.
 
 ## Work package 8: Build the user interface
 
@@ -416,10 +460,14 @@ Every keeper action is permissionless and idempotent. At least two independently
 - Show the LP risk warning before confirmation.
 - Preview LP shares.
 - Support shielded LP funding.
+- Disclose that the first-release market, funding time, and aggregate funded delta are public even though LP note ownership is shielded.
 - Show funding-stage withdrawal.
 - Show active exit request and queue status.
 - Show replacement-liquidity entry.
+- Reconfirm a replacement purchase when its bound market state changes.
+- Explain which exit terms are visible to the matcher and which ownership data stays shielded.
 - Show YES scenario, NO scenario, worst-case, fees, and final resolved value.
+- Label active LP fees conditional and unvested, exclude them from safely withdrawable value, and remove them under VOID.
 
 ### Bet panel
 
@@ -427,6 +475,8 @@ Every keeper action is permissionless and idempotent. At least two independently
 - Show the next batch countdown.
 - Show lot size and maximum adverse movement.
 - Show total pending count without side counts.
+- Show the eight-position and two-per-side floors and the refund outcome when they are not met.
+- Explain the no-early-cancel epoch rule and fail a full queue without consuming notes.
 - Preview both the best and worst allowed execution within the epoch policy.
 - Separate `Order pending` from `Bet executed`.
 - Show unused budget recovery after execution.
@@ -479,6 +529,7 @@ Generate arbitrary valid and invalid sequences of:
 - Fee vest.
 - LP terminal redemption.
 - TTL extension.
+- Committee key rotation.
 
 ### Invariants after every action
 
@@ -489,6 +540,9 @@ Generate arbitrary valid and invalid sequences of:
 - No fee becomes revenue before its condition.
 - No nullifier succeeds twice.
 - No batch state version succeeds twice.
+- No batch skips any eligible accepted epoch commitment.
+- Committee signatures alone cannot authorize a false aggregate.
+- Every rounding advance is repaid once and only once.
 - No terminal path depends on creator return.
 - Price changes only with an executed batch.
 - Direct permutations do not alter allocation.
@@ -502,6 +556,9 @@ Generate arbitrary valid and invalid sequences of:
 - Exit cancellation races match.
 - Two batches use one pre-state.
 - Final batch races close.
+- Complete queue sealing races order acceptance at the epoch cutoff.
+- Next-epoch acceptance races prior-epoch execution and refund finalization.
+- Committee key rotation races a bound old-epoch batch and refund.
 - Resolution races VOID.
 - Aggregate redemption races LP settlement.
 - Two users claim the same recovered note.
@@ -517,7 +574,7 @@ Generate arbitrary valid and invalid sequences of:
 5. Create one proposal from a creator account with no USDC.
 6. Fund it from at least three independent LP accounts, including Moros through the ordinary path.
 7. Activate and verify every linked identifier.
-8. Execute fixed-lot mixed batches from independent bettor accounts.
+8. Execute complete-set fixed-lot mixed batches of at least eight positions with at least two positions on each side from independent bettor accounts.
 9. Complete change recovery, YES, NO, VOID, user claims, LP profit, LP loss, queued exit, replacement exit, and terminal LP redemption.
 10. Rebuild one indexer and one clean browser from durable data.
 11. Enable more proposals only after the first full matrix passes.
@@ -536,6 +593,7 @@ Frontend and services fail closed when any component reports a different:
 - Resolver.
 - Committee epoch.
 - Verification key.
+- Proving-artifact commitment.
 - Fee policy.
 - Batch policy.
 - Rules hash.
@@ -546,7 +604,7 @@ Frontend and services fail closed when any component reports a different:
 1. At least 100 simulated bettors and 20 LPs complete arbitrary stateful sequences.
 2. At least 10 user-created proposals cover funded, underfunded, cancelled, resolved, and voided paths.
 3. At least 1,000 private fixed-lot intents complete without an unexplained atomic unit.
-4. Every private batch has both sides and an allowed size.
+4. Every private batch has at least eight positions, at least two positions on each side, and the complete eligible epoch set.
 5. A lone order never changes price and becomes refundable.
 6. Public odds always match the last confirmed batch state.
 7. Active exit requests never reduce market backing.
@@ -555,6 +613,9 @@ Frontend and services fail closed when any component reports a different:
 10. Committee, coordinator, relayer, keeper, indexer, RPC, browser, and backup failures each have a tested recovery.
 11. Rust builds and tests end with `cargo clean` and no remaining target directories.
 12. The user verifies the deployed flow before any merge to `main`.
+13. False aggregate decryption, coordinator omission, committee-signature-only authorization, and DKG rotation tests all fail safely.
+14. Complementary self-trading cannot drain the rounding reserve or produce positive risk-free value.
+15. Queue-filling and coordinator-censorship tests preserve prices, value, deadline refunds, and fresh next-epoch state.
 
 ## Mainnet prohibition
 
@@ -563,8 +624,10 @@ Do not deploy this liquidity system to mainnet until:
 - Independent contract and circuit audits finish.
 - Every critical and high finding is fixed and retested.
 - The fixed-point pricing model is independently reproduced.
+- Complete-set inclusion, ciphertext validation, verifiable aggregation, and threshold-decryption correctness are independently reviewed.
 - The LP withdrawal language matches actual liquidity in every state.
 - Testnet data supports fee, lot, batch, capacity, and liquidity-tier parameters.
+- Queue admission, spam cost, and anti-grief behavior receive independent review.
 - The resolver stack for every enabled category has its own mainnet gate.
 - Committee and relayer operations are distributed.
 - Incident, pause, refund, and recovery procedures are public.
