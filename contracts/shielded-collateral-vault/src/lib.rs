@@ -49,6 +49,55 @@ pub struct LiquidityBinding {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExitRequestBinding {
+    pub liquidity_vault: Address,
+    pub exit_id: BytesN<32>,
+    pub shares: i128,
+    pub minimum_payment: i128,
+    pub destination: BytesN<32>,
+    pub exit_expiry: u64,
+    pub expected_version: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExitCancelBinding {
+    pub liquidity_vault: Address,
+    pub exit_id: BytesN<32>,
+    pub shares_remaining: i128,
+    pub minimum_payment_remaining: i128,
+    pub destination: BytesN<32>,
+    pub exit_expiry: u64,
+    pub expected_version: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExitMatchBinding {
+    pub liquidity_vault: Address,
+    pub exit_id: BytesN<32>,
+    pub shares: i128,
+    pub payment: i128,
+    pub shares_remaining: i128,
+    pub minimum_payment_remaining: i128,
+    pub destination: BytesN<32>,
+    pub exit_expiry: u64,
+    pub market_state_version: u64,
+    pub equity_if_yes: i128,
+    pub equity_if_no: i128,
+    pub conditional_lp_fees: i128,
+    pub state_updated_at: u64,
+    pub maximum_state_age: u64,
+    pub expected_version: u64,
+    pub minimum_for_fill: i128,
+    pub next_minimum_payment: i128,
+    pub remaining_destination: BytesN<32>,
+    pub remaining_shares: i128,
+    pub market_expiry: u64,
+}
+
+#[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EpochPhase {
     Collecting,
@@ -348,6 +397,42 @@ pub struct FundingResult {
 }
 
 #[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExitStatus {
+    Open,
+    Matched,
+    Cancelled,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExitIntent {
+    pub shares_remaining: i128,
+    pub minimum_payment_remaining: i128,
+    pub destination: BytesN<32>,
+    pub expiry: u64,
+    pub status: ExitStatus,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExitFill {
+    pub shares_transferred: i128,
+    pub shares_remaining: i128,
+    pub seller_payment: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketSnapshot {
+    pub state_version: u64,
+    pub equity_if_yes: i128,
+    pub equity_if_no: i128,
+    pub conditional_lp_fees: i128,
+    pub updated_at: u64,
+}
+
+#[contracttype]
 #[derive(Clone)]
 enum DataKey {
     Token,
@@ -418,6 +503,8 @@ pub enum Error {
     InvalidOrder = 30,
     AlreadyFinalized = 31,
     InsufficientRoundingReserve = 32,
+    ExitNotFound = 33,
+    InvalidExit = 34,
 }
 
 #[contractevent(topics = ["shielded_output"], data_format = "vec")]
@@ -527,6 +614,35 @@ pub trait LiquidityVault {
     fn redeem_terminal(env: Env, controller: Address, shares: i128, expected_version: u64) -> i128;
 
     fn unallocated_balance(env: Env) -> i128;
+    fn state_version(env: Env) -> u64;
+    fn market_snapshot(env: Env) -> Option<MarketSnapshot>;
+    fn exit_intent(env: Env, exit_id: BytesN<32>) -> Option<ExitIntent>;
+    fn request_exit(
+        env: Env,
+        controller: Address,
+        exit_id: BytesN<32>,
+        shares: i128,
+        minimum_payment: i128,
+        destination: BytesN<32>,
+        expiry: u64,
+        expected_version: u64,
+    );
+    fn match_exit(
+        env: Env,
+        controller: Address,
+        exit_id: BytesN<32>,
+        shares: i128,
+        payment: i128,
+        market_state_version: u64,
+        equity_if_yes: i128,
+        equity_if_no: i128,
+        conditional_lp_fees: i128,
+        state_updated_at: u64,
+        maximum_state_age: u64,
+        remaining_destination: BytesN<32>,
+        expected_version: u64,
+    ) -> ExitFill;
+    fn cancel_exit(env: Env, controller: Address, exit_id: BytesN<32>, expected_version: u64);
 }
 
 #[contractclient(crate_path = "soroban_sdk", name = "MarketClient")]
@@ -601,6 +717,10 @@ impl ShieldedCollateralVault {
             || Self::is_zero_bytes(&verifier_domain)
             || deployed_verifier_domain != verifier_domain
             || Self::is_zero_bytes(&treasury_key)
+            || !Self::canonical_field(
+                &env,
+                &U256::from_be_bytes(&env, &Bytes::from(treasury_key.clone())),
+            )
             || !Self::canonical_field(&env, &genesis_root)
             || genesis_root == U256::from_u32(&env, 0)
         {
@@ -1110,6 +1230,247 @@ impl ShieldedCollateralVault {
             transition,
             true,
         )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn request_liquidity_exit(
+        env: Env,
+        market: Address,
+        liquidity_vault: Address,
+        exit_id: BytesN<32>,
+        shares: i128,
+        minimum_payment: i128,
+        destination: BytesN<32>,
+        exit_expiry: u64,
+        expected_version: u64,
+        action_id: BytesN<32>,
+        action_expiry: u64,
+        transition: PrivateTransition,
+    ) {
+        Self::validate_amount(&env, shares);
+        Self::validate_nonnegative_amount(&env, minimum_payment);
+        Self::validate_expiry(&env, action_expiry);
+        let registration = Self::active_exit_market(&env, &market, &liquidity_vault);
+        if exit_expiry <= env.ledger().timestamp() || exit_expiry > registration.expiry {
+            panic_with_error!(&env, Error::InvalidExit);
+        }
+        let destination_field = U256::from_be_bytes(&env, &Bytes::from(destination.clone()));
+        if !Self::canonical_nonzero_field(&env, &destination_field)
+            || transition.output_commitments.len() != 2
+            || transition.output_commitments.get(1) != Some(destination_field)
+        {
+            panic_with_error!(&env, Error::InvalidProofStatement);
+        }
+        let binding = ExitRequestBinding {
+            liquidity_vault: liquidity_vault.clone(),
+            exit_id: exit_id.clone(),
+            shares,
+            minimum_payment,
+            destination: destination.clone(),
+            exit_expiry,
+            expected_version,
+        };
+        Self::execute_transition(
+            &env,
+            ProofAction::ExitRequest,
+            action_id,
+            None,
+            0,
+            Some(market),
+            Self::exit_request_operation_binding(&env, &binding),
+            action_expiry,
+            transition,
+            2,
+        );
+        LiquidityVaultClient::new(&env, &liquidity_vault).request_exit(
+            &env.current_contract_address(),
+            &exit_id,
+            &shares,
+            &minimum_payment,
+            &destination,
+            &exit_expiry,
+            &expected_version,
+        );
+        Self::assert_backing(&env);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn cancel_liquidity_exit(
+        env: Env,
+        market: Address,
+        liquidity_vault: Address,
+        exit_id: BytesN<32>,
+        expected_version: u64,
+        action_id: BytesN<32>,
+        action_expiry: u64,
+        transition: PrivateTransition,
+    ) {
+        Self::validate_expiry(&env, action_expiry);
+        Self::linked_liquidity_market(&env, &market, &liquidity_vault);
+        let client = LiquidityVaultClient::new(&env, &liquidity_vault);
+        let intent = client
+            .exit_intent(&exit_id)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::ExitNotFound));
+        if intent.status != ExitStatus::Open
+            || intent.shares_remaining <= 0
+            || intent.minimum_payment_remaining < 0
+        {
+            panic_with_error!(&env, Error::InvalidExit);
+        }
+        let binding = ExitCancelBinding {
+            liquidity_vault: liquidity_vault.clone(),
+            exit_id: exit_id.clone(),
+            shares_remaining: intent.shares_remaining,
+            minimum_payment_remaining: intent.minimum_payment_remaining,
+            destination: intent.destination,
+            exit_expiry: intent.expiry,
+            expected_version,
+        };
+        Self::execute_transition(
+            &env,
+            ProofAction::ExitCancel,
+            action_id,
+            None,
+            0,
+            Some(market),
+            Self::exit_cancel_operation_binding(&env, &binding),
+            action_expiry,
+            transition,
+            1,
+        );
+        client.cancel_exit(&env.current_contract_address(), &exit_id, &expected_version);
+        Self::assert_backing(&env);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn match_liquidity_exit(
+        env: Env,
+        market: Address,
+        liquidity_vault: Address,
+        exit_id: BytesN<32>,
+        shares: i128,
+        payment: i128,
+        market_state_version: u64,
+        equity_if_yes: i128,
+        equity_if_no: i128,
+        conditional_lp_fees: i128,
+        state_updated_at: u64,
+        maximum_state_age: u64,
+        remaining_destination: BytesN<32>,
+        expected_version: u64,
+        action_id: BytesN<32>,
+        action_expiry: u64,
+        transition: PrivateTransition,
+    ) -> ExitFill {
+        Self::validate_amount(&env, shares);
+        Self::validate_nonnegative_amount(&env, payment);
+        Self::validate_nonnegative_amount(&env, equity_if_yes);
+        Self::validate_nonnegative_amount(&env, equity_if_no);
+        Self::validate_nonnegative_amount(&env, conditional_lp_fees);
+        Self::validate_expiry(&env, action_expiry);
+        let registration = Self::active_exit_market(&env, &market, &liquidity_vault);
+        let client = LiquidityVaultClient::new(&env, &liquidity_vault);
+        let intent = client
+            .exit_intent(&exit_id)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::ExitNotFound));
+        let snapshot = client
+            .market_snapshot()
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidExit));
+        if intent.status != ExitStatus::Open
+            || env.ledger().timestamp() > intent.expiry
+            || shares > intent.shares_remaining
+            || snapshot.state_version != market_state_version
+            || snapshot.equity_if_yes != equity_if_yes
+            || snapshot.equity_if_no != equity_if_no
+            || snapshot.conditional_lp_fees != conditional_lp_fees
+            || snapshot.updated_at != state_updated_at
+            || maximum_state_age == 0
+        {
+            panic_with_error!(&env, Error::InvalidExit);
+        }
+        let minimum_for_fill = Self::minimum_exit_payment(
+            &env,
+            intent.minimum_payment_remaining,
+            shares,
+            intent.shares_remaining,
+        );
+        if payment < minimum_for_fill {
+            panic_with_error!(&env, Error::InvalidExit);
+        }
+        let remaining_shares = intent
+            .shares_remaining
+            .checked_sub(shares)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+        let next_minimum_payment = intent
+            .minimum_payment_remaining
+            .checked_sub(minimum_for_fill)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+        let remaining_field =
+            U256::from_be_bytes(&env, &Bytes::from(remaining_destination.clone()));
+        if transition.output_commitments.len() != 4
+            || (remaining_shares > 0
+                && (!Self::canonical_nonzero_field(&env, &remaining_field)
+                    || transition.output_commitments.get(3) != Some(remaining_field)))
+            || (remaining_shares == 0 && !Self::is_zero_bytes(&remaining_destination))
+        {
+            panic_with_error!(&env, Error::InvalidProofStatement);
+        }
+        let binding = ExitMatchBinding {
+            liquidity_vault: liquidity_vault.clone(),
+            exit_id: exit_id.clone(),
+            shares,
+            payment,
+            shares_remaining: intent.shares_remaining,
+            minimum_payment_remaining: intent.minimum_payment_remaining,
+            destination: intent.destination,
+            exit_expiry: intent.expiry,
+            market_state_version,
+            equity_if_yes,
+            equity_if_no,
+            conditional_lp_fees,
+            state_updated_at,
+            maximum_state_age,
+            expected_version,
+            minimum_for_fill,
+            next_minimum_payment,
+            remaining_destination: remaining_destination.clone(),
+            remaining_shares,
+            market_expiry: registration.expiry,
+        };
+        Self::execute_transition(
+            &env,
+            ProofAction::ExitMatch,
+            action_id,
+            None,
+            0,
+            Some(market),
+            Self::exit_match_operation_binding(&env, &binding),
+            action_expiry,
+            transition,
+            3,
+        );
+        let fill = client.match_exit(
+            &env.current_contract_address(),
+            &exit_id,
+            &shares,
+            &payment,
+            &market_state_version,
+            &equity_if_yes,
+            &equity_if_no,
+            &conditional_lp_fees,
+            &state_updated_at,
+            &maximum_state_age,
+            &remaining_destination,
+            &expected_version,
+        );
+        if fill.shares_transferred != shares
+            || fill.shares_remaining != remaining_shares
+            || fill.seller_payment != payment
+        {
+            panic_with_error!(&env, Error::InvalidExit);
+        }
+        Self::assert_backing(&env);
+        fill
     }
 
     pub fn accept_order(
@@ -1913,9 +2274,14 @@ impl ShieldedCollateralVault {
         if transition.proof.is_empty() || transition.proof.len() > MAX_PROOF_LENGTH {
             panic_with_error!(env, Error::InvalidProof);
         }
+        let output_count = if action == ProofAction::ExitMatch {
+            4
+        } else {
+            2
+        };
         if transition.input_nullifiers.len() != expected_nullifiers
-            || transition.output_commitments.len() != 2
-            || transition.encrypted_outputs.len() != 2
+            || transition.output_commitments.len() != output_count
+            || transition.encrypted_outputs.len() != output_count
         {
             panic_with_error!(env, Error::InvalidProofStatement);
         }
@@ -1938,7 +2304,7 @@ impl ShieldedCollateralVault {
             .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
         let next_leaf_index = info.next_leaf_index;
         if next_leaf_index
-            .checked_add(2)
+            .checked_add(output_count)
             .is_none_or(|next| next > capacity)
         {
             panic_with_error!(env, Error::TreeFull);
@@ -1963,7 +2329,7 @@ impl ShieldedCollateralVault {
             }
         }
 
-        for i in 0..2 {
+        for i in 0..output_count {
             let commitment = transition.output_commitments.get(i).unwrap();
             let encrypted = transition.encrypted_outputs.get(i).unwrap();
             if !Self::canonical_nonzero_field(env, &commitment) {
@@ -1978,9 +2344,13 @@ impl ShieldedCollateralVault {
                 .storage()
                 .persistent()
                 .has(&DataKey::Commitment(commitment.clone()))
-                || (i == 1 && transition.output_commitments.get(0).unwrap() == commitment)
             {
                 panic_with_error!(env, Error::DuplicateCommitment);
+            }
+            for prior in 0..i {
+                if transition.output_commitments.get(prior).unwrap() == commitment {
+                    panic_with_error!(env, Error::DuplicateCommitment);
+                }
             }
         }
 
@@ -1994,6 +2364,13 @@ impl ShieldedCollateralVault {
             binding,
             expiry,
         );
+        let mut output_envelope_hashes = Vec::new(env);
+        for encrypted in transition.encrypted_outputs.iter() {
+            output_envelope_hashes.push_back(
+                output_envelope_hash(env, &encrypted)
+                    .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidEnvelope)),
+            );
+        }
         let statement = ProofStatement {
             action,
             context_digest: digest,
@@ -2002,15 +2379,7 @@ impl ShieldedCollateralVault {
             new_root: transition.new_root.clone(),
             input_nullifiers: transition.input_nullifiers.clone(),
             output_commitments: transition.output_commitments.clone(),
-            output_envelope_hashes: Vec::from_array(
-                env,
-                [
-                    output_envelope_hash(env, &transition.encrypted_outputs.get(0).unwrap())
-                        .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidEnvelope)),
-                    output_envelope_hash(env, &transition.encrypted_outputs.get(1).unwrap())
-                        .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidEnvelope)),
-                ],
-            ),
+            output_envelope_hashes,
             first_leaf_index: next_leaf_index,
             public_amount,
         };
@@ -2030,7 +2399,7 @@ impl ShieldedCollateralVault {
             .publish(env);
         }
 
-        for i in 0..2 {
+        for i in 0..output_count {
             let index = next_leaf_index
                 .checked_add(i)
                 .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
@@ -2059,7 +2428,7 @@ impl ShieldedCollateralVault {
         }
 
         let next = next_leaf_index
-            .checked_add(2)
+            .checked_add(output_count)
             .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
         env.storage().instance().set(&DataKey::NextLeafIndex, &next);
         env.storage()
@@ -2494,11 +2863,70 @@ impl ShieldedCollateralVault {
         }
     }
 
+    fn validate_nonnegative_amount(env: &Env, amount: i128) {
+        if amount < 0 || amount > MAX_AMOUNT {
+            panic_with_error!(env, Error::InvalidAmount);
+        }
+    }
+
     fn validate_expiry(env: &Env, expiry: u64) {
         let now = env.ledger().timestamp();
         if expiry < now || expiry > now.saturating_add(MAX_ACTION_LIFETIME) {
             panic_with_error!(env, Error::InvalidExpiry);
         }
+    }
+
+    fn linked_liquidity_market(
+        env: &Env,
+        market: &Address,
+        liquidity_vault: &Address,
+    ) -> MarketRegistration {
+        let registration = Self::market_registration(env, market);
+        let private = MarketClient::new(env, market)
+            .private_config()
+            .unwrap_or_else(|| panic_with_error!(env, Error::InvalidExit));
+        if private.liquidity_vault != *liquidity_vault {
+            panic_with_error!(env, Error::InvalidExit);
+        }
+        registration
+    }
+
+    fn active_exit_market(
+        env: &Env,
+        market: &Address,
+        liquidity_vault: &Address,
+    ) -> MarketRegistration {
+        let registration = Self::linked_liquidity_market(env, market, liquidity_vault);
+        if registration.finalized
+            || env.ledger().timestamp() >= registration.expiry
+            || MarketClient::new(env, market).outcome().is_some()
+        {
+            panic_with_error!(env, Error::InvalidExit);
+        }
+        registration
+    }
+
+    fn minimum_exit_payment(
+        env: &Env,
+        minimum_remaining: i128,
+        shares: i128,
+        shares_remaining: i128,
+    ) -> i128 {
+        if minimum_remaining < 0
+            || shares <= 0
+            || shares_remaining <= 0
+            || shares > shares_remaining
+        {
+            panic_with_error!(env, Error::InvalidExit);
+        }
+        if shares == shares_remaining {
+            return minimum_remaining;
+        }
+        minimum_remaining
+            .checked_mul(shares)
+            .and_then(|value| value.checked_add(shares_remaining - 1))
+            .and_then(|value| value.checked_div(shares_remaining))
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic))
     }
 
     fn increase_liabilities(env: &Env, amount: i128) {
@@ -2560,6 +2988,124 @@ impl ShieldedCollateralVault {
         );
         OperationBinding {
             kind: BindingKind::Liquidity,
+            fields,
+        }
+    }
+
+    fn exit_request_operation_binding(env: &Env, binding: &ExitRequestBinding) -> OperationBinding {
+        let mut fields = zero_fields(env);
+        let (vault_high, vault_low) = address_limbs(env, &binding.liquidity_vault);
+        let (exit_high, exit_low) = bytes32_limbs(env, &binding.exit_id);
+        let (destination_high, destination_low) = bytes32_limbs(env, &binding.destination);
+        Self::set_operation_field(env, &mut fields, 0, vault_high);
+        Self::set_operation_field(env, &mut fields, 1, vault_low);
+        Self::set_operation_field(env, &mut fields, 2, exit_high);
+        Self::set_operation_field(env, &mut fields, 3, exit_low);
+        Self::set_operation_field(env, &mut fields, 4, Self::binding_i128(env, binding.shares));
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            5,
+            Self::binding_i128(env, binding.minimum_payment),
+        );
+        Self::set_operation_field(env, &mut fields, 6, destination_high);
+        Self::set_operation_field(env, &mut fields, 7, destination_low);
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            8,
+            U256::from_u128(env, binding.exit_expiry as u128),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            9,
+            U256::from_u128(env, binding.expected_version as u128),
+        );
+        OperationBinding {
+            kind: BindingKind::ExitRequest,
+            fields,
+        }
+    }
+
+    fn exit_cancel_operation_binding(env: &Env, binding: &ExitCancelBinding) -> OperationBinding {
+        let mut fields = zero_fields(env);
+        let (vault_high, vault_low) = address_limbs(env, &binding.liquidity_vault);
+        let (exit_high, exit_low) = bytes32_limbs(env, &binding.exit_id);
+        let (destination_high, destination_low) = bytes32_limbs(env, &binding.destination);
+        Self::set_operation_field(env, &mut fields, 0, vault_high);
+        Self::set_operation_field(env, &mut fields, 1, vault_low);
+        Self::set_operation_field(env, &mut fields, 2, exit_high);
+        Self::set_operation_field(env, &mut fields, 3, exit_low);
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            4,
+            Self::binding_i128(env, binding.shares_remaining),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            5,
+            Self::binding_i128(env, binding.minimum_payment_remaining),
+        );
+        Self::set_operation_field(env, &mut fields, 6, destination_high);
+        Self::set_operation_field(env, &mut fields, 7, destination_low);
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            8,
+            U256::from_u128(env, binding.exit_expiry as u128),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            9,
+            U256::from_u128(env, binding.expected_version as u128),
+        );
+        OperationBinding {
+            kind: BindingKind::ExitCancel,
+            fields,
+        }
+    }
+
+    fn exit_match_operation_binding(env: &Env, binding: &ExitMatchBinding) -> OperationBinding {
+        let mut fields = zero_fields(env);
+        let (vault_high, vault_low) = address_limbs(env, &binding.liquidity_vault);
+        let (exit_high, exit_low) = bytes32_limbs(env, &binding.exit_id);
+        let (destination_high, destination_low) = bytes32_limbs(env, &binding.destination);
+        let (remaining_high, remaining_low) = bytes32_limbs(env, &binding.remaining_destination);
+        let values = [
+            vault_high,
+            vault_low,
+            exit_high,
+            exit_low,
+            Self::binding_i128(env, binding.shares),
+            Self::binding_i128(env, binding.payment),
+            Self::binding_i128(env, binding.shares_remaining),
+            Self::binding_i128(env, binding.minimum_payment_remaining),
+            destination_high,
+            destination_low,
+            U256::from_u128(env, binding.exit_expiry as u128),
+            U256::from_u128(env, binding.market_state_version as u128),
+            Self::binding_i128(env, binding.equity_if_yes),
+            Self::binding_i128(env, binding.equity_if_no),
+            Self::binding_i128(env, binding.conditional_lp_fees),
+            U256::from_u128(env, binding.state_updated_at as u128),
+            U256::from_u128(env, binding.maximum_state_age as u128),
+            U256::from_u128(env, binding.expected_version as u128),
+            Self::binding_i128(env, binding.minimum_for_fill),
+            Self::binding_i128(env, binding.next_minimum_payment),
+            remaining_high,
+            remaining_low,
+            Self::binding_i128(env, binding.remaining_shares),
+            U256::from_u128(env, binding.market_expiry as u128),
+        ];
+        for (index, value) in values.iter().enumerate() {
+            Self::set_operation_field(env, &mut fields, index as u32, value.clone());
+        }
+        OperationBinding {
+            kind: BindingKind::ExitMatch,
             fields,
         }
     }

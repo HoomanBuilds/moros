@@ -3,8 +3,9 @@ extern crate std;
 
 use crate::{
     AllocationBinding, BatchProofStatement, BatchQuote, BatchSubmission, EncryptedOrder,
-    EpochPhase, LiquidityBinding, OrderStatus, PrivateTransition, ProofAction, ProofStatement,
-    SettlementState, ShieldedCollateralVault, ShieldedCollateralVaultClient,
+    EpochPhase, ExitCancelBinding, ExitMatchBinding, ExitRequestBinding, LiquidityBinding,
+    OrderStatus, PrivateTransition, ProofAction, ProofStatement, SettlementState,
+    ShieldedCollateralVault, ShieldedCollateralVaultClient,
 };
 use lmsr_market::{
     BatchQuote as LmsrBatchQuote, LmsrMarket, LmsrMarketClient, Outcome, PrivateMarketConfig,
@@ -154,6 +155,48 @@ fn transition(
     }
 }
 
+fn transition_four(
+    env: &Env,
+    membership_root: u32,
+    append_root: u32,
+    new_root: u32,
+    nullifiers: [u32; 3],
+    commitments: [u32; 4],
+) -> PrivateTransition {
+    PrivateTransition {
+        proof: Bytes::from_array(env, &[7, 11, 13, 17]),
+        membership_root: field(env, membership_root),
+        append_root: field(env, append_root),
+        new_root: field(env, new_root),
+        input_nullifiers: Vec::from_array(
+            env,
+            [
+                field(env, nullifiers[0]),
+                field(env, nullifiers[1]),
+                field(env, nullifiers[2]),
+            ],
+        ),
+        output_commitments: Vec::from_array(
+            env,
+            [
+                field(env, commitments[0]),
+                field(env, commitments[1]),
+                field(env, commitments[2]),
+                field(env, commitments[3]),
+            ],
+        ),
+        encrypted_outputs: Vec::from_array(
+            env,
+            [
+                envelope(env, 51),
+                envelope(env, 52),
+                envelope(env, 53),
+                envelope(env, 54),
+            ],
+        ),
+    }
+}
+
 struct Setup {
     env: Env,
     vault: ShieldedCollateralVaultClient<'static>,
@@ -273,6 +316,66 @@ fn expect_liquidity(
         &None,
         &public_amount,
         &Some(liquidity_vault.clone()),
+        &operation_binding,
+        &EXPIRY,
+    );
+    setup.verifier.set_expected(&digest);
+}
+
+fn expect_exit_request(
+    setup: &Setup,
+    market: &Address,
+    action_id: &BytesN<32>,
+    binding: &ExitRequestBinding,
+) {
+    let operation_binding =
+        ShieldedCollateralVault::exit_request_operation_binding(&setup.env, binding);
+    let digest = setup.vault.context_digest(
+        &ProofAction::ExitRequest,
+        action_id,
+        &None,
+        &0,
+        &Some(market.clone()),
+        &operation_binding,
+        &EXPIRY,
+    );
+    setup.verifier.set_expected(&digest);
+}
+
+fn expect_exit_cancel(
+    setup: &Setup,
+    market: &Address,
+    action_id: &BytesN<32>,
+    binding: &ExitCancelBinding,
+) {
+    let operation_binding =
+        ShieldedCollateralVault::exit_cancel_operation_binding(&setup.env, binding);
+    let digest = setup.vault.context_digest(
+        &ProofAction::ExitCancel,
+        action_id,
+        &None,
+        &0,
+        &Some(market.clone()),
+        &operation_binding,
+        &EXPIRY,
+    );
+    setup.verifier.set_expected(&digest);
+}
+
+fn expect_exit_match(
+    setup: &Setup,
+    market: &Address,
+    action_id: &BytesN<32>,
+    binding: &ExitMatchBinding,
+) {
+    let operation_binding =
+        ShieldedCollateralVault::exit_match_operation_binding(&setup.env, binding);
+    let digest = setup.vault.context_digest(
+        &ProofAction::ExitMatch,
+        action_id,
+        &None,
+        &0,
+        &Some(market.clone()),
         &operation_binding,
         &EXPIRY,
     );
@@ -711,6 +814,205 @@ fn setup_private_market(setup: &Setup) -> (Address, Address, Address) {
         .vault
         .fund_rounding_reserve(&reserve_funder, &10_000_000);
     (market_address, liquidity_address, resolver)
+}
+
+#[test]
+fn active_lp_exit_replacement_is_private_state_bound_and_keeps_market_backing() {
+    let setup = setup();
+    let (market, liquidity_address, _resolver) = setup_private_market(&setup);
+    let liquidity = MarketLiquidityVaultClient::new(&setup.env, &liquidity_address);
+    let market_balance = TokenClient::new(&setup.env, &setup.token).balance(&market);
+    let snapshot = liquidity.market_snapshot().unwrap();
+    assert_eq!(snapshot.state_version, 0);
+    assert_eq!(liquidity.info().state_version, 3);
+
+    let request_id = id(&setup.env, 100);
+    let exit_id = id(&setup.env, 101);
+    let destination = field_id(&setup.env, 102);
+    let request_binding = ExitRequestBinding {
+        liquidity_vault: liquidity_address.clone(),
+        exit_id: exit_id.clone(),
+        shares: 40_000_000,
+        minimum_payment: 32_000_000,
+        destination: destination.clone(),
+        exit_expiry: 10_800,
+        expected_version: 3,
+    };
+    expect_exit_request(&setup, &market, &request_id, &request_binding);
+    setup.vault.request_liquidity_exit(
+        &market,
+        &liquidity_address,
+        &exit_id,
+        &40_000_000,
+        &32_000_000,
+        &destination,
+        &10_800,
+        &3,
+        &request_id,
+        &EXPIRY,
+        &transition(&setup.env, 1, 1, 2, &[21, 22], [101, 102]),
+    );
+    assert_eq!(liquidity.info().locked_shares, 40_000_000);
+    assert_eq!(
+        liquidity.exit_intent(&exit_id).unwrap().destination,
+        destination
+    );
+
+    let match_id = id(&setup.env, 103);
+    let remaining_destination = field_id(&setup.env, 106);
+    let match_binding = ExitMatchBinding {
+        liquidity_vault: liquidity_address.clone(),
+        exit_id: exit_id.clone(),
+        shares: 10_000_000,
+        payment: 8_000_000,
+        shares_remaining: 40_000_000,
+        minimum_payment_remaining: 32_000_000,
+        destination,
+        exit_expiry: 10_800,
+        market_state_version: snapshot.state_version,
+        equity_if_yes: snapshot.equity_if_yes,
+        equity_if_no: snapshot.equity_if_no,
+        conditional_lp_fees: snapshot.conditional_lp_fees,
+        state_updated_at: snapshot.updated_at,
+        maximum_state_age: 300,
+        expected_version: 4,
+        minimum_for_fill: 8_000_000,
+        next_minimum_payment: 24_000_000,
+        remaining_destination: remaining_destination.clone(),
+        remaining_shares: 30_000_000,
+        market_expiry: 11_000,
+    };
+    expect_exit_match(&setup, &market, &match_id, &match_binding);
+    let fill = setup.vault.match_liquidity_exit(
+        &market,
+        &liquidity_address,
+        &exit_id,
+        &10_000_000,
+        &8_000_000,
+        &snapshot.state_version,
+        &snapshot.equity_if_yes,
+        &snapshot.equity_if_no,
+        &snapshot.conditional_lp_fees,
+        &snapshot.updated_at,
+        &300,
+        &remaining_destination,
+        &4,
+        &match_id,
+        &EXPIRY,
+        &transition_four(&setup.env, 2, 2, 3, [31, 32, 33], [103, 104, 105, 106]),
+    );
+    assert_eq!(fill.shares_transferred, 10_000_000);
+    assert_eq!(fill.shares_remaining, 30_000_000);
+    assert_eq!(setup.vault.info().next_leaf_index, 6);
+    assert_eq!(liquidity.info().locked_shares, 30_000_000);
+    let remaining = liquidity.exit_intent(&exit_id).unwrap();
+    assert_eq!(remaining.minimum_payment_remaining, 24_000_000);
+    assert_eq!(remaining.destination, remaining_destination.clone());
+    assert_eq!(
+        TokenClient::new(&setup.env, &setup.token).balance(&market),
+        market_balance
+    );
+
+    let cancel_id = id(&setup.env, 107);
+    let cancel_binding = ExitCancelBinding {
+        liquidity_vault: liquidity_address.clone(),
+        exit_id: exit_id.clone(),
+        shares_remaining: 30_000_000,
+        minimum_payment_remaining: 24_000_000,
+        destination: remaining_destination,
+        exit_expiry: 10_800,
+        expected_version: 5,
+    };
+    expect_exit_cancel(&setup, &market, &cancel_id, &cancel_binding);
+    setup.vault.cancel_liquidity_exit(
+        &market,
+        &liquidity_address,
+        &exit_id,
+        &5,
+        &cancel_id,
+        &EXPIRY,
+        &transition(&setup.env, 3, 3, 4, &[41], [107, 108]),
+    );
+    assert_eq!(liquidity.info().locked_shares, 0);
+    assert_eq!(
+        liquidity.exit_intent(&exit_id).unwrap().status,
+        market_liquidity_vault::ExitStatus::Cancelled
+    );
+    assert_eq!(
+        TokenClient::new(&setup.env, &setup.token).balance(&market),
+        market_balance
+    );
+}
+
+#[test]
+fn active_lp_exit_replacement_rejects_a_stale_market_snapshot() {
+    let setup = setup();
+    let (market, liquidity_address, _resolver) = setup_private_market(&setup);
+    let liquidity = MarketLiquidityVaultClient::new(&setup.env, &liquidity_address);
+    let stale_snapshot = liquidity.market_snapshot().unwrap();
+
+    let request_id = id(&setup.env, 110);
+    let exit_id = id(&setup.env, 111);
+    let destination = field_id(&setup.env, 112);
+    let request_binding = ExitRequestBinding {
+        liquidity_vault: liquidity_address.clone(),
+        exit_id: exit_id.clone(),
+        shares: 40_000_000,
+        minimum_payment: 32_000_000,
+        destination: destination.clone(),
+        exit_expiry: 10_800,
+        expected_version: 3,
+    };
+    expect_exit_request(&setup, &market, &request_id, &request_binding);
+    setup.vault.request_liquidity_exit(
+        &market,
+        &liquidity_address,
+        &exit_id,
+        &40_000_000,
+        &32_000_000,
+        &destination,
+        &10_800,
+        &3,
+        &request_id,
+        &EXPIRY,
+        &transition(&setup.env, 1, 1, 2, &[21, 22], [111, 112]),
+    );
+
+    StellarAssetClient::new(&setup.env, &setup.token).mint(&setup.vault.address, &50_000_000);
+    LmsrMarketClient::new(&setup.env, &market).apply_private_batch(
+        &setup.vault.address,
+        &0,
+        &4,
+        &4,
+    );
+    let current_snapshot = liquidity.market_snapshot().unwrap();
+    assert_eq!(current_snapshot.state_version, 1);
+    assert_ne!(current_snapshot, stale_snapshot);
+
+    let next_leaf_index = setup.vault.info().next_leaf_index;
+    assert!(setup
+        .vault
+        .try_match_liquidity_exit(
+            &market,
+            &liquidity_address,
+            &exit_id,
+            &10_000_000,
+            &8_000_000,
+            &stale_snapshot.state_version,
+            &stale_snapshot.equity_if_yes,
+            &stale_snapshot.equity_if_no,
+            &stale_snapshot.conditional_lp_fees,
+            &stale_snapshot.updated_at,
+            &300,
+            &field_id(&setup.env, 116),
+            &5,
+            &id(&setup.env, 113),
+            &EXPIRY,
+            &transition_four(&setup.env, 2, 2, 3, [31, 32, 33], [113, 114, 115, 116],),
+        )
+        .is_err());
+    assert_eq!(setup.vault.info().next_leaf_index, next_leaf_index);
+    assert_eq!(liquidity.info().locked_shares, 40_000_000);
 }
 
 fn accept_test_order(

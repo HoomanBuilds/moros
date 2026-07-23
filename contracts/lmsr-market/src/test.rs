@@ -495,7 +495,18 @@ fn private_market_returns_normal_terminal_equity_to_lp_shares() {
 #[test]
 fn private_batch_quote_matches_the_shared_integer_fixture_and_rejects_stale_state() {
     let env = Env::default();
-    let (market, _liquidity, _token, shared_vault, _resolver) = setup_private(&env);
+    let (market, liquidity, _token, shared_vault, _resolver) = setup_private(&env);
+    let initial = market.scenario_state();
+    assert_eq!(initial.state_version, 0);
+    assert_eq!(initial.market_assets, 200_000_000);
+    assert_eq!(initial.payout_if_yes, 0);
+    assert_eq!(initial.payout_if_no, 0);
+    assert_eq!(initial.equity_if_yes, 200_000_000);
+    assert_eq!(initial.equity_if_no, 200_000_000);
+    assert_eq!(
+        liquidity.market_snapshot().unwrap().state_version,
+        initial.state_version
+    );
     let quote = market.quote_private_batch(&0, &2, &6);
     assert_eq!(quote.batch_size, 8);
     assert_eq!(quote.pre_yes_price, 2_147_483_648);
@@ -513,6 +524,20 @@ fn private_batch_quote_matches_the_shared_integer_fixture_and_rejects_stale_stat
 
     assert_eq!(market.apply_private_batch(&shared_vault, &0, &2, &6), quote);
     assert_eq!(market.state_version(), 1);
+    let after = market.scenario_state();
+    assert_eq!(after.state_version, 1);
+    assert_eq!(after.market_assets, 240_998_338);
+    assert_eq!(after.payout_if_yes, 20_000_000);
+    assert_eq!(after.payout_if_no, 60_000_000);
+    assert_eq!(after.conditional_lp_fees, 399_003);
+    assert_eq!(after.equity_if_yes, 221_397_341);
+    assert_eq!(after.equity_if_no, 181_397_341);
+    let snapshot = liquidity.market_snapshot().unwrap();
+    assert_eq!(snapshot.state_version, after.state_version);
+    assert_eq!(snapshot.equity_if_yes, after.equity_if_yes);
+    assert_eq!(snapshot.equity_if_no, after.equity_if_no);
+    assert_eq!(snapshot.conditional_lp_fees, after.conditional_lp_fees);
+    assert_eq!(snapshot.updated_at, 1_000);
     assert!(market
         .try_apply_private_batch(&shared_vault, &0, &2, &6)
         .is_err());

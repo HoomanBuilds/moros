@@ -65,6 +65,18 @@ function validWitness(name, fixtureName = name) {
   run("node", [snarkjs, "wtns", "check", resolve(build, `${name}.r1cs`), output]);
 }
 
+function assertPublicSignals(name, expected) {
+  const witnessPath = resolve(build, `${name}.wtns`);
+  const jsonPath = resolve(build, `${name}.public-witness.json`);
+  run("node", [snarkjs, "wtns", "export", "json", witnessPath, jsonPath]);
+  const witnessValues = JSON.parse(readFileSync(jsonPath, "utf8"));
+  const actual = witnessValues.slice(1, expected.length + 1);
+  const normalized = expected.map((value) => value.toString());
+  if (JSON.stringify(actual) !== JSON.stringify(normalized)) {
+    throw new Error(`${name} public signal ordering mismatch`);
+  }
+}
+
 function expectInvalid(name, label, mutate) {
   const fixture = JSON.parse(readFileSync(resolve(here, `${name}.json`), "utf8"));
   mutate(fixture);
@@ -85,6 +97,8 @@ generate("order");
 run("node", [resolve(here, "generate-liquidity-fixtures.mjs")]);
 run("node", [resolve(here, "generate-position-fixtures.mjs")]);
 generate("batch");
+generate("treasury");
+run("node", [resolve(here, "generate-active-exit-fixtures.mjs")]);
 
 compile("output_note", resolve(here, "output_note.circom"));
 validWitness("output_note");
@@ -124,8 +138,58 @@ for (const name of ["execution_change", "claim", "refund"]) {
   validWitness(name);
 }
 validWitness("refund", "void_refund");
+for (const name of ["treasury", "exit_request", "exit_cancel", "exit_match"]) {
+  compile(name);
+  validWitness(name);
+}
 compile("batch");
 validWitness("batch");
+const batchFixture = JSON.parse(readFileSync(resolve(here, "batch.json"), "utf8"));
+assertPublicSignals("batch", [
+  ...batchFixture.networkDomain,
+  ...batchFixture.vault,
+  ...batchFixture.market,
+  batchFixture.epoch,
+  batchFixture.acceptedRoot,
+  batchFixture.acceptedCount,
+  batchFixture.firstSequence,
+  batchFixture.lastSequence,
+  batchFixture.committeeEpoch,
+  ...batchFixture.committeeConfigHash,
+  ...batchFixture.committeePublicKey,
+  ...batchFixture.aggregateCiphertext,
+  ...batchFixture.decryptionProofHash,
+  ...batchFixture.committeeStatementHash,
+  batchFixture.allocationRoot,
+  batchFixture.includedRoot,
+  batchFixture.lotSize,
+  ...batchFixture.quote,
+]);
+const exitMatchFixture = JSON.parse(
+  readFileSync(resolve(here, "exit_match.json"), "utf8"),
+);
+assertPublicSignals("exit_match", [
+  exitMatchFixture.action,
+  exitMatchFixture.contextDigest,
+  exitMatchFixture.membershipRoot,
+  exitMatchFixture.appendRoot,
+  exitMatchFixture.newRoot,
+  exitMatchFixture.nullifierCount,
+  exitMatchFixture.nullifier0,
+  exitMatchFixture.nullifier1,
+  exitMatchFixture.nullifier2,
+  exitMatchFixture.outputCommitment0,
+  exitMatchFixture.outputCommitment1,
+  exitMatchFixture.outputCommitment2,
+  exitMatchFixture.outputCommitment3,
+  exitMatchFixture.outputEnvelopeHash0,
+  exitMatchFixture.outputEnvelopeHash1,
+  exitMatchFixture.outputEnvelopeHash2,
+  exitMatchFixture.outputEnvelopeHash3,
+  exitMatchFixture.firstLeafIndex,
+  exitMatchFixture.publicAmountSign,
+  exitMatchFixture.publicAmountMagnitude,
+]);
 
 expectInvalid("transfer", "value-creation", (fixture) => {
   fixture.outAmount[0] = (BigInt(fixture.outAmount[0]) + 1n).toString();
@@ -211,5 +275,36 @@ expectInvalid("batch", "allocation-charge", (fixture) => {
     BigInt(fixture.quote[11]) + 1n
   ).toString();
 });
+expectInvalid("treasury", "wrong-recipient", (fixture) => {
+  fixture.outSpendPublicKey[0] = (
+    BigInt(fixture.outSpendPublicKey[0]) + 1n
+  ).toString();
+});
+expectInvalid("exit_request", "wrong-exit-shares", (fixture) => {
+  fixture.outAmount[1] = (BigInt(fixture.outAmount[1]) + 1n).toString();
+});
+expectInvalid("exit_request", "wrong-destination", (fixture) => {
+  fixture.contextFields[29] = (
+    BigInt(fixture.contextFields[29]) + 1n
+  ).toString();
+});
+expectInvalid("exit_cancel", "wrong-exit-note", (fixture) => {
+  fixture.inPrivateData[0][0] = (
+    BigInt(fixture.inPrivateData[0][0]) + 1n
+  ).toString();
+});
+expectInvalid("exit_match", "underpay-seller", (fixture) => {
+  fixture.contextFields[27] = "7999999";
+});
+expectInvalid("exit_match", "redirect-seller", (fixture) => {
+  fixture.outSpendPublicKey[0] = (
+    BigInt(fixture.outSpendPublicKey[0]) + 1n
+  ).toString();
+});
+expectInvalid("exit_match", "wrong-remaining-destination", (fixture) => {
+  fixture.contextFields[43] = (
+    BigInt(fixture.contextFields[43]) + 1n
+  ).toString();
+});
 
-console.log("private balance, order, liquidity, and position circuit fixtures passed");
+console.log("private balance, order, liquidity, exit, treasury, and position circuit fixtures passed");

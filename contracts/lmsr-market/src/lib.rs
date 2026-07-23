@@ -96,6 +96,18 @@ pub struct FeeState {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScenarioState {
+    pub state_version: u64,
+    pub market_assets: i128,
+    pub payout_if_yes: i128,
+    pub payout_if_no: i128,
+    pub equity_if_yes: i128,
+    pub equity_if_no: i128,
+    pub conditional_lp_fees: i128,
+}
+
+#[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiquidityOutcome {
     Yes,
@@ -107,6 +119,16 @@ pub enum LiquidityOutcome {
 pub trait LiquidityVault {
     fn unallocated_balance(env: Env) -> i128;
     fn state_version(env: Env) -> u64;
+    fn sync_market_state(
+        env: Env,
+        market: Address,
+        market_state_version: u64,
+        equity_if_yes: i128,
+        equity_if_no: i128,
+        conditional_lp_fees: i128,
+        updated_at: u64,
+        expected_version: u64,
+    );
     fn record_terminal(
         env: Env,
         market: Address,
@@ -456,6 +478,40 @@ impl LmsrMarket {
         }
     }
 
+    pub fn scenario_state(env: Env) -> Result<ScenarioState, Error> {
+        if !env.storage().instance().has(&DataKey::PrivateConfigured) {
+            return Err(Error::ConfigurationLocked);
+        }
+        let storage = env.storage().instance();
+        let market_assets: i128 = storage
+            .get(&DataKey::AccountedBalance)
+            .ok_or(Error::NotInitialized)?;
+        let q_yes: i128 = storage.get(&DataKey::QYes).unwrap_or(0);
+        let q_no: i128 = storage.get(&DataKey::QNo).unwrap_or(0);
+        let payout_if_yes = Self::to_atomic(&env, q_yes, false);
+        let payout_if_no = Self::to_atomic(&env, q_no, false);
+        let conditional_lp_fees: i128 = storage.get(&DataKey::ConditionalLpFee).unwrap_or(0);
+        let equity_if_yes = market_assets
+            .checked_sub(payout_if_yes)
+            .and_then(|value| value.checked_add(conditional_lp_fees))
+            .filter(|value| *value >= 0)
+            .ok_or(Error::Undersolvent)?;
+        let equity_if_no = market_assets
+            .checked_sub(payout_if_no)
+            .and_then(|value| value.checked_add(conditional_lp_fees))
+            .filter(|value| *value >= 0)
+            .ok_or(Error::Undersolvent)?;
+        Ok(ScenarioState {
+            state_version: storage.get(&DataKey::StateVersion).unwrap_or(0),
+            market_assets,
+            payout_if_yes,
+            payout_if_no,
+            equity_if_yes,
+            equity_if_no,
+            conditional_lp_fees,
+        })
+    }
+
     pub fn private_config(env: Env) -> Option<PrivateMarketConfig> {
         if !env
             .storage()
@@ -550,6 +606,7 @@ impl LmsrMarket {
         );
         storage.set(&DataKey::AccountedBalance, &config.funding);
         storage.set(&DataKey::PrivateConfigured, &true);
+        Self::sync_liquidity_snapshot(&env)?;
         PrivateActivated {
             batcher: config.batcher,
             liquidity_vault: config.liquidity_vault,
@@ -1619,6 +1676,7 @@ impl LmsrMarket {
             quote.conditional_protocol_fee,
         )?;
         let state_version = Self::increment_state_version(env)?;
+        Self::sync_liquidity_snapshot(env)?;
         PrivateBatch {
             state_version,
             yes_count: quote.yes_count,
@@ -1646,6 +1704,27 @@ impl LmsrMarket {
             .ok_or(Error::InvalidParams)?;
         env.storage().instance().set(&DataKey::StateVersion, &next);
         Ok(next)
+    }
+
+    fn sync_liquidity_snapshot(env: &Env) -> Result<(), Error> {
+        let scenario = Self::scenario_state(env.clone())?;
+        let liquidity_vault: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LiquidityVault)
+            .ok_or(Error::NotInitialized)?;
+        let client = LiquidityVaultClient::new(env, &liquidity_vault);
+        let expected_version = client.state_version();
+        client.sync_market_state(
+            &env.current_contract_address(),
+            &scenario.state_version,
+            &scenario.equity_if_yes,
+            &scenario.equity_if_no,
+            &scenario.conditional_lp_fees,
+            &env.ledger().timestamp(),
+            &expected_version,
+        );
+        Ok(())
     }
 
     fn increase_accounted_balance(env: &Env, amount: i128) -> Result<(), Error> {

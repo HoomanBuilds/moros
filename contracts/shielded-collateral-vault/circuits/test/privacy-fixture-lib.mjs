@@ -230,6 +230,19 @@ export function secondPairMembershipPaths(firstPairCommitments, secondPairCommit
   ];
 }
 
+export function firstFourMembershipPaths(commitments, levels) {
+  if (commitments.length !== 4) throw new Error("four commitments required");
+  const roots = zeroRoots(levels);
+  const firstPairRoot = merkleNode(commitments[0], commitments[1]);
+  const secondPairRoot = merkleNode(commitments[2], commitments[3]);
+  return [
+    [commitments[1], secondPairRoot, ...roots.slice(2, levels)],
+    [commitments[0], secondPairRoot, ...roots.slice(2, levels)],
+    [commitments[3], firstPairRoot, ...roots.slice(2, levels)],
+    [commitments[2], firstPairRoot, ...roots.slice(2, levels)],
+  ];
+}
+
 export function appendThirdPair(firstPairCommitments, secondPairCommitments, outputs, levels) {
   const roots = zeroRoots(levels);
   const firstPairRoot = merkleNode(firstPairCommitments[0], firstPairCommitments[1]);
@@ -247,6 +260,37 @@ export function appendThirdPair(firstPairCommitments, secondPairCommitments, out
     appendRoot: prior.newRoot,
     newRoot,
     siblings,
+  };
+}
+
+export function appendFourthPair(
+  firstPairCommitments,
+  secondPairCommitments,
+  thirdPairCommitments,
+  outputs,
+  levels,
+) {
+  const roots = zeroRoots(levels);
+  const firstPairRoot = merkleNode(firstPairCommitments[0], firstPairCommitments[1]);
+  const secondPairRoot = merkleNode(secondPairCommitments[0], secondPairCommitments[1]);
+  const thirdPairRoot = merkleNode(thirdPairCommitments[0], thirdPairCommitments[1]);
+  const fourthPairRoot = merkleNode(outputs[0], outputs[1]);
+  const firstFourRoot = merkleNode(firstPairRoot, secondPairRoot);
+  const lastFourRoot = merkleNode(thirdPairRoot, fourthPairRoot);
+  let newRoot = merkleNode(firstFourRoot, lastFourRoot);
+  for (let level = 3; level < levels; level++) {
+    newRoot = merkleNode(newRoot, roots[level]);
+  }
+  const prior = appendThirdPair(
+    firstPairCommitments,
+    secondPairCommitments,
+    thirdPairCommitments,
+    levels,
+  );
+  return {
+    appendRoot: prior.newRoot,
+    newRoot,
+    siblings: [thirdPairRoot, firstFourRoot, ...roots.slice(3, levels)],
   };
 }
 

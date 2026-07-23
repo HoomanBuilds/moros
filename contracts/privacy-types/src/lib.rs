@@ -53,6 +53,9 @@ pub enum BindingKind {
     Refund,
     Allocation,
     Treasury,
+    ExitRequest,
+    ExitCancel,
+    ExitMatch,
 }
 
 impl BindingKind {
@@ -64,6 +67,9 @@ impl BindingKind {
             Self::Refund => 3,
             Self::Allocation => 4,
             Self::Treasury => 5,
+            Self::ExitRequest => 6,
+            Self::ExitCancel => 7,
+            Self::ExitMatch => 8,
         }
     }
 }

@@ -229,6 +229,7 @@ fn active_exit_is_state_bound_and_does_not_reduce_market_backing() {
         &1_000_000,
         &1_050,
         &300,
+        &id(&env, 5),
         &4,
     );
     assert_eq!(fill.shares_transferred, 10_000_000);
@@ -251,6 +252,7 @@ fn active_exit_is_state_bound_and_does_not_reduce_market_backing() {
             &1_000_000,
             &1_050,
             &300,
+            &id(&env, 6),
             &5,
         )
         .is_err());

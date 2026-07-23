@@ -253,6 +253,20 @@ impl MarketLiquidityVault {
         }
     }
 
+    pub fn market_snapshot(env: Env) -> Option<MarketSnapshot> {
+        Self::bump(&env);
+        env.storage().instance().get(&DataKey::MarketSnapshot)
+    }
+
+    pub fn exit_intent(env: Env, exit_id: BytesN<32>) -> Option<ExitIntent> {
+        let key = DataKey::Exit(exit_id);
+        let intent = env.storage().persistent().get(&key);
+        if intent.is_some() {
+            Self::bump_key(&env, &key);
+        }
+        intent
+    }
+
     pub fn fund(
         env: Env,
         controller: Address,
@@ -644,6 +658,7 @@ impl MarketLiquidityVault {
         conditional_lp_fees: i128,
         state_updated_at: u64,
         maximum_state_age: u64,
+        remaining_destination: BytesN<32>,
         expected_version: u64,
     ) -> Result<ExitFill, Error> {
         Self::require_controller(&env, &controller)?;
@@ -716,6 +731,8 @@ impl MarketLiquidityVault {
             .ok_or(Error::Arithmetic)?;
         if intent.shares_remaining == 0 {
             intent.status = ExitStatus::Matched;
+        } else {
+            intent.destination = remaining_destination;
         }
         env.storage().persistent().set(&key, &intent);
         Self::bump_key(&env, &key);
