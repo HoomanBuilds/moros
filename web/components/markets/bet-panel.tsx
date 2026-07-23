@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { Panel, Tag } from "@/components/app/app-kit";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,6 @@ import { unlockPositionBackup } from "@/lib/positions/backup";
 import { PLATFORM_FEE_BPS } from "@/lib/markets/deploy-constants";
 import { getPrivateConfig } from "@/lib/private/client";
 import { openPrivateWallet } from "@/lib/private/wallet";
-import { shieldUsdc } from "@/lib/private/actions";
 
 const STAGES: { key: BetStage; label: string }[] = [
   { key: "securing", label: "Unlocking private recovery" },
@@ -81,7 +81,6 @@ export function BetPanel() {
   const [privateStack, setPrivateStack] = useState(false);
   const [privateBalance, setPrivateBalance] = useState<bigint | null>(null);
   const [privateUnlocking, setPrivateUnlocking] = useState(false);
-  const [shielding, setShielding] = useState(false);
   const busy = stage !== null && stage !== "done";
   const rulesInvalid = data?.resolverType === "event" && !data.rulesVerified;
   const closed = data ? !data.acceptingOrders || rulesInvalid : false;
@@ -189,34 +188,6 @@ export function BetPanel() {
       setError(cause instanceof Error ? cause.message : "Private balance could not be unlocked");
     } finally {
       setPrivateUnlocking(false);
-    }
-  }
-
-  async function shieldForBet() {
-    setError("");
-    setShielding(true);
-    try {
-      if (!accountState?.hasTrustline) throw new Error(`Enable ${collateral.code} before shielding funds`);
-      const amountAtomic = 2n * 10n ** BigInt(collateral.decimals);
-      if (accountState.balanceAtomic < amountAtomic) {
-        throw new Error(`Wallet needs at least 2 ${collateral.code}`);
-      }
-      const prior = privateBalance ?? 0n;
-      await shieldUsdc(address, amountAtomic);
-      for (let attempt = 0; attempt < 20; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, 2_000));
-        const wallet = await openPrivateWallet(address);
-        if (wallet.balance > prior) {
-          setPrivateBalance(wallet.balance);
-          setAccountState(await getCollateralAccountState(address, collateral));
-          return;
-        }
-      }
-      throw new Error("Deposit confirmed, but the private indexer has not published the note yet");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "USDC deposit failed");
-    } finally {
-      setShielding(false);
     }
   }
 
@@ -365,22 +336,14 @@ export function BetPanel() {
           {privateUnlocking ? "Unlocking private balance" : "Unlock private balance"}
         </Button>
       ) : privateStack && privateBalance !== null && privateBalance < PRIVATE_ORDER_RESERVE ? (
-        accountState && !accountState.hasTrustline ? (
-          <div className="space-y-3">
-            <Button className="w-full" disabled={trustlineLoading} onClick={enableCollateral}>
-              {trustlineLoading && <Spinner />}
-              {trustlineLoading ? `Enabling ${collateral.code}` : `Enable ${collateral.code}`}
-            </Button>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              The trustline is needed only to move public testnet USDC into your private Moros balance.
-            </p>
-          </div>
-        ) : (
-          <Button className="w-full" disabled={shielding || accountLoading} onClick={shieldForBet}>
-            {shielding && <Spinner />}
-            {shielding ? "Shielding 2 USDC" : "Shield 2 USDC to bet"}
+        <div className="space-y-3">
+          <Button className="w-full" asChild>
+            <Link href="/app/portfolio">Add private USDC in Portfolio</Link>
           </Button>
-        )
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            This position needs at least {formatTokenAmount(PRIVATE_ORDER_RESERVE, collateral.decimals, 4)} private USDC. Add funds once and reuse the balance across bets and liquidity.
+          </p>
+        </div>
       ) : accountLoading ? (
         <Button className="w-full" disabled>
           <Spinner />

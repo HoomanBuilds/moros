@@ -18,4 +18,4 @@ component main { public [
     firstLeafIndex,
     publicAmountSign,
     publicAmountMagnitude
-] } = BalanceAction(20, 2, 2);
+] } = BalanceAction(20, 2, 1);

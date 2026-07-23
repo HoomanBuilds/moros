@@ -49,16 +49,16 @@ template PrivateOrder(noteLevels, acceptedLevels) {
     signal input encryptionRandomness;
     signal input acceptedSiblings[acceptedLevels];
 
-    signal input inPurpose[2];
-    signal input inAmount[2];
-    signal input inSpendSecret[2];
-    signal input inViewingPublicKey[2][2];
-    signal input inNoteId[2];
-    signal input inPayloadHash[2];
-    signal input inPrivateData[2][2];
-    signal input inBlinding[2];
-    signal input inLeafIndex[2];
-    signal input inSiblings[2][noteLevels];
+    signal input inPurpose[1];
+    signal input inAmount[1];
+    signal input inSpendSecret[1];
+    signal input inViewingPublicKey[1][2];
+    signal input inNoteId[1];
+    signal input inPayloadHash[1];
+    signal input inPrivateData[1][2];
+    signal input inBlinding[1];
+    signal input inLeafIndex[1];
+    signal input inSiblings[1][noteLevels];
 
     signal input outPurpose[2];
     signal input outAmount[2];
@@ -74,7 +74,8 @@ template PrivateOrder(noteLevels, acceptedLevels) {
     signal input appendSiblings[noteLevels - 1];
 
     action === 3;
-    nullifierCount === 2;
+    nullifierCount === 1;
+    nullifier1 === 0;
     publicAmountSign === 0;
     publicAmountMagnitude === 0;
     contextFields[0] === 1;
@@ -126,13 +127,13 @@ template PrivateOrder(noteLevels, acceptedLevels) {
     component positionBudgetRange = Num2Bits(60);
     positionBudgetRange.in <== positionBudget;
 
-    component inputs[2];
-    component inputPurposeChecks[2][4];
-    component inputAmountRanges[2];
-    component inputAmountZero[2];
-    component inputSecretZero[2];
+    component inputs[1];
+    component inputPurposeChecks[1][3];
+    component inputAmountRanges[1];
+    component inputAmountZero[1];
+    component inputSecretZero[1];
     var totalInput = 0;
-    for (var index = 0; index < 2; index++) {
+    for (var index = 0; index < 1; index++) {
         inputs[index] = InputNote(noteLevels, 1);
         inputs[index].noteDomain <== noteDomain.out;
         inputs[index].membershipRoot <== membershipRoot;
@@ -150,37 +151,27 @@ template PrivateOrder(noteLevels, acceptedLevels) {
         for (var level = 0; level < noteLevels; level++) {
             inputs[index].siblings[level] <== inSiblings[index][level];
         }
-        if (index == 0) {
-            inputs[index].expectedNullifier <== nullifier0;
-        } else {
-            inputs[index].expectedNullifier <== nullifier1;
-        }
+        inputs[index].expectedNullifier <== nullifier0;
 
-        var purposes[4] = [0, 1, 6, 7];
-        for (var purposeIndex = 0; purposeIndex < 4; purposeIndex++) {
+        var purposes[3] = [1, 6, 7];
+        for (var purposeIndex = 0; purposeIndex < 3; purposeIndex++) {
             inputPurposeChecks[index][purposeIndex] = IsEqual();
             inputPurposeChecks[index][purposeIndex].in[0] <== inPurpose[index];
             inputPurposeChecks[index][purposeIndex].in[1] <== purposes[purposeIndex];
         }
         inputPurposeChecks[index][0].out
             + inputPurposeChecks[index][1].out
-            + inputPurposeChecks[index][2].out
-            + inputPurposeChecks[index][3].out === 1;
+            + inputPurposeChecks[index][2].out === 1;
         inputAmountRanges[index] = Num2Bits(60);
         inputAmountRanges[index].in <== inAmount[index];
         inputAmountZero[index] = IsZero();
         inputAmountZero[index].in <== inAmount[index];
-        inputAmountZero[index].out === inputPurposeChecks[index][0].out;
+        inputAmountZero[index].out === 0;
         inputSecretZero[index] = IsZero();
         inputSecretZero[index].in <== inSpendSecret[index];
         inputSecretZero[index].out === 0;
         totalInput += inAmount[index];
     }
-
-    component distinctNullifiers = IsEqual();
-    distinctNullifiers.in[0] <== nullifier0;
-    distinctNullifiers.in[1] <== nullifier1;
-    distinctNullifiers.out === 0;
 
     component outputs[2];
     component outputSpendKeyZero[2];

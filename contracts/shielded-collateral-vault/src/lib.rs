@@ -1089,7 +1089,7 @@ impl ShieldedCollateralVault {
             Self::empty_binding(&env),
             expiry,
             transition,
-            2,
+            1,
         );
 
         let liabilities: i128 = env
@@ -1158,7 +1158,7 @@ impl ShieldedCollateralVault {
             operation_binding,
             expiry,
             transition,
-            2,
+            1,
         );
 
         let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -1523,7 +1523,7 @@ impl ShieldedCollateralVault {
             operation_binding,
             epoch.refund_at,
             transition,
-            2,
+            1,
         );
 
         let leaf = AcceptedLeaf {

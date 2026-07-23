@@ -104,7 +104,7 @@ The browser performs consolidation only when no single note covers the requested
 For an action amount `A`:
 
 1. Prefer the smallest single liquid note with value at least `A`.
-2. If none exists, consolidate the two smallest liquid notes whose combined value improves the largest available note.
+2. If none exists, consolidate the two largest liquid notes.
 3. Refresh and verify chain state after each consolidation.
 4. Stop when one note covers `A`.
 5. Fail before proving when the total private balance is below `A`.

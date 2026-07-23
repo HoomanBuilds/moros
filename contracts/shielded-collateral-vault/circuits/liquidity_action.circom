@@ -5,7 +5,7 @@ include "./privacy_primitives.circom";
 template PrivateLiquidityAction(levels, actionCode, inputCount) {
     assert(actionCode >= 6);
     assert(actionCode <= 8);
-    assert((actionCode == 6 && inputCount == 2) || (actionCode != 6 && inputCount == 1));
+    assert(inputCount == 1);
 
     signal input action;
     signal input contextDigest;

@@ -144,7 +144,7 @@ const fundInputs = [
   inputNote({
     domain,
     purpose: 1n,
-    amount: 20_000_000n,
+    amount: 30_000_000n,
     spendSecret: 11n,
     viewingSecret: 12n,
     noteId: 13n,
@@ -153,8 +153,8 @@ const fundInputs = [
   }),
   inputNote({
     domain,
-    purpose: 1n,
-    amount: 10_000_000n,
+    purpose: 0n,
+    amount: 0n,
     spendSecret: 21n,
     viewingSecret: 22n,
     noteId: 23n,
@@ -194,7 +194,8 @@ const fund = buildFixture({
   publicAmount: 20_000_000n,
   shares: 19_000_000n,
   version: 0n,
-  inputs: fundInputs,
+  inputs: fundInputs.slice(0, 1),
+  treeCommitments: fundInputs.map((note) => note.commitment),
   outputs: fundOutputs,
   nullifierDomain: 1n,
 });

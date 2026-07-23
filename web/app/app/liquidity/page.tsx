@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRightLeft,
-  CircleAlert,
   Droplets,
   LockKeyhole,
   RefreshCw,
@@ -25,7 +24,6 @@ import {
   getLiquidityVaultInfo,
   matchLiquidityExit,
   requestLiquidityExit,
-  shieldUsdc,
   withdrawLiquidity,
   type LiquidityVaultInfo,
   type OwnedLiquidityShare,
@@ -36,11 +34,6 @@ import {
   fetchLiquidityMarkets,
   type RegistryMarket,
 } from "@/lib/supabase/markets-meta";
-import {
-  addCollateralTrustline,
-  getCollateralAccountState,
-  type CollateralAccountState,
-} from "@/lib/stellar/collateral-account";
 import {
   formatTokenAmount,
   parseTokenAmount,
@@ -91,10 +84,8 @@ export default function LiquidityPage() {
   const [ownedShares, setOwnedShares] = useState<OwnedLiquidityShare[]>([]);
   const [exitOffers, setExitOffers] = useState<PrivateLiquidityExitOffer[]>([]);
   const [exitForms, setExitForms] = useState<Record<string, ExitForm>>({});
-  const [collateral, setCollateral] = useState<CollateralAccountState | null>(null);
   const [loading, setLoading] = useState(true);
   const [unlocking, setUnlocking] = useState(false);
-  const [trustlineBusy, setTrustlineBusy] = useState(false);
   const [pageError, setPageError] = useState("");
   const [nowSeconds, setNowSeconds] = useState(0);
 
@@ -111,10 +102,8 @@ export default function LiquidityPage() {
           return [market.marketId, info] as const;
         }));
         setVaults(Object.fromEntries(entries.filter((entry) => entry !== null)));
-        setCollateral(await getCollateralAccountState(address, NETWORK.collateral));
       } else {
         setVaults({});
-        setCollateral(null);
         setPrivateBalance(null);
         setOwnedShares([]);
         setExitOffers([]);
@@ -189,31 +178,6 @@ export default function LiquidityPage() {
     }
   }
 
-  async function enableUsdc() {
-    if (!address) return;
-    setTrustlineBusy(true);
-    setPageError("");
-    try {
-      await addCollateralTrustline(address, NETWORK.collateral);
-      setCollateral(await getCollateralAccountState(address, NETWORK.collateral));
-    } catch (error) {
-      setPageError(error instanceof Error ? error.message : "USDC could not be enabled");
-    } finally {
-      setTrustlineBusy(false);
-    }
-  }
-
-  async function refreshPrivateBalance(
-    priorBalance: bigint,
-  ): Promise<bigint> {
-    for (let attempt = 0; attempt < 20; attempt++) {
-      await wait(2_000);
-      const wallet = await openPrivateWallet(address);
-      if (wallet.balance > priorBalance) return wallet.balance;
-    }
-    throw new Error("Deposit confirmed, but the private indexer has not published the new note yet");
-  }
-
   async function refreshPrivateLiquidityState() {
     if (!address) throw new Error("Connect a wallet first");
     const wallet = await openPrivateWallet(address);
@@ -231,35 +195,6 @@ export default function LiquidityPage() {
     setOwnedShares(shares);
     setExitOffers(offers);
     return { wallet, shares, offers };
-  }
-
-  async function shield(market: RegistryMarket) {
-    if (!address) return;
-    const card = cards[market.marketId] ?? { amount: "5", status: "", error: "", busy: false };
-    updateCard(market.marketId, { busy: true, error: "", status: "Preparing deposit" });
-    try {
-      const amount = parseTokenAmount(card.amount, NETWORK.collateral.decimals);
-      if (!collateral?.hasTrustline) throw new Error("Enable USDC before shielding funds");
-      if (collateral.balanceAtomic < amount) {
-        throw new Error("Wallet USDC balance is too low for this deposit");
-      }
-      const priorBalance = privateBalance ?? 0n;
-      await shieldUsdc(address, amount, (status) =>
-        updateCard(market.marketId, { status })
-      );
-      updateCard(market.marketId, { status: "Waiting for the private note index" });
-      const balance = await refreshPrivateBalance(priorBalance);
-      setPrivateBalance(balance);
-      setCollateral(await getCollateralAccountState(address, NETWORK.collateral));
-      updateCard(market.marketId, { status: "USDC is available privately" });
-    } catch (error) {
-      updateCard(market.marketId, {
-        error: error instanceof Error ? error.message : "USDC deposit failed",
-        status: "",
-      });
-    } finally {
-      updateCard(market.marketId, { busy: false });
-    }
   }
 
   async function fund(market: RegistryMarket) {
@@ -491,33 +426,6 @@ export default function LiquidityPage() {
     }
   }
 
-  async function shieldForExitOffer(offer: PrivateLiquidityExitOffer) {
-    if (!address || privateBalance === null) return;
-    const key = `offer:${offer.exitId}`;
-    const amount = offer.minimumPayment - privateBalance;
-    if (amount <= 0n) return;
-    updateCard(key, { busy: true, error: "", status: "Preparing private USDC" });
-    try {
-      if (!collateral?.hasTrustline) throw new Error("Enable USDC before shielding funds");
-      if (collateral.balanceAtomic < amount) {
-        throw new Error("Wallet USDC balance is too low for this LP replacement");
-      }
-      await shieldUsdc(address, amount, (status) => updateCard(key, { status }));
-      updateCard(key, { status: "Waiting for the private note index" });
-      await refreshPrivateBalance(privateBalance);
-      await refreshPrivateLiquidityState();
-      setCollateral(await getCollateralAccountState(address, NETWORK.collateral));
-      updateCard(key, { status: "Private USDC is ready for this offer" });
-    } catch (error) {
-      updateCard(key, {
-        error: error instanceof Error ? error.message : "USDC deposit failed",
-        status: "",
-      });
-    } finally {
-      updateCard(key, { busy: false });
-    }
-  }
-
   return (
     <div className="space-y-8 pb-12">
       <PageHeader
@@ -552,28 +460,17 @@ export default function LiquidityPage() {
             {unlocking ? "Unlocking" : "Unlock private balance"}
           </Button>
         ) : (
-          <Button variant="outline" disabled={unlocking} onClick={() => void unlock()}>
-            <RefreshCw className={cn("size-4", unlocking && "animate-spin")} />
-            Refresh balance
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled={unlocking} onClick={() => void unlock()}>
+              <RefreshCw className={cn("size-4", unlocking && "animate-spin")} />
+              Refresh balance
+            </Button>
+            <Button asChild>
+              <Link href="/app/portfolio">Add private USDC</Link>
+            </Button>
+          </div>
         )}
       </Panel>
-
-      {address && collateral && !collateral.hasTrustline && (
-        <Panel className="flex flex-col gap-4 border-amber-300/20 bg-amber-300/[0.04] p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-200" aria-hidden="true" />
-            <div>
-              <p className="text-sm font-medium text-amber-100">Enable Stellar testnet USDC</p>
-              <p className="mt-1 text-xs text-foreground/55">Only LPs and bettors need USDC. Market creators do not.</p>
-            </div>
-          </div>
-          <Button disabled={trustlineBusy} onClick={() => void enableUsdc()}>
-            {trustlineBusy && <Spinner />}
-            Enable USDC
-          </Button>
-        </Panel>
-      )}
 
       {pageError && (
         <div role="alert" className="rounded-lg border border-red-300/20 bg-red-300/[0.05] p-4 text-sm text-red-200">
@@ -812,19 +709,21 @@ export default function LiquidityPage() {
                     {formatTokenAmount(offer.equityFloor, NETWORK.collateral.decimals, 2)} to{" "}
                     {formatTokenAmount(offer.equityCeiling, NETWORK.collateral.decimals, 2)} USDC for all LP shares.
                   </p>
-                  <Button
-                    className="mt-4"
-                    size="sm"
-                    disabled={card?.busy || (!canTake && !collateral?.hasTrustline)}
-                    onClick={() => void (
-                      canTake
-                        ? takeExitOffer(offer)
-                        : shieldForExitOffer(offer)
-                    )}
-                  >
-                    {card?.busy && <Spinner />}
-                    {canTake ? "Replace privately" : "Shield more USDC"}
-                  </Button>
+                  {canTake ? (
+                    <Button
+                      className="mt-4"
+                      size="sm"
+                      disabled={card?.busy}
+                      onClick={() => void takeExitOffer(offer)}
+                    >
+                      {card?.busy && <Spinner />}
+                      Replace privately
+                    </Button>
+                  ) : (
+                    <Button className="mt-4" size="sm" asChild>
+                      <Link href="/app/portfolio">Add private USDC</Link>
+                    </Button>
+                  )}
                   {card?.status && <p className="mt-3 text-xs text-emerald-200">{card.status}</p>}
                   {card?.error && <p className="mt-3 text-xs text-red-300">{card.error}</p>}
                 </Panel>
@@ -919,9 +818,8 @@ export default function LiquidityPage() {
                         Fund privately
                       </Button>
                     ) : (
-                      <Button disabled={card.busy || amount <= 0n || !collateral?.hasTrustline} onClick={() => void shield(market)}>
-                        {card.busy && <Spinner />}
-                        Shield USDC
+                      <Button asChild>
+                        <Link href="/app/portfolio">Add private USDC</Link>
                       </Button>
                     )}
                   </div>

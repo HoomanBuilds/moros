@@ -486,7 +486,7 @@ fn withdrawal_is_relayer_submittable_and_bound_to_recipient_and_amount() {
         &125_000_000,
         &action_id,
         &EXPIRY,
-        &transition(&setup.env, 2, 2, 3, &[51, 52], [61, 62]),
+        &transition(&setup.env, 2, 2, 3, &[51], [61, 62]),
     );
 
     assert_eq!(
@@ -661,7 +661,7 @@ fn pause_blocks_new_deposits_without_blocking_private_exits() {
         &100_000_000,
         &withdraw_id,
         &EXPIRY,
-        &transition(&setup.env, 2, 2, 3, &[21, 22], [31, 32]),
+        &transition(&setup.env, 2, 2, 3, &[21], [31, 32]),
     );
     assert_eq!(
         TokenClient::new(&setup.env, &setup.token).balance(&recipient),
@@ -724,7 +724,7 @@ fn private_lp_funding_and_unfunding_keep_ownership_in_shielded_notes() {
         &0,
         &fund_id,
         &EXPIRY,
-        &transition(&setup.env, 2, 2, 3, &[21, 22], [31, 90]),
+        &transition(&setup.env, 2, 2, 3, &[21], [31, 90]),
     );
     assert_eq!(funded.shares_minted, 200_000_000);
     assert_eq!(liquidity_vault.info().funded_assets, 200_000_000);
@@ -1073,7 +1073,7 @@ fn accept_test_order(
     market: &Address,
     action_byte: u8,
     root: u32,
-    nullifiers: [u32; 2],
+    nullifier: u32,
     commitments: [u32; 2],
 ) {
     let registration = setup.vault.registration(market).unwrap();
@@ -1111,7 +1111,7 @@ fn accept_test_order(
         &action_id,
         &position_commitment,
         &encrypted_order,
-        &transition(&setup.env, append, append, root, &nullifiers, commitments),
+        &transition(&setup.env, append, append, root, &[nullifier], commitments),
     );
     let updated = setup.vault.epoch(market, &epoch.epoch).unwrap();
     assert_eq!(updated.accepted_root, binding.new_accepted_root);
@@ -1229,7 +1229,7 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
             &market_address,
             20 + index as u8,
             3 + index,
-            [100 + index * 2, 101 + index * 2],
+            100 + index * 2,
             [200 + index * 2, 201 + index * 2],
         );
     }
@@ -1426,7 +1426,7 @@ fn a_full_epoch_rejects_the_next_order_before_consuming_its_notes() {
             &market_address,
             20 + index as u8,
             3 + index,
-            [100 + index * 2, 101 + index * 2],
+            100 + index * 2,
             [200 + index * 2, 201 + index * 2],
         );
     }
@@ -1447,7 +1447,7 @@ fn a_full_epoch_rejects_the_next_order_before_consuming_its_notes() {
                 current_root,
                 current_root,
                 99,
-                &[999, 1_000],
+                &[999],
                 [800, 801],
             ),
         )
@@ -1480,7 +1480,7 @@ fn invalid_order_points_fail_before_note_consumption() {
             &id(&setup.env, 20),
             &field(&setup.env, 201),
             &invalid,
-            &transition(&setup.env, 2, 2, 3, &[100, 101], [200, 201]),
+            &transition(&setup.env, 2, 2, 3, &[100], [200, 201]),
         )
         .is_err());
     assert!(!setup.vault.is_spent(&nullifier));
@@ -1499,7 +1499,7 @@ fn short_epoch_never_moves_price_and_every_order_reaches_private_refund() {
     let setup = setup();
     let (market_address, _liquidity_address, _resolver) = setup_private_market(&setup);
     deposit(&setup, 10, 2, [11, 12], 25_000_000);
-    accept_test_order(&setup, &market_address, 20, 3, [100, 101], [200, 201]);
+    accept_test_order(&setup, &market_address, 20, 3, 100, [200, 201]);
     setup
         .env
         .ledger()
@@ -1555,7 +1555,7 @@ fn void_restores_user_charges_fees_rounding_and_lp_principal_without_platform_re
             &market_address,
             20 + index as u8,
             3 + index,
-            [100 + index * 2, 101 + index * 2],
+            100 + index * 2,
             [200 + index * 2, 201 + index * 2],
         );
     }

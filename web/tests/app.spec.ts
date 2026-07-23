@@ -9,6 +9,13 @@ test("markets page renders its discovery controls", async ({ page }) => {
   await expect(page.getByRole("searchbox", { name: "Search markets...", exact: true })).toBeVisible();
 });
 
+test("portfolio provides one reusable private USDC wallet", async ({ page }) => {
+  await page.goto("/app/portfolio");
+  await expect(page.getByRole("heading", { name: "Private USDC balance", exact: true })).toBeVisible();
+  await expect(page.getByText(/use the same private balance across every Moros bet/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect wallet to unlock", exact: true })).toBeVisible();
+});
+
 test("market terminal fails closed for an unknown market", async ({ page }) => {
   await page.goto(`/app/market/${NETWORK.marketId.slice(0, -1)}A`);
   await expect(page.getByRole("heading", { name: "Market not found", exact: true })).toBeVisible();

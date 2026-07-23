@@ -100,7 +100,7 @@ const inputs = [
   inputNote({
     domain,
     purpose: 1n,
-    amount: 7_000_000n,
+    amount: 12_000_000n,
     spendSecret: 11n,
     viewingSecret: 12n,
     noteId: 13n,
@@ -108,8 +108,8 @@ const inputs = [
   }),
   inputNote({
     domain,
-    purpose: 1n,
-    amount: 5_000_000n,
+    purpose: 0n,
+    amount: 0n,
     spendSecret: 21n,
     viewingSecret: 22n,
     noteId: 23n,
@@ -117,6 +117,7 @@ const inputs = [
   }),
 ];
 const inputCommitments = inputs.map((note) => note.commitment);
+const activeInputs = inputs.slice(0, 1);
 const membership = appendFirstPair(inputCommitments, LEVELS);
 const inputPaths = firstPairMembershipPaths(inputCommitments, LEVELS);
 const lot = SCALE;
@@ -212,9 +213,9 @@ const fixture = {
   membershipRoot: membership.newRoot,
   appendRoot: noteAppend.appendRoot,
   newRoot: noteAppend.newRoot,
-  nullifierCount: "2",
-  nullifier0: noteNullifier(inputs[0], inputs[0].spendSecret),
-  nullifier1: noteNullifier(inputs[1], inputs[1].spendSecret),
+  nullifierCount: "1",
+  nullifier0: noteNullifier(activeInputs[0], activeInputs[0].spendSecret),
+  nullifier1: "0",
   outputCommitment0: outputs[0].commitment,
   outputCommitment1: outputs[1].commitment,
   outputEnvelopeHash0: outputs[0].envelopeHash,
@@ -226,16 +227,16 @@ const fixture = {
   side,
   encryptionRandomness,
   acceptedSiblings,
-  inPurpose: inputs.map((note) => note.purpose),
-  inAmount: inputs.map((note) => note.amount),
-  inSpendSecret: inputs.map((note) => note.spendSecret),
-  inViewingPublicKey: inputs.map((note) => note.viewingPublicKey),
-  inNoteId: inputs.map((note) => note.noteId),
-  inPayloadHash: inputs.map((note) => note.payloadHash),
-  inPrivateData: inputs.map((note) => note.privateData),
-  inBlinding: inputs.map((note) => note.blinding),
-  inLeafIndex: ["0", "1"],
-  inSiblings: inputPaths,
+  inPurpose: activeInputs.map((note) => note.purpose),
+  inAmount: activeInputs.map((note) => note.amount),
+  inSpendSecret: activeInputs.map((note) => note.spendSecret),
+  inViewingPublicKey: activeInputs.map((note) => note.viewingPublicKey),
+  inNoteId: activeInputs.map((note) => note.noteId),
+  inPayloadHash: activeInputs.map((note) => note.payloadHash),
+  inPrivateData: activeInputs.map((note) => note.privateData),
+  inBlinding: activeInputs.map((note) => note.blinding),
+  inLeafIndex: ["0"],
+  inSiblings: inputPaths.slice(0, 1),
   outPurpose: outputs.map((note) => note.purpose),
   outAmount: outputs.map((note) => note.amount),
   outSpendPublicKey: outputs.map((note) => note.spendPublicKey),

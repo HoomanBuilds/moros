@@ -18,4 +18,4 @@ component main { public [
     firstLeafIndex,
     publicAmountSign,
     publicAmountMagnitude
-] } = PrivateLiquidityAction(20, 6, 2);
+] } = PrivateLiquidityAction(20, 6, 1);

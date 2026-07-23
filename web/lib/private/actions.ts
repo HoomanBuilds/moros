@@ -43,6 +43,11 @@ import {
 import { provePrivateAction } from "./prover";
 import { waitForPrivateBatch } from "./batch-window";
 import {
+  liquidPrivateTotal,
+  selectConsolidationPair,
+  selectSmallestSufficientNote,
+} from "./note-selection";
+import {
   openPrivateWallet,
   type OwnedIndexedNote,
   type PrivateWalletSnapshot,
@@ -518,6 +523,118 @@ export async function shieldUsdc(
   );
 }
 
+export async function withdrawPrivateUsdc(
+  address: string,
+  amount: bigint,
+  onStatus?: (status: string) => void,
+): Promise<string> {
+  assertAmount(amount);
+  onStatus?.("Preparing private USDC withdrawal");
+  const { wallet, note: input } = await privateWalletWithSpendableNote(
+    address,
+    amount,
+    onStatus,
+  );
+  const id = actionId();
+  const expiry = actionExpiry();
+  const contextFields = await operationContextFields({
+    networkDomain: wallet.config.networkDomain,
+    vault: wallet.config.contracts.sharedVault,
+    token: wallet.config.collateral.contract,
+    verifierDomain: wallet.config.verifierDomain,
+    action: 2n,
+    actionId: id,
+    publicAccount: address,
+    publicAmount: -amount,
+    expiry,
+    bindingKind: 0n,
+  });
+  const domain = privateDomain(wallet.config, contextFields);
+  const change = input.amount - amount;
+  const outputs = [
+    createOutputNote({
+      outputIndex: 0,
+      domain,
+      purpose: change === 0n ? 0n : 1n,
+      amount: change,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      ...outputSecrets(),
+    }),
+    createOutputNote({
+      outputIndex: 1,
+      domain,
+      purpose: 0n,
+      amount: 0n,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      ...outputSecrets(),
+    }),
+  ];
+  const appended = appendPair(wallet.tree, [
+    outputs[0].commitment,
+    outputs[1].commitment,
+  ]);
+  const nullifier = noteNullifier(input, input.spendSecret, 1n);
+  const contextDigest = poseidon2Hash(contextFields);
+  const witness = {
+    action: 2n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifierCount: 1n,
+    nullifier0: nullifier,
+    nullifier1: 0n,
+    outputCommitment0: outputs[0].commitment,
+    outputCommitment1: outputs[1].commitment,
+    outputEnvelopeHash0: outputs[0].envelopeHash,
+    outputEnvelopeHash1: outputs[1].envelopeHash,
+    firstLeafIndex: BigInt(appended.firstLeafIndex),
+    publicAmountSign: 1n,
+    publicAmountMagnitude: amount,
+    contextFields,
+    ...inputFields([input], wallet.tree),
+    ...outputFields(outputs),
+    appendSiblings: appended.siblings,
+  };
+  onStatus?.("Generating the private withdrawal proof");
+  const proved = await provePrivateAction(
+    "withdraw",
+    stringifyWitness(witness) as Record<string, unknown>,
+  );
+  assertSignals(proved.publicSignals, expectedActionSignals({
+    action: 2n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifiers: [nullifier],
+    outputs,
+    firstLeafIndex: appended.firstLeafIndex,
+    publicAmount: -amount,
+  }));
+  onStatus?.("Relaying the public USDC withdrawal");
+  return relayPrivateContractCall(
+    wallet.config.contracts.sharedVault,
+    address,
+    "withdraw",
+    {
+      recipient: address,
+      amount,
+      action_id: hexToBytes(id),
+      expiry,
+      transition: transition(
+        proved.proof,
+        wallet.tree,
+        appended.newRoot,
+        [nullifier],
+        outputs,
+      ),
+    },
+  );
+}
+
 function selectFundingInputs(
   notes: OwnedIndexedNote[],
   amount: bigint,
@@ -534,6 +651,151 @@ function selectFundingInputs(
     }
   }
   throw new Error("Shield enough USDC before funding this market");
+}
+
+async function waitForIndexedPrivateOutput(
+  address: string,
+  commitment: bigint,
+): Promise<PrivateWalletSnapshot> {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    const wallet = await openPrivateWallet(address);
+    if (wallet.notes.some((note) => note.commitment === commitment)) {
+      return wallet;
+    }
+  }
+  throw new Error("Private transfer confirmed, but the new note is not indexed yet");
+}
+
+async function consolidatePrivateNotes(
+  address: string,
+  wallet: PrivateWalletSnapshot,
+  inputs: [OwnedIndexedNote, OwnedIndexedNote],
+  onStatus?: (status: string) => void,
+): Promise<PrivateWalletSnapshot> {
+  onStatus?.("Consolidating encrypted private notes");
+  const id = actionId();
+  const expiry = actionExpiry();
+  const contextFields = await operationContextFields({
+    networkDomain: wallet.config.networkDomain,
+    vault: wallet.config.contracts.sharedVault,
+    token: wallet.config.collateral.contract,
+    verifierDomain: wallet.config.verifierDomain,
+    action: 1n,
+    actionId: id,
+    publicAmount: 0n,
+    expiry,
+    bindingKind: 0n,
+  });
+  const domain = privateDomain(wallet.config, contextFields);
+  const amount = inputs[0].amount + inputs[1].amount;
+  const outputs = [
+    createOutputNote({
+      outputIndex: 0,
+      domain,
+      purpose: 1n,
+      amount,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      ...outputSecrets(),
+    }),
+    createOutputNote({
+      outputIndex: 1,
+      domain,
+      purpose: 0n,
+      amount: 0n,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      ...outputSecrets(),
+    }),
+  ];
+  const appended = appendPair(wallet.tree, [
+    outputs[0].commitment,
+    outputs[1].commitment,
+  ]);
+  const nullifiers = inputs.map((note) =>
+    noteNullifier(note, note.spendSecret, 1n)
+  );
+  const contextDigest = poseidon2Hash(contextFields);
+  const witness = {
+    action: 1n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifierCount: 2n,
+    nullifier0: nullifiers[0],
+    nullifier1: nullifiers[1],
+    outputCommitment0: outputs[0].commitment,
+    outputCommitment1: outputs[1].commitment,
+    outputEnvelopeHash0: outputs[0].envelopeHash,
+    outputEnvelopeHash1: outputs[1].envelopeHash,
+    firstLeafIndex: BigInt(appended.firstLeafIndex),
+    publicAmountSign: 0n,
+    publicAmountMagnitude: 0n,
+    contextFields,
+    ...inputFields(inputs, wallet.tree),
+    ...outputFields(outputs),
+    appendSiblings: appended.siblings,
+  };
+  const proved = await provePrivateAction(
+    "transfer",
+    stringifyWitness(witness) as Record<string, unknown>,
+  );
+  assertSignals(proved.publicSignals, expectedActionSignals({
+    action: 1n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifiers,
+    outputs,
+    firstLeafIndex: appended.firstLeafIndex,
+    publicAmount: 0n,
+  }));
+  onStatus?.("Relaying private note consolidation");
+  await relayPrivateContractCall(
+    wallet.config.contracts.sharedVault,
+    address,
+    "private_transfer",
+    {
+      action_id: hexToBytes(id),
+      expiry,
+      transition: transition(
+        proved.proof,
+        wallet.tree,
+        appended.newRoot,
+        nullifiers,
+        outputs,
+      ),
+    },
+  );
+  onStatus?.("Waiting for consolidated private balance");
+  return waitForIndexedPrivateOutput(address, outputs[0].commitment);
+}
+
+async function privateWalletWithSpendableNote(
+  address: string,
+  amount: bigint,
+  onStatus?: (status: string) => void,
+): Promise<{
+  wallet: PrivateWalletSnapshot;
+  note: OwnedIndexedNote;
+}> {
+  let wallet = await openPrivateWallet(address);
+  for (let attempt = 0; attempt < 64; attempt++) {
+    const note = selectSmallestSufficientNote(wallet.notes, amount);
+    if (note) return { wallet, note };
+    if (liquidPrivateTotal(wallet.notes) < amount) {
+      throw new Error("Add enough private USDC in Portfolio before continuing");
+    }
+    const pair = selectConsolidationPair(wallet.notes);
+    if (!pair) {
+      throw new Error("Private balance could not be consolidated for this amount");
+    }
+    wallet = await consolidatePrivateNotes(address, wallet, pair, onStatus);
+  }
+  throw new Error("Private balance needs too many consolidation steps");
 }
 
 function phaseName(value: LiquidityVaultInfo["phase"]): string {
@@ -559,18 +821,19 @@ export async function fundMarketLiquidity(
 ): Promise<{ hash: string; assets: bigint; shares: bigint }> {
   assertAmount(requestedAmount);
   onStatus?.("Reading private balance and LP vault");
-  const [wallet, info] = await Promise.all([
-    openPrivateWallet(address),
-    getLiquidityVaultInfo(address, liquidityVaultId),
-  ]);
+  const info = await getLiquidityVaultInfo(address, liquidityVaultId);
   if (phaseName(info.phase) !== "Funding") {
     throw new Error("This market is no longer accepting initial liquidity");
   }
   const remaining = info.target_assets - info.funded_assets;
   const amount = requestedAmount < remaining ? requestedAmount : remaining;
   assertAmount(amount);
-  const inputs = selectFundingInputs(wallet.notes, amount);
-  const inputTotal = inputs[0].amount + inputs[1].amount;
+  const { wallet, note: input } = await privateWalletWithSpendableNote(
+    address,
+    amount,
+    onStatus,
+  );
+  const inputTotal = input.amount;
   const shares = amount * (info.total_shares + VIRTUAL_SHARES)
     / (info.funded_assets + VIRTUAL_ASSETS);
   assertAmount(shares);
@@ -638,9 +901,7 @@ export async function fundMarketLiquidity(
     outputs[0].commitment,
     outputs[1].commitment,
   ]);
-  const nullifiers = inputs.map((note) =>
-    noteNullifier(note, note.spendSecret, 1n)
-  );
+  const nullifiers = [noteNullifier(input, input.spendSecret, 1n)];
   const contextDigest = poseidon2Hash(contextFields);
   const witness = {
     action: 6n,
@@ -648,9 +909,9 @@ export async function fundMarketLiquidity(
     membershipRoot: wallet.tree.root,
     appendRoot: wallet.tree.root,
     newRoot: append.newRoot,
-    nullifierCount: 2n,
+    nullifierCount: 1n,
     nullifier0: nullifiers[0],
-    nullifier1: nullifiers[1],
+    nullifier1: 0n,
     outputCommitment0: outputs[0].commitment,
     outputCommitment1: outputs[1].commitment,
     outputEnvelopeHash0: outputs[0].envelopeHash,
@@ -659,7 +920,7 @@ export async function fundMarketLiquidity(
     publicAmountSign: 1n,
     publicAmountMagnitude: amount,
     contextFields,
-    ...inputFields(inputs, wallet.tree),
+    ...inputFields([input], wallet.tree),
     ...outputFields(outputs),
     appendSiblings: append.siblings,
   };
@@ -1841,7 +2102,7 @@ export async function placePrivateOrder({
   lotSize: bigint;
 }> {
   onStatus?.("Reading the private market epoch");
-  const wallet = await openPrivateWallet(address);
+  let wallet = await openPrivateWallet(address);
   const { registration, epoch } = await waitForPrivateBatch<
     PrivateMarketRegistration,
     PrivateEpoch
@@ -1881,8 +2142,14 @@ export async function placePrivateOrder({
   );
   const positionBudget = payout + maximumFee;
   assertAmount(positionBudget);
-  const inputs = selectFundingInputs(wallet.notes, positionBudget);
-  const inputTotal = inputs[0].amount + inputs[1].amount;
+  const spendable = await privateWalletWithSpendableNote(
+    address,
+    positionBudget,
+    onStatus,
+  );
+  wallet = spendable.wallet;
+  const input = spendable.note;
+  const inputTotal = input.amount;
   const sequence = await nextOrderSequence(
     wallet.config,
     address,
@@ -1995,9 +2262,7 @@ export async function placePrivateOrder({
     outputs[0].commitment,
     outputs[1].commitment,
   ]);
-  const nullifiers = inputs.map((note) =>
-    noteNullifier(note, note.spendSecret, 1n)
-  );
+  const nullifiers = [noteNullifier(input, input.spendSecret, 1n)];
   const contextDigest = poseidon2Hash(contextFields);
   const witness = {
     action: 3n,
@@ -2005,9 +2270,9 @@ export async function placePrivateOrder({
     membershipRoot: wallet.tree.root,
     appendRoot: wallet.tree.root,
     newRoot: appended.newRoot,
-    nullifierCount: 2n,
+    nullifierCount: 1n,
     nullifier0: nullifiers[0],
-    nullifier1: nullifiers[1],
+    nullifier1: 0n,
     outputCommitment0: outputs[0].commitment,
     outputCommitment1: outputs[1].commitment,
     outputEnvelopeHash0: outputs[0].envelopeHash,
@@ -2019,7 +2284,7 @@ export async function placePrivateOrder({
     side: BigInt(side),
     encryptionRandomness,
     acceptedSiblings: accepted.siblings,
-    ...inputFields(inputs, wallet.tree),
+    ...inputFields([input], wallet.tree),
     ...outputFields(outputs),
     appendSiblings: appended.siblings,
   };
