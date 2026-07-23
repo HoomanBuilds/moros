@@ -193,6 +193,9 @@ async function setupAll() {
   if (!ptau || !existsSync(ptau) || !statSync(ptau).isFile()) {
     throw new Error("MOROS_PTAU must point to a BN254 power 18 phase-2 ptau file");
   }
+  const snarkjsPackage = JSON.parse(
+    readFileSync(resolve(nodeModules, "snarkjs/package.json"), "utf8"),
+  );
   const ptauBlake2b = await hashFile(ptau, "blake2b512");
   if (
     ptauBlake2b !== trustedPtauBlake2b &&
@@ -200,16 +203,37 @@ async function setupAll() {
   ) {
     throw new Error("Powers of Tau BLAKE2b hash is not the reviewed power 18 transcript");
   }
-  run("node", [snarkjs, "powersoftau", "verify", ptau]);
+  const ptauSha256 = await hashFile(ptau, "sha256");
+  const verificationReceiptPath = `${ptau}.snarkjs-verify.json`;
+  let verified = false;
+  if (existsSync(verificationReceiptPath)) {
+    const receipt = JSON.parse(
+      readFileSync(verificationReceiptPath, "utf8"),
+    );
+    verified =
+      receipt.ptau_sha256 === ptauSha256 &&
+      receipt.ptau_blake2b === ptauBlake2b &&
+      receipt.snarkjs_version === snarkjsPackage.version &&
+      receipt.command === "snarkjs powersoftau verify";
+  }
+  if (!verified) {
+    run("node", [snarkjs, "powersoftau", "verify", ptau]);
+    writeFileSync(
+      verificationReceiptPath,
+      `${JSON.stringify({
+        ptau_sha256: ptauSha256,
+        ptau_blake2b: ptauBlake2b,
+        snarkjs_version: snarkjsPackage.version,
+        command: "snarkjs powersoftau verify",
+      }, null, 2)}\n`,
+    );
+  }
   assertCompiled();
   assertCircuitSourcesCommitted();
   const compileManifest = JSON.parse(
     readFileSync(resolve(outputRoot, "compile-manifest.json"), "utf8"),
   );
   const circomVersion = toolVersion("circom", ["--version"]);
-  const snarkjsPackage = JSON.parse(
-    readFileSync(resolve(nodeModules, "snarkjs/package.json"), "utf8"),
-  );
   const circomlibPackage = JSON.parse(
     readFileSync(resolve(nodeModules, "circomlib/package.json"), "utf8"),
   );
@@ -238,10 +262,8 @@ async function setupAll() {
       "contribute",
       paths.initialZkey,
       paths.contributedZkey,
-      "--name",
-      setupLabel,
-      "--entropy",
-      randomBytes(64).toString("hex"),
+      `--name=${setupLabel}`,
+      `--entropy=${randomBytes(64).toString("hex")}`,
     ]);
     run("node", [
       snarkjs,
@@ -251,8 +273,7 @@ async function setupAll() {
       paths.zkey,
       beacon,
       "10",
-      "--name",
-      `${setupLabel}-beacon`,
+      `--name=${setupLabel}-beacon`,
     ]);
     run("node", [
       snarkjs,
@@ -309,7 +330,7 @@ async function setupAll() {
     proof_system: "groth16",
     proof_encoding: "A(X,Y)||B(X.c1,X.c0,Y.c1,Y.c0)||C(X,Y)",
     required_ptau_power: requiredPower,
-    ptau_sha256: sha256File(ptau),
+    ptau_sha256: ptauSha256,
     ptau_blake2b: ptauBlake2b,
     source_commit: sourceCommit,
     source_bundle_sha256: sourceBundleHash(),
