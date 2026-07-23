@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "network": "testnet",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "verifiedDeployment": "deployments/platform-hardening-testnet.json",
+  "collateral": {
+    "asset": "Circle USDC",
+    "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+    "sac": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+    "decimals": 7
+  },
+  "legacyContracts": {
+    "canonicalMarket": "CAXGT3SHUEVWLHA7PZKPNZCVGMEWLWCZTK6EQZWQABOL4NDBEPLRCU64",
+    "canonicalPool": "CADIVW7SHMAFKTVU2P7IZ6UONFJWDXNQJFB4RRBE7KZFGXVSXWJEPKKP",
+    "oneSidedMarket": "CBUBAXNQPTN73KUR5LWNOQTM3RIKLTC4RTXQJJ4BJNJC4ETNN7WPIZ6S",
+    "oneSidedPool": "CALSTYJSTBAIKY4LIIU6G65A5JG7KW7YBIBY7KHHTW424IDRWGGCFXGZ"
+  },
+  "custody": [
+    {
+      "holder": "legacy LMSR market",
+      "classes": [
+        "creator subsidy",
+        "executed batch collateral"
+      ],
+      "liabilityOwner": "creator for subsidy only on VOID, pool for batch collateral on VOID, winning outcome share holders after resolution",
+      "knownGap": "normal resolution has no terminal LP share or residual distribution path"
+    },
+    {
+      "holder": "legacy shielded pool",
+      "classes": [
+        "pending public stake buckets",
+        "aggregate redeemed winnings before payout",
+        "claim fee before treasury transfer"
+      ],
+      "liabilityOwner": "public owner stored on each pending order, then proof holder after inclusion",
+      "knownGap": "wallet, pool, amount, and time are linked by the SAC transfer and order record"
+    }
+  ],
+  "legacyEconomics": {
+    "lmsrBShares": "20",
+    "creatorSubsidyAtomic": "138629437",
+    "feeBpsOnWinningProfit": 200,
+    "minimumPrivateBatch": 2,
+    "normalBatchSize": 4,
+    "shortFinalBatchEnabled": true,
+    "globalLatestExecutionPrice": true,
+    "lpShares": false
+  },
+  "plaintextBackupColumns": [
+    "wallet",
+    "commitment",
+    "market_id",
+    "pool_id",
+    "tx_hash",
+    "placed_at"
+  ],
+  "isolationRule": "These identifiers remain legacy claim and refund targets. New vault, factory, liquidity, proof, and market capabilities use fresh contract IDs and domains."
+}

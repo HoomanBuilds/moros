@@ -9,7 +9,7 @@
     "ws": "8.21.1"
   },
   "scripts": {
-    "test": "node test-oracle-config.mjs",
+    "test": "node test-oracle-config.mjs && node economics/baseline.test.mjs && node economics/model.test.mjs",
     "verify:oracles": "node verify-oracles.mjs"
   },
   "dependencies": {

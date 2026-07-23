@@ -1,0 +1,106 @@
+{
+  "schema": 1,
+  "fixedScale": "4294967296",
+  "atomicScale": "10000000",
+  "liquidity": {
+    "input": {
+      "targetAtomic": "138629437",
+      "initializationReserveAtomic": "0"
+    },
+    "output": {
+      "b": "85899346465",
+      "initialLoss": "138629437",
+      "initializationReserve": "0",
+      "unused": "0"
+    }
+  },
+  "batches": [
+    {
+      "name": "balanced",
+      "input": {
+        "qYes": "0",
+        "qNo": "0",
+        "b": "85899345920",
+        "lot": "4294967296",
+        "yesCount": "4",
+        "noCount": "4",
+        "feeRateBps": "400"
+      },
+      "output": {
+        "batchSize": "8",
+        "yesCount": "4",
+        "noCount": "4",
+        "preYesPrice": "2147483648",
+        "postYesPrice": "2147483648",
+        "yesPrice": "2147483648",
+        "noPrice": "2147483648",
+        "aggregateMarketCharge": "40000000",
+        "yesMarketCost": "20000000",
+        "noMarketCost": "20000000",
+        "yesChargePerPosition": "5000000",
+        "noChargePerPosition": "5000000",
+        "roundingContribution": "0",
+        "feePerPosition": "100000",
+        "feeEscrow": "800000"
+      }
+    },
+    {
+      "name": "yes_heavy",
+      "input": {
+        "qYes": "85899345920",
+        "qNo": "0",
+        "b": "85899345920",
+        "lot": "4294967296",
+        "yesCount": "6",
+        "noCount": "2",
+        "feeRateBps": "400"
+      },
+      "output": {
+        "batchSize": "8",
+        "yesCount": "6",
+        "noCount": "2",
+        "preYesPrice": "3139872687",
+        "postYesPrice": "3300788811",
+        "yesPrice": "3221671715",
+        "noPrice": "1073295581",
+        "aggregateMarketCharge": "50004156",
+        "yesMarketCost": "45006234",
+        "noMarketCost": "4997922",
+        "yesChargePerPosition": "7501039",
+        "noChargePerPosition": "2498961",
+        "roundingContribution": "0",
+        "feePerPosition": "74980",
+        "feeEscrow": "599840"
+      }
+    },
+    {
+      "name": "rounding",
+      "input": {
+        "qYes": "0",
+        "qNo": "0",
+        "b": "85899345920",
+        "lot": "4294967296",
+        "yesCount": "2",
+        "noCount": "6",
+        "feeRateBps": "400"
+      },
+      "output": {
+        "batchSize": "8",
+        "yesCount": "2",
+        "noCount": "6",
+        "preYesPrice": "2147483648",
+        "postYesPrice": "1933448259",
+        "yesPrice": "2040288010",
+        "noPrice": "2254679286",
+        "aggregateMarketCharge": "40998338",
+        "yesMarketCost": "9500832",
+        "noMarketCost": "31497506",
+        "yesChargePerPosition": "4750416",
+        "noChargePerPosition": "5249584",
+        "roundingContribution": "2",
+        "feePerPosition": "99751",
+        "feeEscrow": "798008"
+      }
+    }
+  ]
+}
