@@ -4,6 +4,7 @@ import { poseidon2Hash } from "@zkpassport/poseidon2";
 import {
   aggregateCiphertexts,
   decryptSide,
+  publicKey,
 } from "./committee/bn254-babyjub.mjs";
 
 const FIXED_BATCH_SIZE = 8;
@@ -251,6 +252,15 @@ function ciphertext(record) {
   };
 }
 
+export function decryptBatchSides(orders, committeeSecret) {
+  if (!Array.isArray(orders) || orders.length !== FIXED_BATCH_SIZE) {
+    throw new Error("a private batch must contain exactly eight orders");
+  }
+  return orders.map((record) =>
+    decryptSide(committeeSecret, ciphertext(record))
+  );
+}
+
 function transcriptHash(label, value) {
   const serialized = JSON.stringify(value, (_, field) =>
     typeof field === "bigint" ? field.toString() : field
@@ -274,22 +284,39 @@ export function buildBatchStatement({
   if (!Array.isArray(orders) || orders.length !== FIXED_BATCH_SIZE) {
     throw new Error("a private batch must contain exactly eight orders");
   }
+  if (
+    Number(registration.fixed_batch_size) !== FIXED_BATCH_SIZE ||
+    Number(epoch.accepted_count) !== FIXED_BATCH_SIZE
+  ) {
+    throw new Error("market does not use the exact private batch policy");
+  }
   const firstSequence = decimal(epoch.first_sequence, "first sequence");
   const lastSequence = decimal(epoch.last_sequence, "last sequence");
   if (lastSequence - firstSequence !== 7n) {
     throw new Error("private batch order sequence is not contiguous");
   }
-  const ordered = [...orders].sort((left, right) =>
-    Number(decimal(left.sequence) - decimal(right.sequence))
-  );
+  const ordered = [...orders].sort((left, right) => {
+    const leftSequence = decimal(left.sequence);
+    const rightSequence = decimal(right.sequence);
+    return leftSequence < rightSequence ? -1 : leftSequence > rightSequence ? 1 : 0;
+  });
   const committeeEpoch = decimal(
     registration.committee_epoch,
     "committee epoch",
   );
+  const configuredKey = [
+    decimal(registration.committee_public_key_x),
+    decimal(registration.committee_public_key_y),
+  ];
+  const derivedKey = publicKey(decimal(committeeSecret, "committee secret"));
+  if (
+    configuredKey[0] !== derivedKey[0] ||
+    configuredKey[1] !== derivedKey[1]
+  ) {
+    throw new Error("committee secret does not match the registered public key");
+  }
   const encrypted = ordered.map(ciphertext);
-  const sides = encrypted.map((value) =>
-    decryptSide(committeeSecret, value)
-  );
+  const sides = decryptBatchSides(ordered, committeeSecret);
   const yesCount = sides.filter((side) => side === 1).length;
   const noCount = sides.length - yesCount;
   if (
@@ -383,10 +410,7 @@ export function buildBatchStatement({
     committeeConfigHash: bytes32Limbs(
       registration.committee_config_hash,
     ),
-    committeePublicKey: [
-      decimal(registration.committee_public_key_x),
-      decimal(registration.committee_public_key_y),
-    ],
+    committeePublicKey: configuredKey,
     aggregateCiphertext: [
       aggregate.c1[0],
       aggregate.c1[1],
@@ -420,6 +444,29 @@ export function buildBatchStatement({
     decryptionProofHash,
     committeeStatementHash,
   };
+}
+
+export function batchPublicSignals(witness) {
+  return [
+    ...witness.networkDomain,
+    ...witness.vault,
+    ...witness.market,
+    witness.epoch,
+    witness.acceptedRoot,
+    witness.acceptedCount,
+    witness.firstSequence,
+    witness.lastSequence,
+    witness.committeeEpoch,
+    ...witness.committeeConfigHash,
+    ...witness.committeePublicKey,
+    ...witness.aggregateCiphertext,
+    ...witness.decryptionProofHash,
+    ...witness.committeeStatementHash,
+    witness.allocationRoot,
+    witness.includedRoot,
+    witness.lotSize,
+    ...witness.quote,
+  ].map((value) => decimal(value));
 }
 
 export function jsonValue(value) {

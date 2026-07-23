@@ -4,6 +4,7 @@ import { Address } from "@stellar/stellar-sdk";
 import {
   addressLimbs,
   appendPairPath,
+  batchPublicSignals,
   bytes32Limbs,
   fixedRoot,
   membershipPath,
@@ -102,6 +103,29 @@ const quote = Object.fromEntries([
 assert.deepEqual(
   quoteFields(quote),
   Array.from({ length: 18 }, (_, index) => BigInt(index)),
+);
+assert.deepEqual(
+  batchPublicSignals({
+    networkDomain: [1n, 2n],
+    vault: [3n, 4n],
+    market: [5n, 6n],
+    epoch: 7n,
+    acceptedRoot: 8n,
+    acceptedCount: 9n,
+    firstSequence: 10n,
+    lastSequence: 11n,
+    committeeEpoch: 12n,
+    committeeConfigHash: [13n, 14n],
+    committeePublicKey: [15n, 16n],
+    aggregateCiphertext: [17n, 18n, 19n, 20n],
+    decryptionProofHash: [21n, 22n],
+    committeeStatementHash: [23n, 24n],
+    allocationRoot: 25n,
+    includedRoot: 26n,
+    lotSize: 27n,
+    quote: Array.from({ length: 18 }, (_, index) => BigInt(index + 28)),
+  }),
+  Array.from({ length: 45 }, (_, index) => BigInt(index + 1)),
 );
 
 assert.throws(() => merkleTree([1n, 2n, 3n], 1), /capacity/);
