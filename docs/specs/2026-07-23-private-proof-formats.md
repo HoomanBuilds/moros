@@ -293,6 +293,10 @@ Every batch proof has exactly 45 public field elements in this order:
 | 43 | Conditional LP fee |
 | 44 | Conditional protocol fee |
 
+The initial testnet circuit accepts exactly eight orders. The factory and shared vault reject any other configured batch size, so the UI and contracts cannot offer a mode the prover does not support. The circuit reconstructs all eight accepted leaves and the remaining 56 zero leaves, proving that the accepted root is complete. It decrypts each Baby Jubjub ciphertext against the configured committee key, derives the exact hidden side counts, verifies the aggregate ciphertext, builds the allocation and included-position roots, derives every fixed-lot payout, and reconciles side charges, rounding, fee escrow, LP fees, and protocol fees.
+
+This testnet proof currently uses the reconstructed committee secret as a private Groth16 witness. It never exposes that secret on-chain, but the proving coordinator can reconstruct it. Production promotion requires the distributed proving or verifiable threshold-decryption replacement described in the committee hardening plan. The single-VM coordinator is not presented as production-safe.
+
 ## Groth16 proof encoding
 
 The proof is exactly 256 bytes:

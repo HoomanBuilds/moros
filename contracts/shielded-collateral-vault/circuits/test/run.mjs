@@ -84,6 +84,7 @@ generate("withdraw");
 generate("order");
 run("node", [resolve(here, "generate-liquidity-fixtures.mjs")]);
 run("node", [resolve(here, "generate-position-fixtures.mjs")]);
+generate("batch");
 
 compile("output_note", resolve(here, "output_note.circom"));
 validWitness("output_note");
@@ -123,6 +124,8 @@ for (const name of ["execution_change", "claim", "refund"]) {
   validWitness(name);
 }
 validWitness("refund", "void_refund");
+compile("batch");
+validWitness("batch");
 
 expectInvalid("transfer", "value-creation", (fixture) => {
   fixture.outAmount[0] = (BigInt(fixture.outAmount[0]) + 1n).toString();
@@ -192,6 +195,20 @@ expectInvalid("claim", "lot-size-payout", (fixture) => {
 expectInvalid("refund", "accepted-membership", (fixture) => {
   fixture.acceptedCiphertext[0] = (
     BigInt(fixture.acceptedCiphertext[0]) + 1n
+  ).toString();
+});
+expectInvalid("batch", "accepted-position", (fixture) => {
+  fixture.positionCommitment[0] = (
+    BigInt(fixture.positionCommitment[0]) + 1n
+  ).toString();
+});
+expectInvalid("batch", "decrypted-side-count", (fixture) => {
+  fixture.quote[2] = "5";
+  fixture.quote[3] = "3";
+});
+expectInvalid("batch", "allocation-charge", (fixture) => {
+  fixture.quote[11] = (
+    BigInt(fixture.quote[11]) + 1n
   ).toString();
 });
 

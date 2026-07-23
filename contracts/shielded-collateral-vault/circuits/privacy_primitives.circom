@@ -242,6 +242,65 @@ template AllocationLeaf() {
     out <== hash.out;
 }
 
+template IncludedPositionLeaf() {
+    signal input market[2];
+    signal input epoch;
+    signal input sequence;
+    signal input positionCommitment;
+    signal output out;
+
+    component hash = Poseidon2Sponge(6);
+    hash.inputs[0] <== 1013;
+    hash.inputs[1] <== market[0];
+    hash.inputs[2] <== market[1];
+    hash.inputs[3] <== epoch;
+    hash.inputs[4] <== sequence;
+    hash.inputs[5] <== positionCommitment;
+    out <== hash.out;
+}
+
+template FixedMerkle64() {
+    signal input leaves[64];
+    signal output root;
+
+    component level0[32];
+    component level1[16];
+    component level2[8];
+    component level3[4];
+    component level4[2];
+    component level5;
+
+    for (var index = 0; index < 32; index++) {
+        level0[index] = MerkleNode();
+        level0[index].left <== leaves[index * 2];
+        level0[index].right <== leaves[index * 2 + 1];
+    }
+    for (var index = 0; index < 16; index++) {
+        level1[index] = MerkleNode();
+        level1[index].left <== level0[index * 2].out;
+        level1[index].right <== level0[index * 2 + 1].out;
+    }
+    for (var index = 0; index < 8; index++) {
+        level2[index] = MerkleNode();
+        level2[index].left <== level1[index * 2].out;
+        level2[index].right <== level1[index * 2 + 1].out;
+    }
+    for (var index = 0; index < 4; index++) {
+        level3[index] = MerkleNode();
+        level3[index].left <== level2[index * 2].out;
+        level3[index].right <== level2[index * 2 + 1].out;
+    }
+    for (var index = 0; index < 2; index++) {
+        level4[index] = MerkleNode();
+        level4[index].left <== level3[index * 2].out;
+        level4[index].right <== level3[index * 2 + 1].out;
+    }
+    level5 = MerkleNode();
+    level5.left <== level4[0].out;
+    level5.right <== level4[1].out;
+    root <== level5.out;
+}
+
 template InputNote(levels, nullifierDomain) {
     signal input noteDomain;
     signal input membershipRoot;

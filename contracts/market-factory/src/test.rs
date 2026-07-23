@@ -228,14 +228,14 @@ fn constructor_rejects_an_invalid_committee_encryption_key() {
 
 #[test]
 #[should_panic]
-fn constructor_rejects_an_unbounded_private_batch() {
+fn constructor_rejects_a_batch_size_without_a_proving_key() {
     let env = Env::default();
     let token_admin = Address::generate(&env);
     let collateral = env
         .register_stellar_asset_contract_v2(token_admin)
         .address();
     let mut bad = config(&env, collateral);
-    bad.fixed_batch_size = 65;
+    bad.fixed_batch_size = 9;
     env.register(MarketFactory, (bad,));
 }
 
