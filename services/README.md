@@ -19,7 +19,7 @@ Required production-like settings:
     RPC_URL=https://soroban-testnet.stellar.org
     NETWORK_PASSPHRASE=Test SDF Network ; September 2015
     ORACLE_MODE=free
-    FREE_RESOLVER_ID=CATOCURLCPJXJNYOEBBV5Q2XVHO6S5J2ATZE6NP3A3DAJMUW3G43HNQ7
+    FREE_RESOLVER_ID=CDHYIPCE25QZ3WGWBKPJQ37T4ZZBGKPVEUYNTQLGO4CU5ZKDIXZYHJMT
     POOL_WASM_HASH=617e3d7e152b03ad53f5704abe92295ccfaa538771835c7b2174f00396af9363
     MARKET_WASM_HASH=7afca617a67b7f2d2dab4e9dc6836779871dff77fd876a2d83d62b435f5fa06a
     COLLATERAL_ID=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
@@ -29,6 +29,8 @@ Required production-like settings:
     FUNDER_SK=<testnet fee payer secret>
     READER_ADDRESS=<testnet public address>
     MEMBERS=http://member1:9711,http://member2:9712,http://member3:9713
+    PRIVATE_SYNC_SUPABASE_URL=<server-only private sync project URL>
+    PRIVATE_SYNC_SUPABASE_SERVICE_ROLE_KEY=<server-only service role key>
 
 Keep FUNDER_SK and every MEMBER_SK out of git, logs, browser variables, and shared configuration.
 

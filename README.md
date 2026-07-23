@@ -168,23 +168,21 @@ Social features use wallet-signature authentication with a public Supabase proje
 
 ## Testnet deployments
 
-The canonical record is [deployments/platform-hardening-testnet.json](deployments/platform-hardening-testnet.json).
+The active private testnet record is [deployments/private-testnet.json](deployments/private-testnet.json).
 
 | Component | Testnet value |
 | --- | --- |
 | Circle USDC SAC | CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA |
-| Canonical market | CAXGT3SHUEVWLHA7PZKPNZCVGMEWLWCZTK6EQZWQABOL4NDBEPLRCU64 |
-| Canonical shielded pool | CADIVW7SHMAFKTVU2P7IZ6UONFJWDXNQJFB4RRBE7KZFGXVSXWJEPKKP |
-| Free price resolver | CATOCURLCPJXJNYOEBBV5Q2XVHO6S5J2ATZE6NP3A3DAJMUW3G43HNQ7 |
-| Event resolver | CBOZK2JSSAOPXJWBSB6JZF5KLPMRQ52JCF4PADI7QUHQ3WS6KBKKBXW5 |
+| Market factory | CALD5FKA45KBV2CQZYTDHUZL3HLAV3QQOL4E2SVC4ORESN62KLUSFOO4 |
+| Shared collateral vault | CAH77GQ23SXWYRPI7RJ7D2GPTUXHBWKF3653TJTEYEQVRNWM7OUO6LJ4 |
+| Groth16 verifier | CD6CH45C6FME5GR6SENJMWBOBYT6ECQR46U5B7Q2EN7WSS3CURENGGDU |
+| Free price resolver | CDHYIPCE25QZ3WGWBKPJQ37T4ZZBGKPVEUYNTQLGO4CU5ZKDIXZYHJMT |
 | Reflector CEX oracle | CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63 |
 | Reflector fiat oracle | CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W |
-| Market WASM | 7afca617a67b7f2d2dab4e9dc6836779871dff77fd876a2d83d62b435f5fa06a |
-| Shielded pool WASM | 617e3d7e152b03ad53f5704abe92295ccfaa538771835c7b2174f00396af9363 |
-| Price resolver WASM | fa2feaedc7622d45729e39e30a37946789934340a83bdd778981e7442194c06c |
-| Event resolver WASM | 64956727fbd1561c405f5aac91cd0275f31292e5d110a9f12244a6aa0d5c6f11 |
+| Market WASM | 9dd05888dea33f00c355f8599fdcace7e319e4bd3bab13d2fdd299864e005853 |
+| Liquidity vault WASM | 28ab6ba66df7e5512be4050e6000adc0786d8a75a9faf13e331c9907893b8b08 |
 
-The active testnet registry accepts only new Circle USDC markets built from the approved contract hashes above. Older XLM experiments are not active product markets.
+The active testnet registry accepts only new Circle USDC markets created through this factory. Older XLM and legacy pool experiments are not active product markets.
 
 ## Local development
 
