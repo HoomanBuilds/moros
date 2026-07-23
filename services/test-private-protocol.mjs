@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { Address } from "@stellar/stellar-sdk";
+import { Address, StrKey } from "@stellar/stellar-sdk";
 import {
+  encryptSide,
+  publicKey,
+} from "./committee/bn254-babyjub.mjs";
+import {
+  acceptedLeaf,
   addressLimbs,
   appendPairPath,
   batchPublicSignals,
+  buildBatchStatement,
   bytes32Limbs,
   fixedRoot,
   membershipPath,
@@ -134,5 +140,107 @@ assert.throws(
   /even next leaf/,
 );
 assert.throws(() => membershipPath(tree, 4), /outside/);
+
+const market = StrKey.encodeContract(Buffer.alloc(32, 2));
+const vault = StrKey.encodeContract(Buffer.alloc(32, 3));
+const committeeSecret = 19n;
+const committeeKey = publicKey(committeeSecret);
+const sides = [1, 0, 1, 0, 1, 0, 1, 0];
+const orders = sides.map((side, index) => {
+  const encrypted = encryptSide(
+    committeeKey,
+    side,
+    100n + BigInt(index),
+  );
+  return {
+    sequence: 20n + BigInt(index),
+    action_id: Buffer.alloc(32, index + 1),
+    position_commitment: 1_000n + BigInt(index),
+    encrypted_order: {
+      c1_x: encrypted.c1[0],
+      c1_y: encrypted.c1[1],
+      c2_x: encrypted.c2[0],
+      c2_y: encrypted.c2[1],
+    },
+  };
+});
+const acceptedRoot = fixedRoot(orders.map((order) => acceptedLeaf({
+  market,
+  epoch: 4n,
+  sequence: order.sequence,
+  actionId: order.action_id,
+  positionCommitment: order.position_commitment,
+  encryptedOrder: order.encrypted_order,
+  committeeEpoch: 2n,
+})));
+const registration = {
+  fixed_batch_size: 8,
+  minimum_side_count: 2,
+  committee_epoch: 2n,
+  committee_config_hash: Buffer.alloc(32, 9),
+  committee_public_key_x: committeeKey[0],
+  committee_public_key_y: committeeKey[1],
+  lot_size: 1n << 32n,
+};
+const batchQuote = {
+  state_version: 3n,
+  batch_size: 8,
+  yes_count: 4,
+  no_count: 4,
+  pre_yes_price: 1n << 31n,
+  post_yes_price: 1n << 31n,
+  yes_price: 1n << 31n,
+  no_price: 1n << 31n,
+  aggregate_market_charge: 40_000_000n,
+  yes_market_cost: 20_000_000n,
+  no_market_cost: 20_000_000n,
+  yes_charge_per_position: 5_000_000n,
+  no_charge_per_position: 5_000_000n,
+  rounding_contribution: 0n,
+  fee_per_position: 100_000n,
+  fee_escrow: 800_000n,
+  conditional_lp_fee: 640_000n,
+  conditional_protocol_fee: 160_000n,
+};
+const statement = buildBatchStatement({
+  networkDomain: Buffer.alloc(32, 7),
+  vault,
+  market,
+  registration,
+  epoch: {
+    epoch: 4n,
+    accepted_count: 8,
+    first_sequence: 20n,
+    last_sequence: 27n,
+    accepted_root: acceptedRoot,
+  },
+  orders,
+  quote: batchQuote,
+  committeeSecret,
+});
+assert.deepEqual(statement.sides, sides);
+assert.equal(batchPublicSignals(statement.witness).length, 45);
+assert.equal(statement.witness.acceptedRoot, acceptedRoot);
+assert.notEqual(statement.allocationRoot, 0n);
+assert.notEqual(statement.includedRoot, 0n);
+assert.throws(
+  () => buildBatchStatement({
+    networkDomain: Buffer.alloc(32, 7),
+    vault,
+    market,
+    registration,
+    epoch: {
+      epoch: 4n,
+      accepted_count: 8,
+      first_sequence: 20n,
+      last_sequence: 27n,
+      accepted_root: acceptedRoot,
+    },
+    orders,
+    quote: batchQuote,
+    committeeSecret: committeeSecret + 1n,
+  }),
+  /does not match/,
+);
 
 process.stdout.write("private protocol tests passed\n");
