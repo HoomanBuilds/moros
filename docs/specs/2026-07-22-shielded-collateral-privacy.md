@@ -6,6 +6,8 @@ Design for testnet implementation. This document does not claim that the current
 
 Permissionless LP funding, variable LP value, active exit limits, creator-free funding, execution fees, and uniform fixed-lot batch pricing are defined by the companion specification `docs/specs/2026-07-23-permissionless-liquidity-and-private-batch-pricing.md`. That companion supersedes creator-subsidy and order-allocation statements in this document for new LP-backed markets.
 
+Reusable note selection, one-input private actions, hidden variable whole-position quantities, and aggregate-only threshold decryption are defined by `docs/specs/2026-07-23-reusable-private-balance-and-variable-positions.md`. That specification supersedes fixed-position and combined-committee-secret implementation choices.
+
 ## Objective
 
 Moros will let many users deposit Stellar USDC into one shared shielded collateral vault, reuse private balances across markets, place bets without signing from their public wallet, receive refunds and payouts back into shielded balances, and withdraw later through a relayer.

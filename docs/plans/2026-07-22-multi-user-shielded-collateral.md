@@ -6,6 +6,8 @@ Implement the privacy specification in `docs/specs/2026-07-22-shielded-collatera
 
 Implement creator-free market funding, private LP shares, LP exits, execution fees, and uniform fixed-lot batch pricing through the companion plan `docs/plans/2026-07-23-permissionless-liquidity-and-private-batch-pricing.md`. That plan supersedes creator-subsidy, fee, and order-allocation work below for new LP-backed markets.
 
+Implement reusable one-input balance actions, private whole-position quantities, and aggregate-only threshold decryption through `docs/plans/2026-07-23-reusable-private-balance-and-variable-positions.md`. That plan supersedes any implementation step that gives the coordinator a combined committee secret or leaves a positive balance unusable after one action.
+
 This plan covers design validation and testnet implementation. It does not authorize mainnet deployment.
 
 ## Working rules

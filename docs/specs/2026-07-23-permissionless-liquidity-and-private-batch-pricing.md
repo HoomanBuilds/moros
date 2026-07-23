@@ -6,6 +6,8 @@ Design for implementation and testnet validation. This specification extends the
 
 It does not claim that the current deployed contracts provide LP shares, live LP NAV, safe active withdrawals, uniform private batch pricing, or creator-free market funding.
 
+The reusable balance and private variable-quantity correction is defined by `docs/specs/2026-07-23-reusable-private-balance-and-variable-positions.md`. That specification supersedes the fixed-lot-per-order restriction while preserving complete epoch execution and aggregate uniform pricing.
+
 ## Decisions
 
 - A market creator proposes a market. The creator does not have to provide USDC.

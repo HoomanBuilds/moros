@@ -4,6 +4,8 @@
 
 Implement `docs/specs/2026-07-23-permissionless-liquidity-and-private-batch-pricing.md` together with the shared shielded collateral plan.
 
+Apply `docs/plans/2026-07-23-reusable-private-balance-and-variable-positions.md` for note reuse, hidden quantity, and aggregate threshold decryption. It supersedes fixed-position client and circuit steps without changing LP isolation or complete epoch execution.
+
 The completed testnet flow must let a user create an eligible market without USDC, let anyone fund it as an LP, activate only after sufficient reserve exists, execute fair fixed-lot private batches, distribute fees and terminal market-maker P&L to LP shares, and preserve exact bettor and LP solvency.
 
 ## Working rules
