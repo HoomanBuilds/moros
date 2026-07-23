@@ -22,7 +22,7 @@ function rand(): string {
 }
 
 export type BetSide = "0" | "1";
-export type BetStage = "securing" | "hashing" | "placing" | "proving" | "submitting" | "done";
+export type BetStage = "securing" | "hashing" | "placing" | "waiting" | "proving" | "submitting" | "done";
 
 export async function runBet(
   { side, amount, address, collateral, marketId, poolId, backupKey, onStage }:
@@ -33,13 +33,15 @@ export async function runBet(
   if (poolId === privateConfig.contracts.sharedVault) {
     if (amount !== "1") throw new Error("Private batches currently use one fixed position per order");
     onStage("hashing");
-    onStage("proving");
+    onStage("placing");
     const placed = await placePrivateOrder({
       address,
       market: marketId,
       side: side === "1" ? 1 : 0,
       onStatus: (status) => {
-        if (status.includes("Relaying")) onStage("submitting");
+        if (status.includes("Waiting")) onStage("waiting");
+        else if (status.includes("Generating")) onStage("proving");
+        else if (status.includes("Relaying")) onStage("submitting");
       },
     });
     const stakeUnits = (

@@ -41,6 +41,7 @@ import {
   type Point,
 } from "./primitives";
 import { provePrivateAction } from "./prover";
+import { waitForPrivateBatch } from "./batch-window";
 import {
   openPrivateWallet,
   type OwnedIndexedNote,
@@ -1841,29 +1842,38 @@ export async function placePrivateOrder({
 }> {
   onStatus?.("Reading the private market epoch");
   const wallet = await openPrivateWallet(address);
-  const registration = await readPrivateContract<PrivateMarketRegistration | undefined>(
-    wallet.config.contracts.sharedVault,
-    address,
-    "registration",
-    { market },
-  );
-  if (!registration || registration.finalized) {
-    throw new Error("This private market is not accepting orders");
-  }
-  const epoch = await readPrivateContract<PrivateEpoch | undefined>(
-    wallet.config.contracts.sharedVault,
-    address,
-    "epoch",
-    { market, epoch_number: registration.current_epoch },
-  );
-  if (
-    !epoch ||
-    phaseName(epoch.phase) !== "Collecting" ||
-    epoch.accepted_count >= registration.fixed_batch_size ||
-    BigInt(Math.floor(Date.now() / 1_000)) >= epoch.cutoff
-  ) {
-    throw new Error("The current private batch is closed");
-  }
+  const { registration, epoch } = await waitForPrivateBatch<
+    PrivateMarketRegistration,
+    PrivateEpoch
+  >({
+    read: async () => {
+      const currentRegistration =
+        await readPrivateContract<PrivateMarketRegistration | undefined>(
+          wallet.config.contracts.sharedVault,
+          address,
+          "registration",
+          { market },
+        );
+      if (!currentRegistration || currentRegistration.finalized) {
+        return { registration: currentRegistration };
+      }
+      const currentEpoch =
+        await readPrivateContract<PrivateEpoch | undefined>(
+          wallet.config.contracts.sharedVault,
+          address,
+          "epoch",
+          {
+            market,
+            epoch_number: currentRegistration.current_epoch,
+          },
+        );
+      return {
+        registration: currentRegistration,
+        epoch: currentEpoch,
+      };
+    },
+    onWait: () => onStatus?.("Waiting for the next private batch"),
+  });
   const payout = ceilDiv(registration.lot_size * USDC_SCALE, Q32);
   const maximumFee = ceilDiv(
     registration.lot_size * BigInt(registration.fee_bps) * USDC_SCALE,

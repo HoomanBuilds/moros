@@ -27,6 +27,7 @@ const STAGES: { key: BetStage; label: string }[] = [
   { key: "securing", label: "Unlocking private recovery" },
   { key: "hashing", label: "Preparing the encrypted order" },
   { key: "placing", label: "Checking the shared private vault" },
+  { key: "waiting", label: "Waiting for the next private batch" },
   { key: "proving", label: "Generating the order proof in your browser" },
   { key: "submitting", label: "Relaying the unlinkable order" },
   { key: "done", label: "Order accepted into the private batch" },
