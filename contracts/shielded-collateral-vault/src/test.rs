@@ -2,8 +2,8 @@
 extern crate std;
 
 use crate::{
-    AllocationBinding, BatchProofStatement, BatchQuote, BatchSubmission, EpochPhase,
-    LiquidityBinding, OrderBinding, OrderStatus, PrivateTransition, ProofAction, ProofStatement,
+    AllocationBinding, BatchProofStatement, BatchQuote, BatchSubmission, EncryptedOrder,
+    EpochPhase, LiquidityBinding, OrderStatus, PrivateTransition, ProofAction, ProofStatement,
     SettlementState, ShieldedCollateralVault, ShieldedCollateralVaultClient,
 };
 use lmsr_market::{
@@ -18,7 +18,6 @@ use soroban_sdk::{
     Vec, U256,
 };
 
-const ORDER_CIPHERTEXT_LENGTH: usize = 128;
 const EXPIRY: u64 = 50_000;
 const S: i128 = 1i128 << 32;
 
@@ -78,6 +77,33 @@ fn field_id(env: &Env, value: u8) -> BytesN<32> {
     BytesN::from_array(env, &bytes)
 }
 
+fn babyjub_base(env: &Env) -> (U256, U256) {
+    (
+        U256::from_be_bytes(
+            env,
+            &Bytes::from_array(
+                env,
+                &[
+                    0x0b, 0xb7, 0x7a, 0x6a, 0xd6, 0x3e, 0x73, 0x9b, 0x4e, 0xac, 0xb2, 0xe0, 0x9d,
+                    0x62, 0x77, 0xc1, 0x2a, 0xb8, 0xd8, 0x01, 0x05, 0x34, 0xe0, 0xb6, 0x28, 0x93,
+                    0xf3, 0xf6, 0xbb, 0x95, 0x70, 0x51,
+                ],
+            ),
+        ),
+        U256::from_be_bytes(
+            env,
+            &Bytes::from_array(
+                env,
+                &[
+                    0x25, 0x79, 0x72, 0x03, 0xf7, 0xa0, 0xb2, 0x49, 0x25, 0x57, 0x2e, 0x1c, 0xd1,
+                    0x6b, 0xf9, 0xed, 0xfc, 0xe0, 0x05, 0x1f, 0xb9, 0xe1, 0x33, 0x77, 0x4b, 0x3c,
+                    0x25, 0x7a, 0x87, 0x2d, 0x7d, 0x8b,
+                ],
+            ),
+        ),
+    )
+}
+
 fn envelope(env: &Env, byte: u8) -> Bytes {
     let mut envelope = Bytes::new(env);
     for index in 0..OUTPUT_ENVELOPE_FIELDS {
@@ -92,8 +118,14 @@ fn envelope(env: &Env, byte: u8) -> Bytes {
     envelope
 }
 
-fn order_ciphertext(env: &Env, byte: u8) -> Bytes {
-    Bytes::from_array(env, &[byte; ORDER_CIPHERTEXT_LENGTH])
+fn order_ciphertext(env: &Env, _byte: u8) -> EncryptedOrder {
+    let (x, y) = babyjub_base(env);
+    EncryptedOrder {
+        c1_x: x.clone(),
+        c1_y: y.clone(),
+        c2_x: x,
+        c2_y: y,
+    }
 }
 
 fn transition(
@@ -662,6 +694,7 @@ fn setup_private_market(setup: &Setup) -> (Address, Address, Address) {
             maximum_price_movement: S / 4,
         },
     );
+    let (committee_public_key_x, committee_public_key_y) = babyjub_base(&setup.env);
     setup.vault.register_market(
         &setup.factory,
         &market_address,
@@ -669,6 +702,8 @@ fn setup_private_market(setup: &Setup) -> (Address, Address, Address) {
         &120,
         &1,
         &id(&setup.env, 93),
+        &committee_public_key_x,
+        &committee_public_key_y,
     );
     let reserve_funder = Address::generate(&setup.env);
     StellarAssetClient::new(&setup.env, &setup.token).mint(&reserve_funder, &10_000_000);
@@ -692,26 +727,18 @@ fn accept_test_order(
         .epoch(market, &registration.current_epoch)
         .unwrap();
     let encrypted_order = order_ciphertext(&setup.env, action_byte);
-    let ciphertext_hash: BytesN<32> = setup.env.crypto().sha256(&encrypted_order).into();
     let position_commitment = field(&setup.env, commitments[1]);
-    let binding = OrderBinding {
-        market: market.clone(),
-        epoch: epoch.epoch,
-        market_state_version: epoch.market_state_version,
-        position_commitment: position_commitment.clone(),
-        lot_size: registration.lot_size,
-        fee_bps: registration.fee_bps,
-        fixed_batch_size: registration.fixed_batch_size,
-        minimum_side_count: registration.minimum_side_count,
-        maximum_price_movement: registration.maximum_price_movement,
-        rules_hash: registration.rules_hash,
-        refund_at: epoch.refund_at,
-        committee_epoch: epoch.committee_epoch,
-        committee_config_hash: epoch.committee_config_hash,
-        ciphertext_hash,
-    };
-    let operation_binding = ShieldedCollateralVault::order_operation_binding(&setup.env, &binding);
     let action_id = id(&setup.env, action_byte);
+    let binding = setup.vault.order_binding(
+        market,
+        &epoch.epoch,
+        &action_id,
+        &position_commitment,
+        &encrypted_order,
+    );
+    assert_eq!(binding.old_accepted_root, epoch.accepted_root);
+    assert_eq!(binding.accepted_leaf_index, epoch.accepted_count);
+    let operation_binding = ShieldedCollateralVault::order_operation_binding(&setup.env, &binding);
     let digest = setup.vault.context_digest(
         &ProofAction::Order,
         &action_id,
@@ -731,6 +758,9 @@ fn accept_test_order(
         &encrypted_order,
         &transition(&setup.env, append, append, root, &nullifiers, commitments),
     );
+    let updated = setup.vault.epoch(market, &epoch.epoch).unwrap();
+    assert_eq!(updated.accepted_root, binding.new_accepted_root);
+    assert_eq!(updated.accepted_count, binding.accepted_leaf_index + 1);
 }
 
 fn batch_quote(value: LmsrBatchQuote) -> BatchQuote {
@@ -767,10 +797,11 @@ fn valid_submission(
         yes_count,
         no_count,
         committee_epoch: epoch.committee_epoch,
-        aggregate_ciphertext_hash: id(&setup.env, 100),
+        aggregate_ciphertext: order_ciphertext(&setup.env, 100),
         decryption_proof_hash: id(&setup.env, 101),
         committee_statement_hash: id(&setup.env, 102),
         allocation_root: field(&setup.env, 200),
+        included_root: field(&setup.env, 201),
         proof: Bytes::from_array(&setup.env, &[19, 23, 29, 31]),
     };
     let statement = batch_statement(setup, market, &epoch, &submission, yes_count, no_count);
@@ -797,10 +828,21 @@ fn batch_statement(
         last_sequence: epoch.last_sequence,
         committee_epoch: epoch.committee_epoch,
         committee_config_hash: epoch.committee_config_hash.clone(),
-        aggregate_ciphertext_hash: submission.aggregate_ciphertext_hash.clone(),
+        committee_public_key_x: epoch.committee_public_key_x.clone(),
+        committee_public_key_y: epoch.committee_public_key_y.clone(),
+        aggregate_ciphertext: Vec::from_array(
+            &setup.env,
+            [
+                submission.aggregate_ciphertext.c1_x.clone(),
+                submission.aggregate_ciphertext.c1_y.clone(),
+                submission.aggregate_ciphertext.c2_x.clone(),
+                submission.aggregate_ciphertext.c2_y.clone(),
+            ],
+        ),
         decryption_proof_hash: submission.decryption_proof_hash.clone(),
         committee_statement_hash: submission.committee_statement_hash.clone(),
         allocation_root: submission.allocation_root.clone(),
+        included_root: submission.included_root.clone(),
         quote: batch_quote(
             LmsrMarketClient::new(&setup.env, market).quote_private_batch(
                 &epoch.market_state_version,
@@ -907,13 +949,10 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
 
     let change_action = id(&setup.env, 50);
     let change_expiry = 10_500u64;
-    let first_order = setup.vault.order(&market_address, &1).unwrap();
     let change_binding = AllocationBinding {
         market: market_address.clone(),
         epoch: 0,
-        sequence: 1,
         allocation_root: batch.allocation_root.clone(),
-        position_commitment: first_order.position_commitment.clone(),
         outcome: SettlementState::Pending,
         quote: batch.quote.clone(),
     };
@@ -932,7 +971,6 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
     setup.vault.recover_execution_change(
         &market_address,
         &0,
-        &1,
         &change_action,
         &change_expiry,
         &transition(&setup.env, 10, 10, 11, &[500], [501, 502]),
@@ -942,7 +980,6 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
         .try_recover_execution_change(
             &market_address,
             &0,
-            &1,
             &id(&setup.env, 51),
             &change_expiry,
             &transition(&setup.env, 11, 11, 12, &[500], [503, 504]),
@@ -995,9 +1032,7 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
     let claim_binding = AllocationBinding {
         market: market_address.clone(),
         epoch: 0,
-        sequence: 1,
         allocation_root: batch.allocation_root,
-        position_commitment: first_order.position_commitment,
         outcome: SettlementState::Yes,
         quote: batch.quote,
     };
@@ -1016,7 +1051,6 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
     setup.vault.claim_position(
         &market_address,
         &0,
-        &1,
         &claim_action,
         &terminal_expiry,
         &transition(&setup.env, 12, 12, 13, &[700], [701, 702]),
@@ -1069,6 +1103,40 @@ fn a_full_epoch_rejects_the_next_order_before_consuming_its_notes() {
 }
 
 #[test]
+fn invalid_order_points_fail_before_note_consumption() {
+    let setup = setup();
+    let (market_address, _liquidity_address, _resolver) = setup_private_market(&setup);
+    deposit(&setup, 10, 2, [11, 12], 25_000_000);
+    let nullifier = field(&setup.env, 100);
+    let invalid = EncryptedOrder {
+        c1_x: field(&setup.env, 5),
+        c1_y: field(&setup.env, 6),
+        c2_x: field(&setup.env, 7),
+        c2_y: field(&setup.env, 8),
+    };
+    assert!(setup
+        .vault
+        .try_accept_order(
+            &market_address,
+            &0,
+            &id(&setup.env, 20),
+            &field(&setup.env, 201),
+            &invalid,
+            &transition(&setup.env, 2, 2, 3, &[100, 101], [200, 201]),
+        )
+        .is_err());
+    assert!(!setup.vault.is_spent(&nullifier));
+    assert_eq!(
+        setup
+            .vault
+            .epoch(&market_address, &0)
+            .unwrap()
+            .accepted_count,
+        0
+    );
+}
+
+#[test]
 fn short_epoch_never_moves_price_and_every_order_reaches_private_refund() {
     let setup = setup();
     let (market_address, _liquidity_address, _resolver) = setup_private_market(&setup);
@@ -1087,13 +1155,10 @@ fn short_epoch_never_moves_price_and_every_order_reaches_private_refund() {
 
     let action_id = id(&setup.env, 40);
     let action_expiry = 10_500u64;
-    let order = setup.vault.order(&market_address, &1).unwrap();
     let binding = crate::RefundBinding {
         market: market_address.clone(),
         epoch: 0,
-        sequence: 1,
         accepted_root: refundable.accepted_root,
-        position_commitment: order.position_commitment,
     };
     let operation_binding = ShieldedCollateralVault::refund_operation_binding(&setup.env, &binding);
     let digest = setup.vault.context_digest(
@@ -1109,14 +1174,14 @@ fn short_epoch_never_moves_price_and_every_order_reaches_private_refund() {
     setup.vault.refund_order(
         &market_address,
         &0,
-        &1,
         &action_id,
         &action_expiry,
         &transition(&setup.env, 3, 3, 4, &[300], [301, 302]),
     );
+    assert!(setup.vault.is_spent(&field(&setup.env, 300)));
     assert_eq!(
         setup.vault.order(&market_address, &1).unwrap().status,
-        OrderStatus::Refunded
+        OrderStatus::Pending
     );
     assert_eq!(setup.vault.info().shielded_liabilities, 25_000_000);
 }

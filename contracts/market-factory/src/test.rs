@@ -2,10 +2,37 @@ extern crate std;
 
 use crate::{FactoryConfig, MarketFactory, MarketFactoryClient, ProposalPhase, ProposalRequest};
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol, Vec, U256};
 
 fn id(env: &Env, byte: u8) -> BytesN<32> {
     BytesN::from_array(env, &[byte; 32])
+}
+
+fn babyjub_base(env: &Env) -> (U256, U256) {
+    (
+        U256::from_be_bytes(
+            env,
+            &soroban_sdk::Bytes::from_array(
+                env,
+                &[
+                    0x0b, 0xb7, 0x7a, 0x6a, 0xd6, 0x3e, 0x73, 0x9b, 0x4e, 0xac, 0xb2, 0xe0, 0x9d,
+                    0x62, 0x77, 0xc1, 0x2a, 0xb8, 0xd8, 0x01, 0x05, 0x34, 0xe0, 0xb6, 0x28, 0x93,
+                    0xf3, 0xf6, 0xbb, 0x95, 0x70, 0x51,
+                ],
+            ),
+        ),
+        U256::from_be_bytes(
+            env,
+            &soroban_sdk::Bytes::from_array(
+                env,
+                &[
+                    0x25, 0x79, 0x72, 0x03, 0xf7, 0xa0, 0xb2, 0x49, 0x25, 0x57, 0x2e, 0x1c, 0xd1,
+                    0x6b, 0xf9, 0xed, 0xfc, 0xe0, 0x05, 0x1f, 0xb9, 0xe1, 0x33, 0x77, 0x4b, 0x3c,
+                    0x25, 0x7a, 0x87, 0x2d, 0x7d, 0x8b,
+                ],
+            ),
+        ),
+    )
 }
 
 fn symbols(env: &Env) -> Vec<Symbol> {
@@ -17,6 +44,7 @@ fn tiers(env: &Env) -> Vec<i128> {
 }
 
 fn config(env: &Env, collateral: Address) -> FactoryConfig {
+    let (committee_public_key_x, committee_public_key_y) = babyjub_base(env);
     FactoryConfig {
         governance: Address::generate(env),
         collateral,
@@ -35,6 +63,8 @@ fn config(env: &Env, collateral: Address) -> FactoryConfig {
         refund_delay: 120,
         committee_epoch: 1,
         committee_config_hash: id(env, 4),
+        committee_public_key_x,
+        committee_public_key_y,
         maximum_fee_bps: 500,
         lp_fee_share_bps: 5_000,
         fixed_batch_size: 8,
@@ -180,6 +210,20 @@ fn constructor_rejects_duplicate_capabilities() {
     let mut bad = config(&env, collateral);
     bad.allowed_assets = Vec::from_array(&env, [symbol_short!("BTC"), symbol_short!("BTC")]);
     env.register(MarketFactory, (bad,));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")]
+fn constructor_rejects_an_invalid_committee_encryption_key() {
+    let env = Env::default();
+    let token_admin = Address::generate(&env);
+    let collateral = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+    let mut invalid = config(&env, collateral);
+    invalid.committee_public_key_x = U256::from_u32(&env, 5);
+    invalid.committee_public_key_y = U256::from_u32(&env, 6);
+    env.register(MarketFactory, (invalid,));
 }
 
 #[test]

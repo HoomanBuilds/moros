@@ -1,8 +1,9 @@
 #![no_std]
 
+use privacy_types::is_valid_babyjub_encryption_point;
 use soroban_sdk::{
     contract, contractclient, contracterror, contractevent, contractimpl, contracttype,
-    panic_with_error, symbol_short, token, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec,
+    panic_with_error, symbol_short, token, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec, U256,
 };
 
 #[cfg(test)]
@@ -59,6 +60,8 @@ pub struct FactoryConfig {
     pub refund_delay: u64,
     pub committee_epoch: u64,
     pub committee_config_hash: BytesN<32>,
+    pub committee_public_key_x: U256,
+    pub committee_public_key_y: U256,
     pub maximum_fee_bps: u32,
     pub lp_fee_share_bps: u32,
     pub fixed_batch_size: u32,
@@ -98,6 +101,8 @@ pub struct ProposalPreimage {
     pub refund_delay: u64,
     pub committee_epoch: u64,
     pub committee_config_hash: BytesN<32>,
+    pub committee_public_key_x: U256,
+    pub committee_public_key_y: U256,
     pub lp_fee_share_bps: u32,
     pub fixed_batch_size: u32,
     pub minimum_side_count: u32,
@@ -188,6 +193,8 @@ pub trait SharedVault {
         refund_delay: u64,
         committee_epoch: u64,
         committee_config_hash: BytesN<32>,
+        committee_public_key_x: U256,
+        committee_public_key_y: U256,
     );
 }
 
@@ -280,6 +287,11 @@ impl MarketFactory {
                 .is_none_or(|duration| duration > 86_400)
             || config.committee_epoch == 0
             || Self::is_zero(&config.committee_config_hash)
+            || !is_valid_babyjub_encryption_point(
+                &env,
+                &config.committee_public_key_x,
+                &config.committee_public_key_y,
+            )
             || config.maximum_fee_bps > 1_000
             || config.lp_fee_share_bps > 10_000
             || config.fixed_batch_size < 8
@@ -566,6 +578,8 @@ impl MarketFactory {
             &config.refund_delay,
             &config.committee_epoch,
             &config.committee_config_hash,
+            &config.committee_public_key_x,
+            &config.committee_public_key_y,
         );
 
         proposal.market = Some(market.clone());
@@ -777,6 +791,8 @@ impl MarketFactory {
             refund_delay: config.refund_delay,
             committee_epoch: config.committee_epoch,
             committee_config_hash: config.committee_config_hash.clone(),
+            committee_public_key_x: config.committee_public_key_x.clone(),
+            committee_public_key_y: config.committee_public_key_y.clone(),
             lp_fee_share_bps: config.lp_fee_share_bps,
             fixed_batch_size: config.fixed_batch_size,
             minimum_side_count: config.minimum_side_count,

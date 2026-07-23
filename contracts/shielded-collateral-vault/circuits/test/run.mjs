@@ -81,6 +81,7 @@ generate("output-note");
 generate("deposit");
 generate("transfer");
 generate("withdraw");
+generate("order");
 
 compile("output_note", resolve(here, "output_note.circom"));
 validWitness("output_note");
@@ -109,6 +110,8 @@ for (const name of ["deposit", "transfer", "withdraw"]) {
   compile(name);
   validWitness(name);
 }
+compile("order");
+validWitness("order");
 
 expectInvalid("transfer", "value-creation", (fixture) => {
   fixture.outAmount[0] = (BigInt(fixture.outAmount[0]) + 1n).toString();
@@ -126,5 +129,21 @@ expectInvalid("deposit", "operation-context", (fixture) => {
     BigInt(fixture.contextFields[16]) + 1n
   ).toString();
 });
+expectInvalid("order", "hidden-side-ciphertext", (fixture) => {
+  fixture.side = fixture.side === "1" ? "0" : "1";
+});
+expectInvalid("order", "accepted-root-append", (fixture) => {
+  fixture.acceptedSiblings[0] = (
+    BigInt(fixture.acceptedSiblings[0]) + 1n
+  ).toString();
+});
+expectInvalid("order", "position-budget", (fixture) => {
+  fixture.outAmount[1] = (BigInt(fixture.outAmount[1]) + 1n).toString();
+});
+expectInvalid("order", "encryption-randomness", (fixture) => {
+  fixture.encryptionRandomness = (
+    BigInt(fixture.encryptionRandomness) + 1n
+  ).toString();
+});
 
-console.log("private balance circuit fixtures passed");
+console.log("private balance and order circuit fixtures passed");

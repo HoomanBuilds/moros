@@ -166,6 +166,30 @@ template AppendTwo(levels) {
     newPath.root === newRoot;
 }
 
+template AppendOne(levels) {
+    signal input appendRoot;
+    signal input newRoot;
+    signal input leafIndex;
+    signal input commitment;
+    signal input siblings[levels];
+
+    component oldPath = MerkleProof(levels);
+    oldPath.leaf <== 0;
+    oldPath.leafIndex <== leafIndex;
+
+    component newPath = MerkleProof(levels);
+    newPath.leaf <== commitment;
+    newPath.leafIndex <== leafIndex;
+
+    for (var level = 0; level < levels; level++) {
+        oldPath.siblings[level] <== siblings[level];
+        newPath.siblings[level] <== siblings[level];
+    }
+
+    oldPath.root === appendRoot;
+    newPath.root === newRoot;
+}
+
 template InputNote(levels, nullifierDomain) {
     signal input noteDomain;
     signal input membershipRoot;

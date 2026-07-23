@@ -2,12 +2,13 @@
 
 use soroban_sdk::{
     contract, contractclient, contracterror, contractevent, contractimpl, contracttype,
-    panic_with_error, token, xdr::ToXdr, Address, Bytes, BytesN, Env, Vec, U256,
+    panic_with_error, token, Address, Bytes, BytesN, Env, Vec, U256,
 };
 
 use privacy_types::{
-    address_limbs, bytes32_limbs, empty_operation_binding, operation_context_digest,
-    output_envelope_hash, set_binding_field, zero_fields, OUTPUT_ENVELOPE_LENGTH,
+    address_limbs, bytes32_limbs, empty_merkle_root, empty_operation_binding,
+    is_valid_babyjub_encryption_point, merkle_node, operation_context_digest, output_envelope_hash,
+    set_binding_field, tagged_poseidon2_hash, zero_fields, OUTPUT_ENVELOPE_LENGTH,
 };
 pub use privacy_types::{
     BatchProofStatement, BatchQuote, BindingKind, OperationBinding, OperationContext, ProofAction,
@@ -22,7 +23,9 @@ const MIN_TREE_LEVELS: u32 = 8;
 const MAX_TREE_LEVELS: u32 = 31;
 const MIN_ROOT_HISTORY: u32 = 8;
 const MAX_ROOT_HISTORY: u32 = 128;
-const ORDER_CIPHERTEXT_LENGTH: u32 = 128;
+const ORDER_CIPHERTEXT_FIELDS: u32 = 4;
+const ACCEPTED_TREE_LEVELS: u32 = 6;
+const ACCEPTED_LEAF_HASH_TAG: u32 = 1009;
 const MAX_PROOF_LENGTH: u32 = 512;
 const MAX_PRIVATE_BATCH_SIZE: u32 = 64;
 const MAX_ACTION_LIFETIME: u64 = 86_400;
@@ -129,6 +132,8 @@ pub struct MarketRegistration {
     pub refund_delay: u64,
     pub committee_epoch: u64,
     pub committee_config_hash: BytesN<32>,
+    pub committee_public_key_x: U256,
+    pub committee_public_key_y: U256,
     pub current_epoch: u64,
     pub expiry: u64,
     pub finalize_after: u64,
@@ -149,7 +154,7 @@ pub struct EpochState {
     pub epoch: u64,
     pub phase: EpochPhase,
     pub market_state_version: u64,
-    pub accepted_root: BytesN<32>,
+    pub accepted_root: U256,
     pub accepted_count: u32,
     pub first_sequence: u64,
     pub last_sequence: u64,
@@ -158,7 +163,18 @@ pub struct EpochState {
     pub refund_at: u64,
     pub committee_epoch: u64,
     pub committee_config_hash: BytesN<32>,
+    pub committee_public_key_x: U256,
+    pub committee_public_key_y: U256,
     pub allocation_root: Option<U256>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EncryptedOrder {
+    pub c1_x: U256,
+    pub c1_y: U256,
+    pub c2_x: U256,
+    pub c2_y: U256,
 }
 
 #[contracttype]
@@ -177,7 +193,13 @@ pub struct OrderBinding {
     pub refund_at: u64,
     pub committee_epoch: u64,
     pub committee_config_hash: BytesN<32>,
-    pub ciphertext_hash: BytesN<32>,
+    pub committee_public_key_x: U256,
+    pub committee_public_key_y: U256,
+    pub encrypted_order: EncryptedOrder,
+    pub old_accepted_root: U256,
+    pub new_accepted_root: U256,
+    pub accepted_leaf_index: u32,
+    pub sequence: u64,
 }
 
 #[contracttype]
@@ -188,8 +210,7 @@ pub struct OrderRecord {
     pub epoch: u64,
     pub action_id: BytesN<32>,
     pub position_commitment: U256,
-    pub ciphertext_hash: BytesN<32>,
-    pub encrypted_order: Bytes,
+    pub encrypted_order: EncryptedOrder,
     pub accepted_at: u64,
     pub refund_at: u64,
     pub status: OrderStatus,
@@ -198,26 +219,13 @@ pub struct OrderRecord {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AcceptedLeaf {
-    pub prior_root: BytesN<32>,
     pub market: Address,
     pub epoch: u64,
     pub sequence: u64,
     pub action_id: BytesN<32>,
     pub position_commitment: U256,
-    pub ciphertext_hash: BytesN<32>,
+    pub encrypted_order: EncryptedOrder,
     pub committee_epoch: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EpochRootPreimage {
-    pub network_domain: BytesN<32>,
-    pub vault: Address,
-    pub market: Address,
-    pub epoch: u64,
-    pub market_state_version: u64,
-    pub committee_epoch: u64,
-    pub committee_config_hash: BytesN<32>,
 }
 
 #[contracttype]
@@ -226,10 +234,11 @@ pub struct BatchSubmission {
     pub yes_count: u32,
     pub no_count: u32,
     pub committee_epoch: u64,
-    pub aggregate_ciphertext_hash: BytesN<32>,
+    pub aggregate_ciphertext: EncryptedOrder,
     pub decryption_proof_hash: BytesN<32>,
     pub committee_statement_hash: BytesN<32>,
     pub allocation_root: U256,
+    pub included_root: U256,
     pub proof: Bytes,
 }
 
@@ -238,8 +247,9 @@ pub struct BatchSubmission {
 pub struct BatchRecord {
     pub market: Address,
     pub epoch: u64,
-    pub accepted_root: BytesN<32>,
+    pub accepted_root: U256,
     pub allocation_root: U256,
+    pub included_root: U256,
     pub quote: BatchQuote,
     pub user_market_charge: i128,
     pub executed_at: u64,
@@ -261,9 +271,7 @@ pub struct MarketAccounting {
 pub struct RefundBinding {
     pub market: Address,
     pub epoch: u64,
-    pub sequence: u64,
-    pub accepted_root: BytesN<32>,
-    pub position_commitment: U256,
+    pub accepted_root: U256,
 }
 
 #[contracttype]
@@ -271,9 +279,7 @@ pub struct RefundBinding {
 pub struct AllocationBinding {
     pub market: Address,
     pub epoch: u64,
-    pub sequence: u64,
     pub allocation_root: U256,
-    pub position_commitment: U256,
     pub outcome: SettlementState,
     pub quote: BatchQuote,
 }
@@ -321,7 +327,7 @@ pub struct VaultInfo {
     pub root_history_size: u32,
     pub max_root_age: u32,
     pub output_envelope_length: u32,
-    pub order_ciphertext_length: u32,
+    pub order_ciphertext_fields: u32,
     pub next_leaf_index: u32,
     pub current_root: U256,
     pub shielded_liabilities: i128,
@@ -368,6 +374,7 @@ enum DataKey {
     Action(BytesN<32>),
     Registration(Address),
     Epoch(Address, u64),
+    AcceptedFrontier(Address, u64, u32),
     MarketSequence(Address),
     Order(Address, u64),
     Batch(Address, u64),
@@ -454,7 +461,7 @@ pub struct PrivateOrderAccepted {
     pub epoch: u64,
     pub sequence: u64,
     pub accepted_count: u32,
-    pub accepted_root: BytesN<32>,
+    pub accepted_root: U256,
 }
 
 #[contractevent(topics = ["epoch_sealed"], data_format = "vec")]
@@ -463,7 +470,7 @@ pub struct EpochSealed {
     pub market: Address,
     pub epoch: u64,
     pub accepted_count: u32,
-    pub accepted_root: BytesN<32>,
+    pub accepted_root: U256,
     pub refund_at: u64,
 }
 
@@ -637,7 +644,7 @@ impl ShieldedCollateralVault {
             root_history_size: instance.get(&DataKey::RootHistorySize).unwrap(),
             max_root_age: instance.get(&DataKey::MaxRootAge).unwrap(),
             output_envelope_length: OUTPUT_ENVELOPE_LENGTH,
-            order_ciphertext_length: ORDER_CIPHERTEXT_LENGTH,
+            order_ciphertext_fields: ORDER_CIPHERTEXT_FIELDS,
             next_leaf_index: instance.get(&DataKey::NextLeafIndex).unwrap_or(0),
             current_root: instance.get(&DataKey::CurrentRoot).unwrap(),
             shielded_liabilities: instance.get(&DataKey::Liabilities).unwrap_or(0),
@@ -677,6 +684,36 @@ impl ShieldedCollateralVault {
             .unwrap_or_else(|_| panic_with_error!(&env, Error::InvalidProofStatement))
     }
 
+    pub fn order_binding(
+        env: Env,
+        market: Address,
+        epoch_number: u64,
+        action_id: BytesN<32>,
+        position_commitment: U256,
+        encrypted_order: EncryptedOrder,
+    ) -> OrderBinding {
+        let registration = Self::market_registration(&env, &market);
+        let epoch = Self::epoch_state(&env, &market, epoch_number);
+        if registration.finalized
+            || registration.current_epoch != epoch_number
+            || epoch.phase != EpochPhase::Collecting
+            || epoch.accepted_count >= registration.fixed_batch_size
+            || !Self::valid_encrypted_order(&env, &encrypted_order)
+            || !Self::canonical_nonzero_field(&env, &position_commitment)
+        {
+            panic_with_error!(&env, Error::InvalidOrder);
+        }
+        Self::build_order_binding(
+            &env,
+            &registration,
+            &epoch,
+            market,
+            action_id,
+            position_commitment,
+            encrypted_order,
+        )
+    }
+
     pub fn register_market(
         env: Env,
         factory: Address,
@@ -685,6 +722,8 @@ impl ShieldedCollateralVault {
         refund_delay: u64,
         committee_epoch: u64,
         committee_config_hash: BytesN<32>,
+        committee_public_key_x: U256,
+        committee_public_key_y: U256,
     ) {
         let configured_factory: Address = env.storage().instance().get(&DataKey::Factory).unwrap();
         if factory != configured_factory {
@@ -699,6 +738,11 @@ impl ShieldedCollateralVault {
             || refund_delay == 0
             || committee_epoch == 0
             || Self::is_zero_bytes(&committee_config_hash)
+            || !is_valid_babyjub_encryption_point(
+                &env,
+                &committee_public_key_x,
+                &committee_public_key_y,
+            )
             || epoch_duration
                 .checked_add(refund_delay)
                 .is_none_or(|duration| duration > MAX_ACTION_LIFETIME)
@@ -732,6 +776,8 @@ impl ShieldedCollateralVault {
             refund_delay,
             committee_epoch,
             committee_config_hash,
+            committee_public_key_x,
+            committee_public_key_y,
             current_epoch: 0,
             expiry: info.expiry,
             finalize_after: info.finalize_after,
@@ -1071,7 +1117,7 @@ impl ShieldedCollateralVault {
         epoch_number: u64,
         action_id: BytesN<32>,
         position_commitment: U256,
-        encrypted_order: Bytes,
+        encrypted_order: EncryptedOrder,
         transition: PrivateTransition,
     ) -> OrderRecord {
         let registration = Self::market_registration(&env, &market);
@@ -1097,32 +1143,25 @@ impl ShieldedCollateralVault {
         if client.outcome().is_some() || client.state_version() != epoch.market_state_version {
             panic_with_error!(&env, Error::StaleState);
         }
-        let vault_info = Self::info(env.clone());
-        if encrypted_order.len() != vault_info.order_ciphertext_length
-            || Self::all_zero_bytes(&encrypted_order)
+        if !Self::valid_encrypted_order(&env, &encrypted_order)
             || !Self::canonical_nonzero_field(&env, &position_commitment)
             || transition.output_commitments.len() != 2
             || transition.output_commitments.get(1) != Some(position_commitment.clone())
         {
             panic_with_error!(&env, Error::InvalidOrder);
         }
-        let ciphertext_hash: BytesN<32> = env.crypto().sha256(&encrypted_order).into();
-        let binding = OrderBinding {
-            market: market.clone(),
-            epoch: epoch_number,
-            market_state_version: epoch.market_state_version,
-            position_commitment: position_commitment.clone(),
-            lot_size: registration.lot_size,
-            fee_bps: registration.fee_bps,
-            fixed_batch_size: registration.fixed_batch_size,
-            minimum_side_count: registration.minimum_side_count,
-            maximum_price_movement: registration.maximum_price_movement,
-            rules_hash: registration.rules_hash,
-            refund_at: epoch.refund_at,
-            committee_epoch: epoch.committee_epoch,
-            committee_config_hash: epoch.committee_config_hash.clone(),
-            ciphertext_hash: ciphertext_hash.clone(),
-        };
+        let binding = Self::build_order_binding(
+            &env,
+            &registration,
+            &epoch,
+            market.clone(),
+            action_id.clone(),
+            position_commitment.clone(),
+            encrypted_order.clone(),
+        );
+        let sequence = binding.sequence;
+        let accepted_leaf_index = binding.accepted_leaf_index;
+        let new_accepted_root = binding.new_accepted_root.clone();
         let operation_binding = Self::order_operation_binding(&env, &binding);
         Self::execute_transition(
             &env,
@@ -1137,34 +1176,31 @@ impl ShieldedCollateralVault {
             2,
         );
 
-        let sequence_key = DataKey::MarketSequence(market.clone());
-        let sequence = env
-            .storage()
-            .persistent()
-            .get::<_, u64>(&sequence_key)
-            .unwrap_or(0)
-            .checked_add(1)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
-        env.storage().persistent().set(&sequence_key, &sequence);
-        Self::bump_persistent(&env, &sequence_key);
         let leaf = AcceptedLeaf {
-            prior_root: epoch.accepted_root,
             market: market.clone(),
             epoch: epoch_number,
             sequence,
             action_id: action_id.clone(),
             position_commitment: position_commitment.clone(),
-            ciphertext_hash: ciphertext_hash.clone(),
+            encrypted_order: encrypted_order.clone(),
             committee_epoch: epoch.committee_epoch,
         };
-        let accepted_root: BytesN<32> = env.crypto().sha256(&leaf.to_xdr(&env)).into();
+        Self::store_accepted_frontier(
+            &env,
+            &market,
+            epoch_number,
+            accepted_leaf_index,
+            Self::accepted_leaf_hash(&env, &leaf),
+        );
+        let sequence_key = DataKey::MarketSequence(market.clone());
+        env.storage().persistent().set(&sequence_key, &sequence);
+        Self::bump_persistent(&env, &sequence_key);
         let record = OrderRecord {
             sequence,
             market: market.clone(),
             epoch: epoch_number,
             action_id,
             position_commitment,
-            ciphertext_hash,
             encrypted_order,
             accepted_at: env.ledger().timestamp(),
             refund_at: epoch.refund_at,
@@ -1181,7 +1217,7 @@ impl ShieldedCollateralVault {
             epoch.first_sequence = sequence;
         }
         epoch.last_sequence = sequence;
-        epoch.accepted_root = accepted_root.clone();
+        epoch.accepted_root = new_accepted_root.clone();
         env.storage().persistent().set(&epoch_key, &epoch);
         Self::bump_persistent(&env, &epoch_key);
         PrivateOrderAccepted {
@@ -1189,7 +1225,7 @@ impl ShieldedCollateralVault {
             epoch: epoch_number,
             sequence,
             accepted_count: epoch.accepted_count,
-            accepted_root,
+            accepted_root: new_accepted_root,
         }
         .publish(&env);
         record
@@ -1267,10 +1303,11 @@ impl ShieldedCollateralVault {
             || submission.committee_epoch != registration.committee_epoch
             || submission.proof.is_empty()
             || submission.proof.len() > MAX_PROOF_LENGTH
-            || Self::is_zero_bytes(&submission.aggregate_ciphertext_hash)
+            || !Self::valid_encrypted_order(&env, &submission.aggregate_ciphertext)
             || Self::is_zero_bytes(&submission.decryption_proof_hash)
             || Self::is_zero_bytes(&submission.committee_statement_hash)
             || !Self::canonical_nonzero_field(&env, &submission.allocation_root)
+            || !Self::canonical_nonzero_field(&env, &submission.included_root)
         {
             panic_with_error!(&env, Error::InvalidBatch);
         }
@@ -1324,10 +1361,21 @@ impl ShieldedCollateralVault {
             last_sequence: epoch.last_sequence,
             committee_epoch: epoch.committee_epoch,
             committee_config_hash: epoch.committee_config_hash.clone(),
-            aggregate_ciphertext_hash: submission.aggregate_ciphertext_hash,
+            committee_public_key_x: epoch.committee_public_key_x.clone(),
+            committee_public_key_y: epoch.committee_public_key_y.clone(),
+            aggregate_ciphertext: Vec::from_array(
+                &env,
+                [
+                    submission.aggregate_ciphertext.c1_x,
+                    submission.aggregate_ciphertext.c1_y,
+                    submission.aggregate_ciphertext.c2_x,
+                    submission.aggregate_ciphertext.c2_y,
+                ],
+            ),
             decryption_proof_hash: submission.decryption_proof_hash,
             committee_statement_hash: submission.committee_statement_hash,
             allocation_root: submission.allocation_root.clone(),
+            included_root: submission.included_root.clone(),
             quote: quote.clone(),
         };
         let verifier: Address = env.storage().instance().get(&DataKey::Verifier).unwrap();
@@ -1382,6 +1430,7 @@ impl ShieldedCollateralVault {
             epoch: epoch_number,
             accepted_root: epoch.accepted_root.clone(),
             allocation_root: submission.allocation_root.clone(),
+            included_root: submission.included_root,
             quote: quote.clone(),
             user_market_charge,
             executed_at: env.ledger().timestamp(),
@@ -1458,7 +1507,6 @@ impl ShieldedCollateralVault {
         env: Env,
         market: Address,
         epoch_number: u64,
-        sequence: u64,
         action_id: BytesN<32>,
         action_expiry: u64,
         transition: PrivateTransition,
@@ -1468,21 +1516,10 @@ impl ShieldedCollateralVault {
         if epoch.phase != EpochPhase::Refundable {
             panic_with_error!(&env, Error::InvalidPhase);
         }
-        let order_key = DataKey::Order(market.clone(), sequence);
-        let mut order: OrderRecord = env
-            .storage()
-            .persistent()
-            .get(&order_key)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::OrderNotFound));
-        if order.epoch != epoch_number || order.status != OrderStatus::Pending {
-            panic_with_error!(&env, Error::InvalidOrder);
-        }
         let binding = RefundBinding {
             market: market.clone(),
             epoch: epoch_number,
-            sequence,
             accepted_root: epoch.accepted_root,
-            position_commitment: order.position_commitment.clone(),
         };
         let operation_binding = Self::refund_operation_binding(&env, &binding);
         Self::execute_transition(
@@ -1497,9 +1534,6 @@ impl ShieldedCollateralVault {
             transition,
             1,
         );
-        order.status = OrderStatus::Refunded;
-        env.storage().persistent().set(&order_key, &order);
-        Self::bump_persistent(&env, &order_key);
         Self::assert_backing(&env);
     }
 
@@ -1507,7 +1541,6 @@ impl ShieldedCollateralVault {
         env: Env,
         market: Address,
         epoch_number: u64,
-        sequence: u64,
         action_id: BytesN<32>,
         action_expiry: u64,
         transition: PrivateTransition,
@@ -1517,17 +1550,11 @@ impl ShieldedCollateralVault {
         if epoch.phase != EpochPhase::Executed {
             panic_with_error!(&env, Error::InvalidPhase);
         }
-        let order = Self::order_record(&env, &market, sequence);
-        if order.epoch != epoch_number || order.status != OrderStatus::Executed {
-            panic_with_error!(&env, Error::InvalidOrder);
-        }
         let batch = Self::batch_record(&env, &market, epoch_number);
         let binding = AllocationBinding {
             market: market.clone(),
             epoch: epoch_number,
-            sequence,
             allocation_root: batch.allocation_root,
-            position_commitment: order.position_commitment,
             outcome: SettlementState::Pending,
             quote: batch.quote,
         };
@@ -1551,7 +1578,6 @@ impl ShieldedCollateralVault {
         env: Env,
         market: Address,
         epoch_number: u64,
-        sequence: u64,
         action_id: BytesN<32>,
         action_expiry: u64,
         transition: PrivateTransition,
@@ -1560,10 +1586,6 @@ impl ShieldedCollateralVault {
         let epoch = Self::epoch_state(&env, &market, epoch_number);
         if epoch.phase != EpochPhase::Executed {
             panic_with_error!(&env, Error::InvalidPhase);
-        }
-        let order = Self::order_record(&env, &market, sequence);
-        if order.epoch != epoch_number || order.status != OrderStatus::Executed {
-            panic_with_error!(&env, Error::InvalidOrder);
         }
         let accounting = Self::market_accounting(&env, &market);
         let outcome = accounting.finalized_outcome;
@@ -1574,9 +1596,7 @@ impl ShieldedCollateralVault {
         let binding = AllocationBinding {
             market: market.clone(),
             epoch: epoch_number,
-            sequence,
             allocation_root: batch.allocation_root,
-            position_commitment: order.position_commitment,
             outcome,
             quote: batch.quote,
         };
@@ -2115,17 +2135,6 @@ impl ShieldedCollateralVault {
         state
     }
 
-    fn order_record(env: &Env, market: &Address, sequence: u64) -> OrderRecord {
-        let key = DataKey::Order(market.clone(), sequence);
-        let record = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| panic_with_error!(env, Error::OrderNotFound));
-        Self::bump_persistent(env, &key);
-        record
-    }
-
     fn batch_record(env: &Env, market: &Address, epoch: u64) -> BatchRecord {
         let key = DataKey::Batch(market.clone(), epoch);
         let record = env
@@ -2165,26 +2174,12 @@ impl ShieldedCollateralVault {
         if cutoff <= now || refund_at > registration.finalize_after {
             panic_with_error!(env, Error::InvalidEpoch);
         }
-        let preimage = EpochRootPreimage {
-            network_domain: env
-                .storage()
-                .instance()
-                .get(&DataKey::NetworkDomain)
-                .unwrap(),
-            vault: env.current_contract_address(),
-            market: registration.market.clone(),
-            epoch,
-            market_state_version,
-            committee_epoch: registration.committee_epoch,
-            committee_config_hash: registration.committee_config_hash.clone(),
-        };
-        let accepted_root: BytesN<32> = env.crypto().sha256(&preimage.to_xdr(env)).into();
         EpochState {
             market: registration.market.clone(),
             epoch,
             phase: EpochPhase::Collecting,
             market_state_version,
-            accepted_root,
+            accepted_root: empty_merkle_root(env, ACCEPTED_TREE_LEVELS),
             accepted_count: 0,
             first_sequence: 0,
             last_sequence: 0,
@@ -2193,7 +2188,156 @@ impl ShieldedCollateralVault {
             refund_at,
             committee_epoch: registration.committee_epoch,
             committee_config_hash: registration.committee_config_hash.clone(),
+            committee_public_key_x: registration.committee_public_key_x.clone(),
+            committee_public_key_y: registration.committee_public_key_y.clone(),
             allocation_root: None,
+        }
+    }
+
+    fn accepted_leaf_hash(env: &Env, leaf: &AcceptedLeaf) -> U256 {
+        let (market_high, market_low) = address_limbs(env, &leaf.market);
+        let (action_high, action_low) = bytes32_limbs(env, &leaf.action_id);
+        let fields = Vec::from_array(
+            env,
+            [
+                market_high,
+                market_low,
+                U256::from_u128(env, leaf.epoch as u128),
+                U256::from_u128(env, leaf.sequence as u128),
+                action_high,
+                action_low,
+                leaf.position_commitment.clone(),
+                leaf.encrypted_order.c1_x.clone(),
+                leaf.encrypted_order.c1_y.clone(),
+                leaf.encrypted_order.c2_x.clone(),
+                leaf.encrypted_order.c2_y.clone(),
+                U256::from_u128(env, leaf.committee_epoch as u128),
+            ],
+        );
+        tagged_poseidon2_hash(env, ACCEPTED_LEAF_HASH_TAG, &fields)
+            .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidOrder))
+    }
+
+    fn build_order_binding(
+        env: &Env,
+        registration: &MarketRegistration,
+        epoch: &EpochState,
+        market: Address,
+        action_id: BytesN<32>,
+        position_commitment: U256,
+        encrypted_order: EncryptedOrder,
+    ) -> OrderBinding {
+        let sequence = env
+            .storage()
+            .persistent()
+            .get::<_, u64>(&DataKey::MarketSequence(market.clone()))
+            .unwrap_or(0)
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        let leaf = AcceptedLeaf {
+            market: market.clone(),
+            epoch: epoch.epoch,
+            sequence,
+            action_id,
+            position_commitment: position_commitment.clone(),
+            encrypted_order: encrypted_order.clone(),
+            committee_epoch: epoch.committee_epoch,
+        };
+        let new_accepted_root = Self::calculate_accepted_root(
+            env,
+            &market,
+            epoch.epoch,
+            epoch.accepted_count,
+            Self::accepted_leaf_hash(env, &leaf),
+        );
+        OrderBinding {
+            market,
+            epoch: epoch.epoch,
+            market_state_version: epoch.market_state_version,
+            position_commitment,
+            lot_size: registration.lot_size,
+            fee_bps: registration.fee_bps,
+            fixed_batch_size: registration.fixed_batch_size,
+            minimum_side_count: registration.minimum_side_count,
+            maximum_price_movement: registration.maximum_price_movement,
+            rules_hash: registration.rules_hash.clone(),
+            refund_at: epoch.refund_at,
+            committee_epoch: epoch.committee_epoch,
+            committee_config_hash: epoch.committee_config_hash.clone(),
+            committee_public_key_x: epoch.committee_public_key_x.clone(),
+            committee_public_key_y: epoch.committee_public_key_y.clone(),
+            encrypted_order,
+            old_accepted_root: epoch.accepted_root.clone(),
+            new_accepted_root,
+            accepted_leaf_index: epoch.accepted_count,
+            sequence,
+        }
+    }
+
+    fn calculate_accepted_root(
+        env: &Env,
+        market: &Address,
+        epoch: u64,
+        leaf_index: u32,
+        leaf: U256,
+    ) -> U256 {
+        if leaf_index >= 1u32 << ACCEPTED_TREE_LEVELS {
+            panic_with_error!(env, Error::EpochFull);
+        }
+        let mut node = leaf;
+        let mut index = leaf_index;
+        let mut zero = U256::from_u32(env, 0);
+        for level in 0..ACCEPTED_TREE_LEVELS {
+            if index & 1 == 0 {
+                node = merkle_node(env, &node, &zero)
+                    .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidOrder));
+            } else {
+                let key = DataKey::AcceptedFrontier(market.clone(), epoch, level);
+                let left: U256 = env
+                    .storage()
+                    .persistent()
+                    .get(&key)
+                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidOrder));
+                node = merkle_node(env, &left, &node)
+                    .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidOrder));
+            }
+            zero = merkle_node(env, &zero, &zero)
+                .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidOrder));
+            index >>= 1;
+        }
+        node
+    }
+
+    fn store_accepted_frontier(
+        env: &Env,
+        market: &Address,
+        epoch: u64,
+        leaf_index: u32,
+        leaf: U256,
+    ) {
+        let mut node = leaf;
+        let mut index = leaf_index;
+        let mut zero = U256::from_u32(env, 0);
+        for level in 0..ACCEPTED_TREE_LEVELS {
+            if index & 1 == 0 {
+                let key = DataKey::AcceptedFrontier(market.clone(), epoch, level);
+                env.storage().persistent().set(&key, &node);
+                Self::bump_persistent(env, &key);
+                node = merkle_node(env, &node, &zero)
+                    .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidOrder));
+            } else {
+                let key = DataKey::AcceptedFrontier(market.clone(), epoch, level);
+                let left: U256 = env
+                    .storage()
+                    .persistent()
+                    .get(&key)
+                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidOrder));
+                node = merkle_node(env, &left, &node)
+                    .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidOrder));
+            }
+            zero = merkle_node(env, &zero, &zero)
+                .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidOrder));
+            index >>= 1;
         }
     }
 
@@ -2253,15 +2397,6 @@ impl ShieldedCollateralVault {
             .filter(|value| *value >= 0)
             .unwrap_or_else(|| panic_with_error!(env, error));
         env.storage().instance().set(&key, &updated);
-    }
-
-    fn all_zero_bytes(value: &Bytes) -> bool {
-        for index in 0..value.len() {
-            if value.get(index).unwrap_or(0) != 0 {
-                return false;
-            }
-        }
-        true
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2336,6 +2471,11 @@ impl ShieldedCollateralVault {
     fn canonical_field(env: &Env, value: &U256) -> bool {
         let modulus = U256::from_be_bytes(env, &Bytes::from_array(env, &BN254_SCALAR_MODULUS));
         value < &modulus
+    }
+
+    fn valid_encrypted_order(env: &Env, order: &EncryptedOrder) -> bool {
+        is_valid_babyjub_encryption_point(env, &order.c1_x, &order.c1_y)
+            && is_valid_babyjub_encryption_point(env, &order.c2_x, &order.c2_y)
     }
 
     fn is_zero_bytes(value: &BytesN<32>) -> bool {
@@ -2476,9 +2616,26 @@ impl ShieldedCollateralVault {
         let (committee_high, committee_low) = bytes32_limbs(env, &binding.committee_config_hash);
         Self::set_operation_field(env, &mut fields, 12, committee_high);
         Self::set_operation_field(env, &mut fields, 13, committee_low);
-        let (ciphertext_high, ciphertext_low) = bytes32_limbs(env, &binding.ciphertext_hash);
-        Self::set_operation_field(env, &mut fields, 14, ciphertext_high);
-        Self::set_operation_field(env, &mut fields, 15, ciphertext_low);
+        Self::set_operation_field(env, &mut fields, 14, binding.committee_public_key_x.clone());
+        Self::set_operation_field(env, &mut fields, 15, binding.committee_public_key_y.clone());
+        Self::set_operation_field(env, &mut fields, 16, binding.encrypted_order.c1_x.clone());
+        Self::set_operation_field(env, &mut fields, 17, binding.encrypted_order.c1_y.clone());
+        Self::set_operation_field(env, &mut fields, 18, binding.encrypted_order.c2_x.clone());
+        Self::set_operation_field(env, &mut fields, 19, binding.encrypted_order.c2_y.clone());
+        Self::set_operation_field(env, &mut fields, 20, binding.old_accepted_root.clone());
+        Self::set_operation_field(env, &mut fields, 21, binding.new_accepted_root.clone());
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            22,
+            U256::from_u32(env, binding.accepted_leaf_index),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            23,
+            U256::from_u128(env, binding.sequence as u128),
+        );
         OperationBinding {
             kind: BindingKind::Order,
             fields,
@@ -2493,16 +2650,7 @@ impl ShieldedCollateralVault {
             0,
             U256::from_u128(env, binding.epoch as u128),
         );
-        Self::set_operation_field(
-            env,
-            &mut fields,
-            1,
-            U256::from_u128(env, binding.sequence as u128),
-        );
-        let (root_high, root_low) = bytes32_limbs(env, &binding.accepted_root);
-        Self::set_operation_field(env, &mut fields, 2, root_high);
-        Self::set_operation_field(env, &mut fields, 3, root_low);
-        Self::set_operation_field(env, &mut fields, 4, binding.position_commitment.clone());
+        Self::set_operation_field(env, &mut fields, 1, binding.accepted_root.clone());
         OperationBinding {
             kind: BindingKind::Refund,
             fields,
@@ -2517,113 +2665,106 @@ impl ShieldedCollateralVault {
             0,
             U256::from_u128(env, binding.epoch as u128),
         );
-        Self::set_operation_field(
-            env,
-            &mut fields,
-            1,
-            U256::from_u128(env, binding.sequence as u128),
-        );
-        Self::set_operation_field(env, &mut fields, 2, binding.allocation_root.clone());
-        Self::set_operation_field(env, &mut fields, 3, binding.position_commitment.clone());
+        Self::set_operation_field(env, &mut fields, 1, binding.allocation_root.clone());
         let outcome = match binding.outcome {
             SettlementState::Pending => 0,
             SettlementState::Yes => 1,
             SettlementState::No => 2,
             SettlementState::Void => 3,
         };
-        Self::set_operation_field(env, &mut fields, 4, U256::from_u32(env, outcome));
+        Self::set_operation_field(env, &mut fields, 2, U256::from_u32(env, outcome));
         let quote = &binding.quote;
         Self::set_operation_field(
             env,
             &mut fields,
-            5,
+            3,
             U256::from_u128(env, quote.state_version as u128),
         );
-        Self::set_operation_field(env, &mut fields, 6, U256::from_u32(env, quote.batch_size));
-        Self::set_operation_field(env, &mut fields, 7, U256::from_u32(env, quote.yes_count));
-        Self::set_operation_field(env, &mut fields, 8, U256::from_u32(env, quote.no_count));
+        Self::set_operation_field(env, &mut fields, 4, U256::from_u32(env, quote.batch_size));
+        Self::set_operation_field(env, &mut fields, 5, U256::from_u32(env, quote.yes_count));
+        Self::set_operation_field(env, &mut fields, 6, U256::from_u32(env, quote.no_count));
         Self::set_operation_field(
             env,
             &mut fields,
-            9,
+            7,
             Self::binding_i128(env, quote.pre_yes_price),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            10,
+            8,
             Self::binding_i128(env, quote.post_yes_price),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            11,
+            9,
             Self::binding_i128(env, quote.yes_price),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            12,
+            10,
             Self::binding_i128(env, quote.no_price),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            13,
+            11,
             Self::binding_i128(env, quote.aggregate_market_charge),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            14,
+            12,
             Self::binding_i128(env, quote.yes_market_cost),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            15,
+            13,
             Self::binding_i128(env, quote.no_market_cost),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            16,
+            14,
             Self::binding_i128(env, quote.yes_charge_per_position),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            17,
+            15,
             Self::binding_i128(env, quote.no_charge_per_position),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            18,
+            16,
             Self::binding_i128(env, quote.rounding_contribution),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            19,
+            17,
             Self::binding_i128(env, quote.fee_per_position),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            20,
+            18,
             Self::binding_i128(env, quote.fee_escrow),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            21,
+            19,
             Self::binding_i128(env, quote.conditional_lp_fee),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            22,
+            20,
             Self::binding_i128(env, quote.conditional_protocol_fee),
         );
         OperationBinding {

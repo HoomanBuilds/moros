@@ -8,13 +8,14 @@ use soroban_sdk::{
 
 pub const ACTION_PUBLIC_INPUTS: u32 = 15;
 pub const EXIT_MATCH_PUBLIC_INPUTS: u32 = 20;
-pub const BATCH_PUBLIC_INPUTS: u32 = 40;
+pub const BATCH_PUBLIC_INPUTS: u32 = 44;
 pub const OPERATION_BINDING_FIELDS: u32 = 24;
 pub const OPERATION_CONTEXT_FIELDS: u32 = 46;
 pub const OUTPUT_ENVELOPE_FIELDS: u32 = 15;
 pub const OUTPUT_ENVELOPE_LENGTH: u32 = OUTPUT_ENVELOPE_FIELDS * 32;
 pub const OUTPUT_ENVELOPE_VERSION: u32 = 1;
 pub const OUTPUT_ENVELOPE_HASH_TAG: u32 = 1008;
+pub const MERKLE_NODE_HASH_TAG: u32 = 1005;
 pub const PROOF_SIZE: u32 = 256;
 pub const REQUIRED_CIRCUITS: u32 = 15;
 pub const OPERATION_CONTEXT_VERSION: u32 = 1;
@@ -225,16 +226,19 @@ pub struct BatchProofStatement {
     pub vault: Address,
     pub market: Address,
     pub epoch: u64,
-    pub accepted_root: BytesN<32>,
+    pub accepted_root: U256,
     pub accepted_count: u32,
     pub first_sequence: u64,
     pub last_sequence: u64,
     pub committee_epoch: u64,
     pub committee_config_hash: BytesN<32>,
-    pub aggregate_ciphertext_hash: BytesN<32>,
+    pub committee_public_key_x: U256,
+    pub committee_public_key_y: U256,
+    pub aggregate_ciphertext: Vec<U256>,
     pub decryption_proof_hash: BytesN<32>,
     pub committee_statement_hash: BytesN<32>,
     pub allocation_root: U256,
+    pub included_root: U256,
     pub quote: BatchQuote,
 }
 
@@ -412,6 +416,75 @@ pub fn output_envelope_hash(env: &Env, envelope: &Bytes) -> Result<U256, SignalE
     Ok(poseidon2_hash::<4, Bn254Fr>(env, &preimage))
 }
 
+pub fn tagged_poseidon2_hash(env: &Env, tag: u32, fields: &Vec<U256>) -> Result<U256, SignalError> {
+    let mut preimage = Vec::new(env);
+    preimage.push_back(U256::from_u32(env, tag));
+    for field in fields.iter() {
+        push_field(env, &mut preimage, &field)?;
+    }
+    Ok(poseidon2_hash::<4, Bn254Fr>(env, &preimage))
+}
+
+pub fn merkle_node(env: &Env, left: &U256, right: &U256) -> Result<U256, SignalError> {
+    tagged_poseidon2_hash(
+        env,
+        MERKLE_NODE_HASH_TAG,
+        &Vec::from_array(env, [left.clone(), right.clone()]),
+    )
+}
+
+pub fn empty_merkle_root(env: &Env, levels: u32) -> U256 {
+    let mut root = U256::from_u32(env, 0);
+    for _ in 0..levels {
+        root = merkle_node(env, &root, &root).unwrap();
+    }
+    root
+}
+
+pub fn is_valid_babyjub_encryption_point(env: &Env, x: &U256, y: &U256) -> bool {
+    if !is_canonical_field(env, x) || !is_canonical_field(env, y) {
+        return false;
+    }
+    let bn = env.crypto().bn254();
+    let a = Bn254Fr::from_u256(U256::from_u32(env, 168_700));
+    let d = Bn254Fr::from_u256(U256::from_u32(env, 168_696));
+    let one = Bn254Fr::from_u256(U256::from_u32(env, 1));
+    let mut point = (Bn254Fr::from_u256(x.clone()), Bn254Fr::from_u256(y.clone()));
+    let x_squared = bn.fr_mul(&point.0, &point.0);
+    let y_squared = bn.fr_mul(&point.1, &point.1);
+    let left = bn.fr_add(&bn.fr_mul(&a, &x_squared), &y_squared);
+    let right = bn.fr_add(&one, &bn.fr_mul(&d, &bn.fr_mul(&x_squared, &y_squared)));
+    if left != right {
+        return false;
+    }
+    for _ in 0..3 {
+        let product = bn.fr_mul(
+            &bn.fr_mul(&point.0, &point.0),
+            &bn.fr_mul(&point.1, &point.1),
+        );
+        let x_denominator = bn.fr_add(&one, &bn.fr_mul(&d, &product));
+        let y_denominator = bn.fr_sub(&one, &bn.fr_mul(&d, &product));
+        if x_denominator.as_u256() == &U256::from_u32(env, 0)
+            || y_denominator.as_u256() == &U256::from_u32(env, 0)
+        {
+            return false;
+        }
+        let x_numerator = bn.fr_mul(
+            &Bn254Fr::from_u256(U256::from_u32(env, 2)),
+            &bn.fr_mul(&point.0, &point.1),
+        );
+        let y_numerator = bn.fr_sub(
+            &bn.fr_mul(&point.1, &point.1),
+            &bn.fr_mul(&a, &bn.fr_mul(&point.0, &point.0)),
+        );
+        point = (
+            bn.fr_mul(&x_numerator, &x_denominator.inv()),
+            bn.fr_mul(&y_numerator, &y_denominator.inv()),
+        );
+    }
+    point.0.as_u256() != &U256::from_u32(env, 0)
+}
+
 pub fn zero_fields(env: &Env) -> Vec<U256> {
     let mut fields = Vec::new(env);
     for _ in 0..OPERATION_BINDING_FIELDS {
@@ -456,21 +529,29 @@ pub fn batch_public_inputs(
     env: &Env,
     statement: &BatchProofStatement,
 ) -> Result<Vec<U256>, SignalError> {
+    if statement.aggregate_ciphertext.len() != 4 {
+        return Err(SignalError::InvalidShape);
+    }
     let mut signals = Vec::new(env);
     push_bytes32(env, &mut signals, &statement.network_domain);
     push_address(env, &mut signals, &statement.vault);
     push_address(env, &mut signals, &statement.market);
     signals.push_back(U256::from_u128(env, statement.epoch as u128));
-    push_bytes32(env, &mut signals, &statement.accepted_root);
+    push_field(env, &mut signals, &statement.accepted_root)?;
     signals.push_back(U256::from_u32(env, statement.accepted_count));
     signals.push_back(U256::from_u128(env, statement.first_sequence as u128));
     signals.push_back(U256::from_u128(env, statement.last_sequence as u128));
     signals.push_back(U256::from_u128(env, statement.committee_epoch as u128));
     push_bytes32(env, &mut signals, &statement.committee_config_hash);
-    push_bytes32(env, &mut signals, &statement.aggregate_ciphertext_hash);
+    push_field(env, &mut signals, &statement.committee_public_key_x)?;
+    push_field(env, &mut signals, &statement.committee_public_key_y)?;
+    for coordinate in statement.aggregate_ciphertext.iter() {
+        push_field(env, &mut signals, &coordinate)?;
+    }
     push_bytes32(env, &mut signals, &statement.decryption_proof_hash);
     push_bytes32(env, &mut signals, &statement.committee_statement_hash);
     push_field(env, &mut signals, &statement.allocation_root)?;
+    push_field(env, &mut signals, &statement.included_root)?;
 
     let quote = &statement.quote;
     signals.push_back(U256::from_u128(env, quote.state_version as u128));
@@ -576,6 +657,33 @@ mod test {
 
     fn id(env: &Env, byte: u8) -> BytesN<32> {
         BytesN::from_array(env, &[byte; 32])
+    }
+
+    fn babyjub_base(env: &Env) -> (U256, U256) {
+        (
+            U256::from_be_bytes(
+                env,
+                &Bytes::from_array(
+                    env,
+                    &[
+                        0x0b, 0xb7, 0x7a, 0x6a, 0xd6, 0x3e, 0x73, 0x9b, 0x4e, 0xac, 0xb2, 0xe0,
+                        0x9d, 0x62, 0x77, 0xc1, 0x2a, 0xb8, 0xd8, 0x01, 0x05, 0x34, 0xe0, 0xb6,
+                        0x28, 0x93, 0xf3, 0xf6, 0xbb, 0x95, 0x70, 0x51,
+                    ],
+                ),
+            ),
+            U256::from_be_bytes(
+                env,
+                &Bytes::from_array(
+                    env,
+                    &[
+                        0x25, 0x79, 0x72, 0x03, 0xf7, 0xa0, 0xb2, 0x49, 0x25, 0x57, 0x2e, 0x1c,
+                        0xd1, 0x6b, 0xf9, 0xed, 0xfc, 0xe0, 0x05, 0x1f, 0xb9, 0xe1, 0x33, 0x77,
+                        0x4b, 0x3c, 0x25, 0x7a, 0x87, 0x2d, 0x7d, 0x8b,
+                    ],
+                ),
+            ),
+        )
     }
 
     #[test]
@@ -734,12 +842,46 @@ mod test {
             &Bytes::from_array(
                 &env,
                 &[
-                    22, 119, 97, 0, 240, 22, 230, 38, 170, 203, 93, 22, 146, 147, 151, 24,
-                    127, 10, 243, 33, 66, 105, 169, 50, 163, 189, 185, 205, 144, 207, 243, 94,
+                    22, 119, 97, 0, 240, 22, 230, 38, 170, 203, 93, 22, 146, 147, 151, 24, 127, 10,
+                    243, 33, 66, 105, 169, 50, 163, 189, 185, 205, 144, 207, 243, 94,
                 ],
             ),
         );
         assert_eq!(poseidon2_hash::<4, Bn254Fr>(&env, &fields), expected);
+    }
+
+    #[test]
+    fn babyjub_encryption_points_reject_invalid_and_low_order_values() {
+        let env = Env::default();
+        let (x, y) = babyjub_base(&env);
+        assert!(is_valid_babyjub_encryption_point(&env, &x, &y));
+        assert!(!is_valid_babyjub_encryption_point(
+            &env,
+            &U256::from_u32(&env, 0),
+            &U256::from_u32(&env, 1),
+        ));
+        assert!(!is_valid_babyjub_encryption_point(
+            &env,
+            &U256::from_u32(&env, 5),
+            &U256::from_u32(&env, 6),
+        ));
+    }
+
+    #[test]
+    fn accepted_tree_empty_root_matches_the_circom_fixture() {
+        let env = Env::default();
+        let expected = U256::from_be_bytes(
+            &env,
+            &Bytes::from_array(
+                &env,
+                &[
+                    0x25, 0x61, 0x58, 0xb7, 0x46, 0xd8, 0x43, 0x71, 0x46, 0xcb, 0xaf, 0xca, 0x04,
+                    0x1c, 0xec, 0x2b, 0x79, 0x92, 0x0d, 0x28, 0x1a, 0x1c, 0xeb, 0x4f, 0xf7, 0xda,
+                    0x54, 0x4b, 0x2d, 0xef, 0xae, 0x9d,
+                ],
+            ),
+        );
+        assert_eq!(empty_merkle_root(&env, 6), expected);
     }
 
     #[test]
@@ -754,8 +896,8 @@ mod test {
             &Bytes::from_array(
                 &env,
                 &[
-                    17, 31, 117, 18, 203, 191, 250, 139, 52, 131, 61, 124, 8, 107, 107, 247,
-                    36, 149, 83, 33, 114, 128, 7, 189, 162, 140, 110, 82, 181, 244, 78, 87,
+                    17, 31, 117, 18, 203, 191, 250, 139, 52, 131, 61, 124, 8, 107, 107, 247, 36,
+                    149, 83, 33, 114, 128, 7, 189, 162, 140, 110, 82, 181, 244, 78, 87,
                 ],
             ),
         );
@@ -776,16 +918,27 @@ mod test {
             vault: Address::generate(&env),
             market: Address::generate(&env),
             epoch: 2,
-            accepted_root: id(&env, 3),
+            accepted_root: U256::from_u32(&env, 3),
             accepted_count: 8,
             first_sequence: 10,
             last_sequence: 17,
             committee_epoch: 4,
             committee_config_hash: id(&env, 5),
-            aggregate_ciphertext_hash: id(&env, 6),
+            committee_public_key_x: U256::from_u32(&env, 6),
+            committee_public_key_y: U256::from_u32(&env, 7),
+            aggregate_ciphertext: Vec::from_array(
+                &env,
+                [
+                    U256::from_u32(&env, 8),
+                    U256::from_u32(&env, 9),
+                    U256::from_u32(&env, 10),
+                    U256::from_u32(&env, 11),
+                ],
+            ),
             decryption_proof_hash: id(&env, 7),
             committee_statement_hash: id(&env, 8),
-            allocation_root: U256::from_u32(&env, 9),
+            allocation_root: U256::from_u32(&env, 12),
+            included_root: U256::from_u32(&env, 13),
             quote: BatchQuote {
                 state_version: 1,
                 batch_size: 8,
@@ -809,7 +962,7 @@ mod test {
         };
         let signals = batch_public_inputs(&env, &statement).unwrap();
         assert_eq!(signals.len(), BATCH_PUBLIC_INPUTS);
-        assert_eq!(signals.get(22), Some(U256::from_u32(&env, 1)));
-        assert_eq!(signals.get(39), Some(U256::from_u32(&env, 23)));
+        assert_eq!(signals.get(26), Some(U256::from_u32(&env, 1)));
+        assert_eq!(signals.get(43), Some(U256::from_u32(&env, 23)));
     }
 }

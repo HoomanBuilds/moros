@@ -4,7 +4,7 @@
 
 Implementation draft for the fresh shared-vault testnet deployment.
 
-The balance action formats and recovery envelope are implemented and cross-language tested. Order, LP replacement, allocation, and batch formats remain blocked from final freeze until their negative circuit fixtures and resource measurements pass.
+The balance, recovery-envelope, and private-order formats are implemented and cross-language tested. LP replacement, allocation, and batch formats remain blocked from final freeze until their negative circuit fixtures and resource measurements pass.
 
 This format uses BN254 Groth16 on Stellar Protocol 26. It does not reuse the legacy BLS12-381 proof artifacts under `web/public/zk`.
 
@@ -122,47 +122,55 @@ Unused binding fields are zero and are still hashed.
 | 10 | Refund timestamp |
 | 11 | Committee key epoch |
 | 12 to 13 | Committee configuration hash limbs |
-| 14 to 15 | Canonical encrypted-order hash limbs |
-| 16 to 23 | Zero |
+| 14 to 15 | Committee Baby Jubjub public key |
+| 16 to 19 | Encrypted order points `C1.x`, `C1.y`, `C2.x`, and `C2.y` |
+| 20 | Old accepted-order Merkle root |
+| 21 | New accepted-order Merkle root |
+| 22 | Accepted leaf index |
+| 23 | Public acceptance sequence |
+
+The order circuit spends two liquid notes, permits a zero-value padding input, creates one liquid change note and one position note, and proves exact conservation. The position budget is one atomic-USDC payout per fixed lot plus the maximum fee at `p * (1 - p) = 0.25`.
+
+The hidden side is encrypted with Baby Jubjub ElGamal under the cofactor-cleared committee key. The circuit verifies both configured and generated points, rejects low-order or identity values, binds nonzero encryption randomness, and proves that the ciphertext contains the same Boolean side stored in the position note.
+
+Accepted orders use a depth-6 Poseidon2 Merkle tree with capacity 64, matching the contract batch cap. The order circuit proves a zero-leaf append at the exact contract-assigned index. The contract independently calculates and stores the same root from its bounded frontier. The accepted leaf binds market, epoch, sequence, action ID, position commitment, all four ciphertext coordinates, and committee epoch.
 
 ## Refund binding
 
 | Binding index | Field |
 | --- | --- |
 | 0 | Epoch |
-| 1 | Acceptance sequence |
-| 2 to 3 | Sealed accepted-root limbs |
-| 4 | Position commitment |
-| 5 to 23 | Zero |
+| 1 | Sealed accepted-order Merkle root |
+| 2 to 23 | Zero |
+
+Refund, execution-change, and claim calls do not publish an acceptance sequence or position commitment. Their circuits prove private membership under the sealed accepted or allocation root, and their purpose-specific nullifiers prevent reuse.
 
 ## Allocation binding
 
 | Binding index | Field |
 | --- | --- |
 | 0 | Epoch |
-| 1 | Acceptance sequence |
-| 2 | Immutable allocation root |
-| 3 | Position commitment |
-| 4 | Outcome, where 0 is pending, 1 is YES, 2 is NO, and 3 is VOID |
-| 5 | Market state version |
-| 6 | Batch size |
-| 7 | YES count |
-| 8 | NO count |
-| 9 | Pre-batch YES price |
-| 10 | Post-batch YES price |
-| 11 | Uniform YES price |
-| 12 | Uniform NO price |
-| 13 | Exact aggregate market charge |
-| 14 | YES aggregate market cost |
-| 15 | NO aggregate market cost |
-| 16 | YES charge per position |
-| 17 | NO charge per position |
-| 18 | Protocol rounding contribution |
-| 19 | Fee per position |
-| 20 | Refundable fee escrow |
-| 21 | Conditional LP fee |
-| 22 | Conditional protocol fee |
-| 23 | Zero |
+| 1 | Immutable allocation root |
+| 2 | Outcome, where 0 is pending, 1 is YES, 2 is NO, and 3 is VOID |
+| 3 | Market state version |
+| 4 | Batch size |
+| 5 | YES count |
+| 6 | NO count |
+| 7 | Pre-batch YES price |
+| 8 | Post-batch YES price |
+| 9 | Uniform YES price |
+| 10 | Uniform NO price |
+| 11 | Exact aggregate market charge |
+| 12 | YES aggregate market cost |
+| 13 | NO aggregate market cost |
+| 14 | YES charge per position |
+| 15 | NO charge per position |
+| 16 | Protocol rounding contribution |
+| 17 | Fee per position |
+| 18 | Refundable fee escrow |
+| 19 | Conditional LP fee |
+| 20 | Conditional protocol fee |
+| 21 to 23 | Zero |
 
 ## Treasury binding
 
@@ -225,7 +233,7 @@ An active exit match has 20 public fields. It uses three nullifier slots and fou
 
 ## Batch public signals
 
-Every batch proof has exactly 40 public field elements in this order:
+Every batch proof has exactly 44 public field elements in this order:
 
 | Index | Field |
 | --- | --- |
@@ -233,34 +241,36 @@ Every batch proof has exactly 40 public field elements in this order:
 | 2 to 3 | Shared vault address digest limbs |
 | 4 to 5 | Market address digest limbs |
 | 6 | Epoch |
-| 7 to 8 | Accepted-root limbs |
-| 9 | Accepted count |
-| 10 | First acceptance sequence |
-| 11 | Last acceptance sequence |
-| 12 | Committee key epoch |
-| 13 to 14 | Committee configuration hash limbs |
-| 15 to 16 | Aggregate ciphertext hash limbs |
-| 17 to 18 | Decryption proof hash limbs |
-| 19 to 20 | Committee statement hash limbs |
-| 21 | Allocation root |
-| 22 | Market state version |
-| 23 | Batch size |
-| 24 | YES count |
-| 25 | NO count |
-| 26 | Pre-batch YES price |
-| 27 | Post-batch YES price |
-| 28 | Uniform YES price |
-| 29 | Uniform NO price |
-| 30 | Exact aggregate market charge |
-| 31 | YES aggregate market cost |
-| 32 | NO aggregate market cost |
-| 33 | YES charge per position |
-| 34 | NO charge per position |
-| 35 | Protocol rounding contribution |
-| 36 | Fee per position |
-| 37 | Refundable fee escrow |
-| 38 | Conditional LP fee |
-| 39 | Conditional protocol fee |
+| 7 | Accepted-order Merkle root |
+| 8 | Accepted count |
+| 9 | First acceptance sequence |
+| 10 | Last acceptance sequence |
+| 11 | Committee key epoch |
+| 12 to 13 | Committee configuration hash limbs |
+| 14 to 15 | Committee Baby Jubjub public key |
+| 16 to 19 | Aggregate ciphertext points |
+| 20 to 21 | Decryption proof hash limbs |
+| 22 to 23 | Committee statement hash limbs |
+| 24 | Allocation root |
+| 25 | Included-position root |
+| 26 | Market state version |
+| 27 | Batch size |
+| 28 | YES count |
+| 29 | NO count |
+| 30 | Pre-batch YES price |
+| 31 | Post-batch YES price |
+| 32 | Uniform YES price |
+| 33 | Uniform NO price |
+| 34 | Exact aggregate market charge |
+| 35 | YES aggregate market cost |
+| 36 | NO aggregate market cost |
+| 37 | YES charge per position |
+| 38 | NO charge per position |
+| 39 | Protocol rounding contribution |
+| 40 | Fee per position |
+| 41 | Refundable fee escrow |
+| 42 | Conditional LP fee |
+| 43 | Conditional protocol fee |
 
 ## Groth16 proof encoding
 

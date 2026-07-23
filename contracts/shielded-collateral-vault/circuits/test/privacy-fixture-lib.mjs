@@ -1,5 +1,7 @@
 import { poseidon2Hash } from "../../../../circuits/node_modules/@zkpassport/poseidon2/dist/esm/index.js";
 
+export { poseidon2Hash };
+
 export const FIELD =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 const A = 168700n;
