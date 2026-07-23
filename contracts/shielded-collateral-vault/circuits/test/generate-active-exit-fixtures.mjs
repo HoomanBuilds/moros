@@ -185,6 +185,18 @@ const requestOutputs = [
     nonce: 46n,
   }),
 ];
+const paymentDestination = outputNote({
+  outputIndex: 0,
+  noteDomain: domain,
+  purpose: 1n,
+  amount: 16_000_000n,
+  spendSecret: 151n,
+  viewingSecret: 152n,
+  noteId: 153n,
+  blinding: 154n,
+  ephemeralSecret: 155n,
+  nonce: 156n,
+});
 const requestMembership = appendFirstPair(
   requestInputs.map((note) => note.commitment),
   LEVELS,
@@ -202,7 +214,12 @@ const requestBinding = [
   ...limbs(requestOutputs[1].commitment),
   9_000n,
   3n,
-  ...Array(14).fill(0n),
+  ...limbs(paymentDestination.commitment),
+  paymentDestination.spendPublicKey,
+  ...paymentDestination.viewingPublicKey,
+  paymentDestination.noteId,
+  paymentDestination.blinding,
+  ...Array(7).fill(0n),
 ];
 const request = standardFixture({
   action: 11n,
@@ -283,22 +300,10 @@ const cancel = standardFixture({
 });
 cancel.membershipRoot = cancelTree.newRoot;
 
-const sellerSpendSecret = 71n;
-const sellerViewingSecret = 72n;
 const matchInputs = [
   inputNote({
-    purpose: 9n,
-    amount: 40_000_000n,
-    spendSecret: sellerSpendSecret,
-    viewingSecret: sellerViewingSecret,
-    noteId: 73n,
-    payloadHash: exitPayload,
-    privateData: [32_000_000n, 9_000n],
-    blinding: 74n,
-  }),
-  inputNote({
     purpose: 1n,
-    amount: 5_000_000n,
+    amount: 10_000_000n,
     spendSecret: 81n,
     viewingSecret: 82n,
     noteId: 83n,
@@ -306,7 +311,7 @@ const matchInputs = [
   }),
   inputNote({
     purpose: 1n,
-    amount: 5_000_000n,
+    amount: 10_000_000n,
     spendSecret: 91n,
     viewingSecret: 92n,
     noteId: 93n,
@@ -324,26 +329,16 @@ const unspentPadding = inputNote({
 const matchTreeCommitments = [
   ...matchInputs.map((note) => note.commitment),
   unspentPadding.commitment,
+  requestOutputs[1].commitment,
 ];
 const matchPaths = firstFourMembershipPaths(matchTreeCommitments, LEVELS);
 const matchOutputs = [
-  outputNote({
-    outputIndex: 0,
-    noteDomain: domain,
-    purpose: 1n,
-    amount: 8_000_000n,
-    spendSecret: sellerSpendSecret,
-    viewingSecret: sellerViewingSecret,
-    noteId: 111n,
-    blinding: 112n,
-    ephemeralSecret: 113n,
-    nonce: 114n,
-  }),
+  paymentDestination,
   outputNote({
     outputIndex: 1,
     noteDomain: domain,
     purpose: 3n,
-    amount: 10_000_000n,
+    amount: 20_000_000n,
     spendSecret: 121n,
     viewingSecret: 122n,
     noteId: 123n,
@@ -356,7 +351,7 @@ const matchOutputs = [
     outputIndex: 2,
     noteDomain: domain,
     purpose: 1n,
-    amount: 2_000_000n,
+    amount: 4_000_000n,
     spendSecret: 131n,
     viewingSecret: 132n,
     noteId: 133n,
@@ -367,14 +362,14 @@ const matchOutputs = [
   outputNote({
     outputIndex: 3,
     noteDomain: domain,
-    purpose: 9n,
-    amount: 30_000_000n,
-    spendSecret: sellerSpendSecret,
-    viewingSecret: sellerViewingSecret,
+    purpose: 0n,
+    amount: 0n,
+    spendSecret: 141n,
+    viewingSecret: 142n,
     noteId: 141n,
-    payloadHash: exitPayload,
-    privateData: [24_000_000n, 9_000n],
-    blinding: 142n,
+    payloadHash: 0n,
+    privateData: [0n, 0n],
+    blinding: 143n,
     ephemeralSecret: 143n,
     nonce: 144n,
   }),
@@ -399,12 +394,13 @@ const appendSecond = appendFourthPair(
 const matchBinding = [
   ...LIQUIDITY,
   ...EXIT_ID,
-  10_000_000n,
-  8_000_000n,
-  40_000_000n,
-  32_000_000n,
-  ...limbs(matchInputs[0].commitment),
-  9_000n,
+  20_000_000n,
+  16_000_000n,
+  ...limbs(paymentDestination.commitment),
+  paymentDestination.spendPublicKey,
+  ...paymentDestination.viewingPublicKey,
+  paymentDestination.noteId,
+  paymentDestination.blinding,
   7n,
   70_000_000n,
   90_000_000n,
@@ -412,11 +408,10 @@ const matchBinding = [
   8_500n,
   1_000n,
   5n,
-  8_000_000n,
-  24_000_000n,
-  ...limbs(matchOutputs[3].commitment),
-  30_000_000n,
   9_500n,
+  0n,
+  0n,
+  0n,
 ];
 const matchContext = context(13n, 8n, matchBinding);
 const match = {
@@ -425,10 +420,10 @@ const match = {
   membershipRoot: appendFirst.appendRoot,
   appendRoot: appendFirst.appendRoot,
   newRoot: appendSecond.newRoot,
-  nullifierCount: 3n,
-  nullifier0: noteNullifier(matchInputs[0], matchInputs[0].spendSecret, 5n),
+  nullifierCount: 2n,
+  nullifier0: noteNullifier(matchInputs[0], matchInputs[0].spendSecret, 1n),
   nullifier1: noteNullifier(matchInputs[1], matchInputs[1].spendSecret, 1n),
-  nullifier2: noteNullifier(matchInputs[2], matchInputs[2].spendSecret, 1n),
+  nullifier2: 0n,
   outputCommitment0: matchOutputs[0].commitment,
   outputCommitment1: matchOutputs[1].commitment,
   outputCommitment2: matchOutputs[2].commitment,
@@ -449,8 +444,8 @@ const match = {
   inPayloadHash: matchInputs.map((note) => note.payloadHash),
   inPrivateData: matchInputs.map((note) => note.privateData),
   inBlinding: matchInputs.map((note) => note.blinding),
-  inLeafIndex: [0n, 1n, 2n],
-  inSiblings: matchPaths.slice(0, 3),
+  inLeafIndex: [0n, 1n],
+  inSiblings: matchPaths.slice(0, 2),
   outPurpose: matchOutputs.map((note) => note.purpose),
   outAmount: matchOutputs.map((note) => note.amount),
   outSpendPublicKey: matchOutputs.map((note) => note.spendPublicKey),

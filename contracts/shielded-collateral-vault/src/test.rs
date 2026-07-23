@@ -4,8 +4,8 @@ extern crate std;
 use crate::{
     AllocationBinding, BatchProofStatement, BatchQuote, BatchSubmission, EncryptedOrder,
     EpochPhase, ExitCancelBinding, ExitMatchBinding, ExitRequestBinding, LiquidityBinding,
-    OrderStatus, PrivateTransition, ProofAction, ProofStatement, SettlementState,
-    ShieldedCollateralVault, ShieldedCollateralVaultClient,
+    OrderStatus, PaymentDestination, PrivateTransition, ProofAction, ProofStatement,
+    SettlementState, ShieldedCollateralVault, ShieldedCollateralVaultClient,
 };
 use lmsr_market::{
     BatchQuote as LmsrBatchQuote, LmsrMarket, LmsrMarketClient, Outcome, PrivateMarketConfig,
@@ -105,6 +105,18 @@ fn babyjub_base(env: &Env) -> (U256, U256) {
     )
 }
 
+fn payment_destination(env: &Env, commitment: u8) -> PaymentDestination {
+    let (viewing_public_key_x, viewing_public_key_y) = babyjub_base(env);
+    PaymentDestination {
+        commitment: field_id(env, commitment),
+        spend_public_key: field(env, 120),
+        viewing_public_key_x,
+        viewing_public_key_y,
+        note_id: field(env, 121),
+        blinding: field(env, 122),
+    }
+}
+
 fn envelope(env: &Env, byte: u8) -> Bytes {
     let mut envelope = Bytes::new(env);
     for index in 0..OUTPUT_ENVELOPE_FIELDS {
@@ -160,22 +172,19 @@ fn transition_four(
     membership_root: u32,
     append_root: u32,
     new_root: u32,
-    nullifiers: [u32; 3],
+    nullifiers: &[u32],
     commitments: [u32; 4],
 ) -> PrivateTransition {
+    let mut input_nullifiers = Vec::new(env);
+    for value in nullifiers {
+        input_nullifiers.push_back(field(env, *value));
+    }
     PrivateTransition {
         proof: Bytes::from_array(env, &[7, 11, 13, 17]),
         membership_root: field(env, membership_root),
         append_root: field(env, append_root),
         new_root: field(env, new_root),
-        input_nullifiers: Vec::from_array(
-            env,
-            [
-                field(env, nullifiers[0]),
-                field(env, nullifiers[1]),
-                field(env, nullifiers[2]),
-            ],
-        ),
+        input_nullifiers,
         output_commitments: Vec::from_array(
             env,
             [
@@ -837,12 +846,14 @@ fn active_lp_exit_replacement_is_private_state_bound_and_keeps_market_backing() 
     let request_id = id(&setup.env, 100);
     let exit_id = id(&setup.env, 101);
     let destination = field_id(&setup.env, 102);
+    let payment_destination = payment_destination(&setup.env, 103);
     let request_binding = ExitRequestBinding {
         liquidity_vault: liquidity_address.clone(),
         exit_id: exit_id.clone(),
         shares: 40_000_000,
         minimum_payment: 32_000_000,
         destination: destination.clone(),
+        payment_destination: payment_destination.clone(),
         exit_expiry: 10_800,
         expected_version: 3,
     };
@@ -854,6 +865,7 @@ fn active_lp_exit_replacement_is_private_state_bound_and_keeps_market_backing() 
         &40_000_000,
         &32_000_000,
         &destination,
+        &payment_destination,
         &10_800,
         &3,
         &request_id,
@@ -867,16 +879,12 @@ fn active_lp_exit_replacement_is_private_state_bound_and_keeps_market_backing() 
     );
 
     let match_id = id(&setup.env, 103);
-    let remaining_destination = field_id(&setup.env, 106);
     let match_binding = ExitMatchBinding {
         liquidity_vault: liquidity_address.clone(),
         exit_id: exit_id.clone(),
-        shares: 10_000_000,
-        payment: 8_000_000,
-        shares_remaining: 40_000_000,
-        minimum_payment_remaining: 32_000_000,
-        destination,
-        exit_expiry: 10_800,
+        shares: 40_000_000,
+        payment: 32_000_000,
+        payment_destination,
         market_state_version: snapshot.state_version,
         equity_if_yes: snapshot.equity_if_yes,
         equity_if_no: snapshot.equity_if_no,
@@ -884,10 +892,6 @@ fn active_lp_exit_replacement_is_private_state_bound_and_keeps_market_backing() 
         state_updated_at: snapshot.updated_at,
         maximum_state_age: 300,
         expected_version: 4,
-        minimum_for_fill: 8_000_000,
-        next_minimum_payment: 24_000_000,
-        remaining_destination: remaining_destination.clone(),
-        remaining_shares: 30_000_000,
         market_expiry: 11_000,
     };
     expect_exit_match(&setup, &market, &match_id, &match_binding);
@@ -895,52 +899,91 @@ fn active_lp_exit_replacement_is_private_state_bound_and_keeps_market_backing() 
         &market,
         &liquidity_address,
         &exit_id,
-        &10_000_000,
-        &8_000_000,
+        &40_000_000,
+        &32_000_000,
         &snapshot.state_version,
         &snapshot.equity_if_yes,
         &snapshot.equity_if_no,
         &snapshot.conditional_lp_fees,
         &snapshot.updated_at,
         &300,
-        &remaining_destination,
         &4,
         &match_id,
         &EXPIRY,
-        &transition_four(&setup.env, 2, 2, 3, [31, 32, 33], [103, 104, 105, 106]),
+        &transition_four(&setup.env, 2, 2, 3, &[31, 32], [103, 104, 105, 106]),
     );
-    assert_eq!(fill.shares_transferred, 10_000_000);
-    assert_eq!(fill.shares_remaining, 30_000_000);
+    assert_eq!(fill.shares_transferred, 40_000_000);
+    assert_eq!(fill.shares_remaining, 0);
     assert_eq!(setup.vault.info().next_leaf_index, 6);
-    assert_eq!(liquidity.info().locked_shares, 30_000_000);
-    let remaining = liquidity.exit_intent(&exit_id).unwrap();
-    assert_eq!(remaining.minimum_payment_remaining, 24_000_000);
-    assert_eq!(remaining.destination, remaining_destination.clone());
+    assert_eq!(liquidity.info().locked_shares, 0);
+    assert_eq!(
+        liquidity.exit_intent(&exit_id).unwrap().status,
+        market_liquidity_vault::ExitStatus::Matched
+    );
     assert_eq!(
         TokenClient::new(&setup.env, &setup.token).balance(&market),
         market_balance
     );
+}
 
-    let cancel_id = id(&setup.env, 107);
+#[test]
+fn active_lp_exit_can_be_cancelled_with_its_private_receipt() {
+    let setup = setup();
+    let (market, liquidity_address, _resolver) = setup_private_market(&setup);
+    let liquidity = MarketLiquidityVaultClient::new(&setup.env, &liquidity_address);
+    let market_balance = TokenClient::new(&setup.env, &setup.token).balance(&market);
+
+    let request_id = id(&setup.env, 120);
+    let exit_id = id(&setup.env, 121);
+    let destination = field_id(&setup.env, 122);
+    let payment_destination = payment_destination(&setup.env, 123);
+    let request_binding = ExitRequestBinding {
+        liquidity_vault: liquidity_address.clone(),
+        exit_id: exit_id.clone(),
+        shares: 40_000_000,
+        minimum_payment: 32_000_000,
+        destination: destination.clone(),
+        payment_destination: payment_destination.clone(),
+        exit_expiry: 10_800,
+        expected_version: 3,
+    };
+    expect_exit_request(&setup, &market, &request_id, &request_binding);
+    setup.vault.request_liquidity_exit(
+        &market,
+        &liquidity_address,
+        &exit_id,
+        &40_000_000,
+        &32_000_000,
+        &destination,
+        &payment_destination,
+        &10_800,
+        &3,
+        &request_id,
+        &EXPIRY,
+        &transition(&setup.env, 1, 1, 2, &[21], [121, 122]),
+    );
+
+    let cancel_id = id(&setup.env, 124);
     let cancel_binding = ExitCancelBinding {
         liquidity_vault: liquidity_address.clone(),
         exit_id: exit_id.clone(),
-        shares_remaining: 30_000_000,
-        minimum_payment_remaining: 24_000_000,
-        destination: remaining_destination,
+        shares_remaining: 40_000_000,
+        minimum_payment_remaining: 32_000_000,
+        destination,
         exit_expiry: 10_800,
-        expected_version: 5,
+        expected_version: 4,
     };
     expect_exit_cancel(&setup, &market, &cancel_id, &cancel_binding);
     setup.vault.cancel_liquidity_exit(
         &market,
         &liquidity_address,
         &exit_id,
-        &5,
+        &4,
         &cancel_id,
         &EXPIRY,
-        &transition(&setup.env, 3, 3, 4, &[41], [107, 108]),
+        &transition(&setup.env, 2, 2, 3, &[31], [124, 125]),
     );
+
     assert_eq!(liquidity.info().locked_shares, 0);
     assert_eq!(
         liquidity.exit_intent(&exit_id).unwrap().status,
@@ -962,12 +1005,14 @@ fn active_lp_exit_replacement_rejects_a_stale_market_snapshot() {
     let request_id = id(&setup.env, 110);
     let exit_id = id(&setup.env, 111);
     let destination = field_id(&setup.env, 112);
+    let payment_destination = payment_destination(&setup.env, 113);
     let request_binding = ExitRequestBinding {
         liquidity_vault: liquidity_address.clone(),
         exit_id: exit_id.clone(),
         shares: 40_000_000,
         minimum_payment: 32_000_000,
         destination: destination.clone(),
+        payment_destination: payment_destination.clone(),
         exit_expiry: 10_800,
         expected_version: 3,
     };
@@ -979,6 +1024,7 @@ fn active_lp_exit_replacement_rejects_a_stale_market_snapshot() {
         &40_000_000,
         &32_000_000,
         &destination,
+        &payment_destination,
         &10_800,
         &3,
         &request_id,
@@ -1004,19 +1050,18 @@ fn active_lp_exit_replacement_rejects_a_stale_market_snapshot() {
             &market,
             &liquidity_address,
             &exit_id,
-            &10_000_000,
-            &8_000_000,
+            &40_000_000,
+            &32_000_000,
             &stale_snapshot.state_version,
             &stale_snapshot.equity_if_yes,
             &stale_snapshot.equity_if_no,
             &stale_snapshot.conditional_lp_fees,
             &stale_snapshot.updated_at,
             &300,
-            &field_id(&setup.env, 116),
             &5,
             &id(&setup.env, 113),
             &EXPIRY,
-            &transition_four(&setup.env, 2, 2, 3, [31, 32, 33], [113, 114, 115, 116],),
+            &transition_four(&setup.env, 2, 2, 3, &[31, 32], [113, 114, 115, 116],),
         )
         .is_err());
     assert_eq!(setup.vault.info().next_leaf_index, next_leaf_index);

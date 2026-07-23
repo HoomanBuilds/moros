@@ -26,16 +26,16 @@ template PrivateExitMatch(levels) {
 
     signal input contextFields[46];
 
-    signal input inPurpose[3];
-    signal input inAmount[3];
-    signal input inSpendSecret[3];
-    signal input inViewingPublicKey[3][2];
-    signal input inNoteId[3];
-    signal input inPayloadHash[3];
-    signal input inPrivateData[3][2];
-    signal input inBlinding[3];
-    signal input inLeafIndex[3];
-    signal input inSiblings[3][levels];
+    signal input inPurpose[2];
+    signal input inAmount[2];
+    signal input inSpendSecret[2];
+    signal input inViewingPublicKey[2][2];
+    signal input inNoteId[2];
+    signal input inPayloadHash[2];
+    signal input inPrivateData[2][2];
+    signal input inBlinding[2];
+    signal input inLeafIndex[2];
+    signal input inSiblings[2][levels];
 
     signal input outPurpose[4];
     signal input outAmount[4];
@@ -53,7 +53,8 @@ template PrivateExitMatch(levels) {
     signal input appendSiblings1[levels - 1];
 
     action === 13;
-    nullifierCount === 3;
+    nullifierCount === 2;
+    nullifier2 === 0;
     publicAmountSign === 0;
     publicAmountMagnitude === 0;
     contextFields[0] === 1;
@@ -65,51 +66,44 @@ template PrivateExitMatch(levels) {
     contextFields[16] === 0;
     contextFields[17] === 1;
     contextFields[21] === 8;
+    contextFields[43] === 0;
+    contextFields[44] === 0;
+    contextFields[45] === 0;
 
-    component limbRanges[10];
+    component limbRanges[6];
     for (var index = 0; index < 2; index++) {
         limbRanges[index] = Num2Bits(128);
         limbRanges[index].in <== contextFields[22 + index];
         limbRanges[2 + index] = Num2Bits(128);
         limbRanges[2 + index].in <== contextFields[24 + index];
         limbRanges[4 + index] = Num2Bits(128);
-        limbRanges[4 + index].in <== contextFields[30 + index];
-        limbRanges[6 + index] = Num2Bits(128);
-        limbRanges[6 + index].in <== contextFields[42 + index];
+        limbRanges[4 + index].in <== contextFields[28 + index];
     }
-    component amountRanges[11];
-    var amountFields[11] = [26, 27, 28, 29, 34, 35, 36, 40, 41, 44, 45];
-    for (var index = 0; index < 10; index++) {
+    component amountRanges[5];
+    var amountFields[5] = [26, 27, 36, 37, 38];
+    for (var index = 0; index < 5; index++) {
         amountRanges[index] = Num2Bits(60);
         amountRanges[index].in <== contextFields[amountFields[index]];
     }
-    amountRanges[10] = Num2Bits(64);
-    amountRanges[10].in <== contextFields[45];
-    component fillZero = IsZero();
-    fillZero.in <== contextFields[26];
-    fillZero.out === 0;
+    component sharesZero = IsZero();
+    sharesZero.in <== contextFields[26];
+    sharesZero.out === 0;
     component paymentZero = IsZero();
     paymentZero.in <== contextFields[27];
     paymentZero.out === 0;
-    component currentSharesZero = IsZero();
-    currentSharesZero.in <== contextFields[28];
-    currentSharesZero.out === 0;
-    component timeRanges[7];
-    var timeFields[7] = [32, 33, 37, 38, 39, 45, 20];
-    for (var index = 0; index < 7; index++) {
+    component timeRanges[5];
+    var timeFields[5] = [35, 39, 40, 41, 42];
+    for (var index = 0; index < 5; index++) {
         timeRanges[index] = Num2Bits(64);
         timeRanges[index].in <== contextFields[timeFields[index]];
     }
     component maximumAgeZero = IsZero();
-    maximumAgeZero.in <== contextFields[38];
+    maximumAgeZero.in <== contextFields[40];
     maximumAgeZero.out === 0;
 
-    signal destination;
-    destination <== contextFields[30] * 340282366920938463463374607431768211456
-        + contextFields[31];
-    signal remainingDestination;
-    remainingDestination <== contextFields[42] * 340282366920938463463374607431768211456
-        + contextFields[43];
+    signal paymentCommitment;
+    paymentCommitment <== contextFields[28] * 340282366920938463463374607431768211456
+        + contextFields[29];
 
     component contextHash = Poseidon2Sponge(46);
     for (var field = 0; field < 46; field++) {
@@ -131,37 +125,6 @@ template PrivateExitMatch(levels) {
     liquidityPayload.inputs[0] <== 1011;
     liquidityPayload.inputs[1] <== contextFields[22];
     liquidityPayload.inputs[2] <== contextFields[23];
-    component exitPayload = Poseidon2Sponge(5);
-    exitPayload.inputs[0] <== 1014;
-    exitPayload.inputs[1] <== contextFields[22];
-    exitPayload.inputs[2] <== contextFields[23];
-    exitPayload.inputs[3] <== contextFields[24];
-    exitPayload.inputs[4] <== contextFields[25];
-
-    component exitInput = InputNote(levels, 5);
-    exitInput.noteDomain <== noteDomain.out;
-    exitInput.membershipRoot <== membershipRoot;
-    exitInput.purpose <== inPurpose[0];
-    exitInput.amount <== inAmount[0];
-    exitInput.spendSecret <== inSpendSecret[0];
-    exitInput.viewingPublicKey[0] <== inViewingPublicKey[0][0];
-    exitInput.viewingPublicKey[1] <== inViewingPublicKey[0][1];
-    exitInput.noteId <== inNoteId[0];
-    exitInput.payloadHash <== inPayloadHash[0];
-    exitInput.privateData[0] <== inPrivateData[0][0];
-    exitInput.privateData[1] <== inPrivateData[0][1];
-    exitInput.blinding <== inBlinding[0];
-    exitInput.leafIndex <== inLeafIndex[0];
-    for (var level = 0; level < levels; level++) {
-        exitInput.siblings[level] <== inSiblings[0][level];
-    }
-    exitInput.expectedNullifier <== nullifier0;
-    inPurpose[0] === 9;
-    inAmount[0] === contextFields[28];
-    inPayloadHash[0] === exitPayload.out;
-    inPrivateData[0][0] === contextFields[29];
-    inPrivateData[0][1] === contextFields[32];
-    exitInput.commitment === destination;
 
     component buyerInputs[2];
     component buyerPadding[2];
@@ -170,95 +133,59 @@ template PrivateExitMatch(levels) {
     component buyerAmountZero[2];
     component buyerSecretZero[2];
     var buyerTotal = 0;
-    for (var offset = 0; offset < 2; offset++) {
-        var index = offset + 1;
-        buyerInputs[offset] = InputNote(levels, 1);
-        buyerInputs[offset].noteDomain <== noteDomain.out;
-        buyerInputs[offset].membershipRoot <== membershipRoot;
-        buyerInputs[offset].purpose <== inPurpose[index];
-        buyerInputs[offset].amount <== inAmount[index];
-        buyerInputs[offset].spendSecret <== inSpendSecret[index];
-        buyerInputs[offset].viewingPublicKey[0] <== inViewingPublicKey[index][0];
-        buyerInputs[offset].viewingPublicKey[1] <== inViewingPublicKey[index][1];
-        buyerInputs[offset].noteId <== inNoteId[index];
-        buyerInputs[offset].payloadHash <== inPayloadHash[index];
-        buyerInputs[offset].privateData[0] <== inPrivateData[index][0];
-        buyerInputs[offset].privateData[1] <== inPrivateData[index][1];
-        buyerInputs[offset].blinding <== inBlinding[index];
-        buyerInputs[offset].leafIndex <== inLeafIndex[index];
+    for (var index = 0; index < 2; index++) {
+        buyerInputs[index] = InputNote(levels, 1);
+        buyerInputs[index].noteDomain <== noteDomain.out;
+        buyerInputs[index].membershipRoot <== membershipRoot;
+        buyerInputs[index].purpose <== inPurpose[index];
+        buyerInputs[index].amount <== inAmount[index];
+        buyerInputs[index].spendSecret <== inSpendSecret[index];
+        buyerInputs[index].viewingPublicKey[0] <== inViewingPublicKey[index][0];
+        buyerInputs[index].viewingPublicKey[1] <== inViewingPublicKey[index][1];
+        buyerInputs[index].noteId <== inNoteId[index];
+        buyerInputs[index].payloadHash <== inPayloadHash[index];
+        buyerInputs[index].privateData[0] <== inPrivateData[index][0];
+        buyerInputs[index].privateData[1] <== inPrivateData[index][1];
+        buyerInputs[index].blinding <== inBlinding[index];
+        buyerInputs[index].leafIndex <== inLeafIndex[index];
         for (var level = 0; level < levels; level++) {
-            buyerInputs[offset].siblings[level] <== inSiblings[index][level];
+            buyerInputs[index].siblings[level] <== inSiblings[index][level];
         }
-        if (offset == 0) {
-            buyerInputs[offset].expectedNullifier <== nullifier1;
+        if (index == 0) {
+            buyerInputs[index].expectedNullifier <== nullifier0;
         } else {
-            buyerInputs[offset].expectedNullifier <== nullifier2;
+            buyerInputs[index].expectedNullifier <== nullifier1;
         }
-        buyerPadding[offset] = IsEqual();
-        buyerPadding[offset].in[0] <== inPurpose[index];
-        buyerPadding[offset].in[1] <== 0;
+        buyerPadding[index] = IsEqual();
+        buyerPadding[index].in[0] <== inPurpose[index];
+        buyerPadding[index].in[1] <== 0;
         for (var purposeIndex = 0; purposeIndex < 3; purposeIndex++) {
-            buyerLiquid[offset][purposeIndex] = IsEqual();
-            buyerLiquid[offset][purposeIndex].in[0] <== inPurpose[index];
-            buyerLiquid[offset][purposeIndex].in[1] <== purposeIndex == 0 ? 1 : purposeIndex + 5;
+            buyerLiquid[index][purposeIndex] = IsEqual();
+            buyerLiquid[index][purposeIndex].in[0] <== inPurpose[index];
+            buyerLiquid[index][purposeIndex].in[1] <==
+                purposeIndex == 0 ? 1 : purposeIndex + 5;
         }
-        buyerPadding[offset].out
-            + buyerLiquid[offset][0].out
-            + buyerLiquid[offset][1].out
-            + buyerLiquid[offset][2].out === 1;
+        buyerPadding[index].out
+            + buyerLiquid[index][0].out
+            + buyerLiquid[index][1].out
+            + buyerLiquid[index][2].out === 1;
         inPayloadHash[index] === 0;
         inPrivateData[index][0] === 0;
         inPrivateData[index][1] === 0;
-        buyerAmountRanges[offset] = Num2Bits(60);
-        buyerAmountRanges[offset].in <== inAmount[index];
-        buyerAmountZero[offset] = IsZero();
-        buyerAmountZero[offset].in <== inAmount[index];
-        buyerAmountZero[offset].out === buyerPadding[offset].out;
-        buyerSecretZero[offset] = IsZero();
-        buyerSecretZero[offset].in <== inSpendSecret[index];
-        buyerSecretZero[offset].out === 0;
+        buyerAmountRanges[index] = Num2Bits(60);
+        buyerAmountRanges[index].in <== inAmount[index];
+        buyerAmountZero[index] = IsZero();
+        buyerAmountZero[index].in <== inAmount[index];
+        buyerAmountZero[index].out === buyerPadding[index].out;
+        buyerSecretZero[index] = IsZero();
+        buyerSecretZero[index].in <== inSpendSecret[index];
+        buyerSecretZero[index].out === 0;
         buyerTotal += inAmount[index];
     }
-
-    component distinctNullifiers01 = IsEqual();
-    distinctNullifiers01.in[0] <== nullifier0;
-    distinctNullifiers01.in[1] <== nullifier1;
-    distinctNullifiers01.out === 0;
-    component distinctNullifiers02 = IsEqual();
-    distinctNullifiers02.in[0] <== nullifier0;
-    distinctNullifiers02.in[1] <== nullifier2;
-    distinctNullifiers02.out === 0;
-    component distinctNullifiers12 = IsEqual();
-    distinctNullifiers12.in[0] <== nullifier1;
-    distinctNullifiers12.in[1] <== nullifier2;
-    distinctNullifiers12.out === 0;
-
-    signal minimumNumerator;
-    signal minimumQuotient;
-    signal minimumRemainder;
-    minimumNumerator <== contextFields[29] * contextFields[26];
-    minimumQuotient <-- minimumNumerator \ contextFields[28];
-    minimumRemainder <-- minimumNumerator % contextFields[28];
-    minimumNumerator === minimumQuotient * contextFields[28] + minimumRemainder;
-    component minimumNumeratorRange = Num2Bits(120);
-    minimumNumeratorRange.in <== minimumNumerator;
-    component minimumQuotientRange = Num2Bits(60);
-    minimumQuotientRange.in <== minimumQuotient;
-    component minimumRemainderRange = Num2Bits(60);
-    minimumRemainderRange.in <== minimumRemainder;
-    component remainderBound = LessThan(61);
-    remainderBound.in[0] <== minimumRemainder;
-    remainderBound.in[1] <== contextFields[28];
-    remainderBound.out === 1;
-    component remainderZero = IsZero();
-    remainderZero.in <== minimumRemainder;
-    contextFields[40] === minimumQuotient + 1 - remainderZero.out;
-    contextFields[29] === contextFields[40] + contextFields[41];
-    contextFields[28] === contextFields[26] + contextFields[44];
-    component underMinimum = LessThan(61);
-    underMinimum.in[0] <== contextFields[27];
-    underMinimum.in[1] <== contextFields[40];
-    underMinimum.out === 0;
+    component distinctNullifiers = IsEqual();
+    distinctNullifiers.in[0] <== nullifier0;
+    distinctNullifiers.in[1] <== nullifier1;
+    distinctNullifiers.out === 0;
 
     component outputs[4];
     component outputAmountRanges[4];
@@ -296,19 +223,17 @@ template PrivateExitMatch(levels) {
         outputBlindingZero[index].out === 0;
     }
 
-    component sellerSpendKey = SpendPublicKey();
-    sellerSpendKey.secret <== inSpendSecret[0];
-    component sellerSecretZero = IsZero();
-    sellerSecretZero.in <== inSpendSecret[0];
-    sellerSecretZero.out === 0;
     outPurpose[0] === 1;
     outAmount[0] === contextFields[27];
-    outSpendPublicKey[0] === sellerSpendKey.out;
-    outViewingPublicKey[0][0] === inViewingPublicKey[0][0];
-    outViewingPublicKey[0][1] === inViewingPublicKey[0][1];
+    outSpendPublicKey[0] === contextFields[30];
+    outViewingPublicKey[0][0] === contextFields[31];
+    outViewingPublicKey[0][1] === contextFields[32];
+    outNoteId[0] === contextFields[33];
+    outBlinding[0] === contextFields[34];
     outPayloadHash[0] === 0;
     outPrivateData[0][0] === 0;
     outPrivateData[0][1] === 0;
+    outputCommitment0 === paymentCommitment;
 
     outPurpose[1] === 3;
     outAmount[1] === contextFields[26];
@@ -324,20 +249,11 @@ template PrivateExitMatch(levels) {
     outPrivateData[2][1] === 0;
     buyerTotal === contextFields[27] + outAmount[2];
 
-    component remainingZero = IsZero();
-    remainingZero.in <== contextFields[44];
-    outPurpose[3] === 9 * (1 - remainingZero.out);
-    outAmount[3] === contextFields[44];
-    outSpendPublicKey[3] === sellerSpendKey.out;
-    outViewingPublicKey[3][0] === inViewingPublicKey[0][0];
-    outViewingPublicKey[3][1] === inViewingPublicKey[0][1];
-    outPayloadHash[3] === (1 - remainingZero.out) * exitPayload.out;
-    outPrivateData[3][0] === contextFields[41];
-    outPrivateData[3][1] === (1 - remainingZero.out) * contextFields[32];
-    (1 - remainingZero.out) * (outputCommitment3 - remainingDestination) === 0;
-    remainingZero.out * contextFields[41] === 0;
-    remainingZero.out * contextFields[42] === 0;
-    remainingZero.out * contextFields[43] === 0;
+    outPurpose[3] === 0;
+    outAmount[3] === 0;
+    outPayloadHash[3] === 0;
+    outPrivateData[3][0] === 0;
+    outPrivateData[3][1] === 0;
 
     outputs[0].commitment === outputCommitment0;
     outputs[1].commitment === outputCommitment1;

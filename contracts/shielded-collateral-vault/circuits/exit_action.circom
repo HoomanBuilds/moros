@@ -61,8 +61,22 @@ template PrivateExitAction(levels, actionCode, inputCount) {
     contextFields[16] === 0;
     contextFields[17] === 1;
     contextFields[21] === actionCode - 5;
-    for (var field = 32; field < 46; field++) {
-        contextFields[field] === 0;
+    if (actionCode == 11) {
+        component paymentCommitmentLimbs[2];
+        for (var index = 0; index < 2; index++) {
+            paymentCommitmentLimbs[index] = Num2Bits(128);
+            paymentCommitmentLimbs[index].in <== contextFields[32 + index];
+        }
+        component minimumZero = IsZero();
+        minimumZero.in <== contextFields[27];
+        minimumZero.out === 0;
+        for (var field = 39; field < 46; field++) {
+            contextFields[field] === 0;
+        }
+    } else {
+        for (var field = 32; field < 46; field++) {
+            contextFields[field] === 0;
+        }
     }
 
     component bindingLimbRanges[6];
@@ -105,6 +119,25 @@ template PrivateExitAction(levels, actionCode, inputCount) {
     noteDomain.token[1] <== contextFields[6];
     noteDomain.verifier[0] <== contextFields[7];
     noteDomain.verifier[1] <== contextFields[8];
+
+    if (actionCode == 11) {
+        signal paymentCommitment;
+        paymentCommitment <== contextFields[32] * 340282366920938463463374607431768211456
+            + contextFields[33];
+        component paymentDestination = NoteCommitment();
+        paymentDestination.noteDomain <== noteDomain.out;
+        paymentDestination.purpose <== 1;
+        paymentDestination.amount <== contextFields[27];
+        paymentDestination.spendPublicKey <== contextFields[34];
+        paymentDestination.viewingPublicKey[0] <== contextFields[35];
+        paymentDestination.viewingPublicKey[1] <== contextFields[36];
+        paymentDestination.noteId <== contextFields[37];
+        paymentDestination.payloadHash <== 0;
+        paymentDestination.privateData[0] <== 0;
+        paymentDestination.privateData[1] <== 0;
+        paymentDestination.blinding <== contextFields[38];
+        paymentDestination.out === paymentCommitment;
+    }
 
     component liquidityPayload = Poseidon2Sponge(3);
     liquidityPayload.inputs[0] <== 1011;

@@ -1,10 +1,13 @@
 #![cfg(test)]
 extern crate std;
 
-use crate::{ExitStatus, MarketLiquidityVault, MarketLiquidityVaultClient, Phase, TerminalOutcome};
+use crate::{
+    ExitStatus, MarketLiquidityVault, MarketLiquidityVaultClient, PaymentDestination, Phase,
+    TerminalOutcome,
+};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env, U256};
 
 const TARGET: i128 = 100_000_000;
 const FUNDING_DEADLINE: u64 = 2_000;
@@ -12,6 +15,17 @@ const ACTIVATION_CUTOFF: u64 = 2_500;
 
 fn id(env: &Env, byte: u8) -> BytesN<32> {
     BytesN::from_array(env, &[byte; 32])
+}
+
+fn payment_destination(env: &Env, byte: u8) -> PaymentDestination {
+    PaymentDestination {
+        commitment: id(env, byte),
+        spend_public_key: U256::from_u32(env, 1),
+        viewing_public_key_x: U256::from_u32(env, 2),
+        viewing_public_key_y: U256::from_u32(env, 3),
+        note_id: U256::from_u32(env, 4),
+        blinding: U256::from_u32(env, 5),
+    }
 }
 
 fn set_time(env: &Env, timestamp: u64) {
@@ -215,26 +229,29 @@ fn active_exit_is_state_bound_and_does_not_reduce_market_backing() {
         &40_000_000,
         &32_000_000,
         &id(&env, 4),
+        &payment_destination(&env, 7),
         &1_800,
         &3,
     );
     let fill = client.match_exit(
         &controller,
         &id(&env, 3),
-        &10_000_000,
-        &8_000_000,
+        &40_000_000,
+        &32_000_000,
         &7,
         &70_000_000,
         &90_000_000,
         &1_000_000,
         &1_050,
         &300,
-        &id(&env, 5),
         &4,
     );
-    assert_eq!(fill.shares_transferred, 10_000_000);
-    assert_eq!(fill.shares_remaining, 30_000_000);
-    assert_eq!(client.exit(&id(&env, 3)).unwrap().status, ExitStatus::Open);
+    assert_eq!(fill.shares_transferred, 40_000_000);
+    assert_eq!(fill.shares_remaining, 0);
+    assert_eq!(
+        client.exit(&id(&env, 3)).unwrap().status,
+        ExitStatus::Matched
+    );
     assert_eq!(
         TokenClient::new(&env, &token).balance(&market),
         market_balance
@@ -252,7 +269,6 @@ fn active_exit_is_state_bound_and_does_not_reduce_market_backing() {
             &1_000_000,
             &1_050,
             &300,
-            &id(&env, 6),
             &5,
         )
         .is_err());
@@ -270,6 +286,7 @@ fn exit_can_be_cancelled_and_terminal_assets_redeem_pro_rata() {
         &40_000_000,
         &32_000_000,
         &id(&env, 4),
+        &payment_destination(&env, 7),
         &1_800,
         &2,
     );

@@ -50,12 +50,24 @@ pub struct LiquidityBinding {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PaymentDestination {
+    pub commitment: BytesN<32>,
+    pub spend_public_key: U256,
+    pub viewing_public_key_x: U256,
+    pub viewing_public_key_y: U256,
+    pub note_id: U256,
+    pub blinding: U256,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExitRequestBinding {
     pub liquidity_vault: Address,
     pub exit_id: BytesN<32>,
     pub shares: i128,
     pub minimum_payment: i128,
     pub destination: BytesN<32>,
+    pub payment_destination: PaymentDestination,
     pub exit_expiry: u64,
     pub expected_version: u64,
 }
@@ -79,10 +91,7 @@ pub struct ExitMatchBinding {
     pub exit_id: BytesN<32>,
     pub shares: i128,
     pub payment: i128,
-    pub shares_remaining: i128,
-    pub minimum_payment_remaining: i128,
-    pub destination: BytesN<32>,
-    pub exit_expiry: u64,
+    pub payment_destination: PaymentDestination,
     pub market_state_version: u64,
     pub equity_if_yes: i128,
     pub equity_if_no: i128,
@@ -90,10 +99,6 @@ pub struct ExitMatchBinding {
     pub state_updated_at: u64,
     pub maximum_state_age: u64,
     pub expected_version: u64,
-    pub minimum_for_fill: i128,
-    pub next_minimum_payment: i128,
-    pub remaining_destination: BytesN<32>,
-    pub remaining_shares: i128,
     pub market_expiry: u64,
 }
 
@@ -410,6 +415,7 @@ pub struct ExitIntent {
     pub shares_remaining: i128,
     pub minimum_payment_remaining: i128,
     pub destination: BytesN<32>,
+    pub payment_destination: PaymentDestination,
     pub expiry: u64,
     pub status: ExitStatus,
 }
@@ -624,6 +630,7 @@ pub trait LiquidityVault {
         shares: i128,
         minimum_payment: i128,
         destination: BytesN<32>,
+        payment_destination: PaymentDestination,
         expiry: u64,
         expected_version: u64,
     );
@@ -639,7 +646,6 @@ pub trait LiquidityVault {
         conditional_lp_fees: i128,
         state_updated_at: u64,
         maximum_state_age: u64,
-        remaining_destination: BytesN<32>,
         expected_version: u64,
     ) -> ExitFill;
     fn cancel_exit(env: Env, controller: Address, exit_id: BytesN<32>, expected_version: u64);
@@ -1245,6 +1251,7 @@ impl ShieldedCollateralVault {
         shares: i128,
         minimum_payment: i128,
         destination: BytesN<32>,
+        payment_destination: PaymentDestination,
         exit_expiry: u64,
         expected_version: u64,
         action_id: BytesN<32>,
@@ -1252,7 +1259,7 @@ impl ShieldedCollateralVault {
         transition: PrivateTransition,
     ) {
         Self::validate_amount(&env, shares);
-        Self::validate_nonnegative_amount(&env, minimum_payment);
+        Self::validate_amount(&env, minimum_payment);
         Self::validate_expiry(&env, action_expiry);
         let registration = Self::active_exit_market(&env, &market, &liquidity_vault);
         if exit_expiry <= env.ledger().timestamp() || exit_expiry > registration.expiry {
@@ -1260,6 +1267,7 @@ impl ShieldedCollateralVault {
         }
         let destination_field = U256::from_be_bytes(&env, &Bytes::from(destination.clone()));
         if !Self::canonical_nonzero_field(&env, &destination_field)
+            || !Self::valid_payment_destination(&env, &payment_destination)
             || transition.output_commitments.len() != 2
             || transition.output_commitments.get(1) != Some(destination_field)
         {
@@ -1271,6 +1279,7 @@ impl ShieldedCollateralVault {
             shares,
             minimum_payment,
             destination: destination.clone(),
+            payment_destination: payment_destination.clone(),
             exit_expiry,
             expected_version,
         };
@@ -1292,6 +1301,7 @@ impl ShieldedCollateralVault {
             &shares,
             &minimum_payment,
             &destination,
+            &payment_destination,
             &exit_expiry,
             &expected_version,
         );
@@ -1360,7 +1370,6 @@ impl ShieldedCollateralVault {
         conditional_lp_fees: i128,
         state_updated_at: u64,
         maximum_state_age: u64,
-        remaining_destination: BytesN<32>,
         expected_version: u64,
         action_id: BytesN<32>,
         action_expiry: u64,
@@ -1382,7 +1391,8 @@ impl ShieldedCollateralVault {
             .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidExit));
         if intent.status != ExitStatus::Open
             || env.ledger().timestamp() > intent.expiry
-            || shares > intent.shares_remaining
+            || shares != intent.shares_remaining
+            || payment != intent.minimum_payment_remaining
             || snapshot.state_version != market_state_version
             || snapshot.equity_if_yes != equity_if_yes
             || snapshot.equity_if_no != equity_if_no
@@ -1392,30 +1402,12 @@ impl ShieldedCollateralVault {
         {
             panic_with_error!(&env, Error::InvalidExit);
         }
-        let minimum_for_fill = Self::minimum_exit_payment(
+        let payment_commitment = U256::from_be_bytes(
             &env,
-            intent.minimum_payment_remaining,
-            shares,
-            intent.shares_remaining,
+            &Bytes::from(intent.payment_destination.commitment.clone()),
         );
-        if payment < minimum_for_fill {
-            panic_with_error!(&env, Error::InvalidExit);
-        }
-        let remaining_shares = intent
-            .shares_remaining
-            .checked_sub(shares)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
-        let next_minimum_payment = intent
-            .minimum_payment_remaining
-            .checked_sub(minimum_for_fill)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
-        let remaining_field =
-            U256::from_be_bytes(&env, &Bytes::from(remaining_destination.clone()));
         if transition.output_commitments.len() != 4
-            || (remaining_shares > 0
-                && (!Self::canonical_nonzero_field(&env, &remaining_field)
-                    || transition.output_commitments.get(3) != Some(remaining_field)))
-            || (remaining_shares == 0 && !Self::is_zero_bytes(&remaining_destination))
+            || transition.output_commitments.get(0) != Some(payment_commitment)
         {
             panic_with_error!(&env, Error::InvalidProofStatement);
         }
@@ -1424,10 +1416,7 @@ impl ShieldedCollateralVault {
             exit_id: exit_id.clone(),
             shares,
             payment,
-            shares_remaining: intent.shares_remaining,
-            minimum_payment_remaining: intent.minimum_payment_remaining,
-            destination: intent.destination,
-            exit_expiry: intent.expiry,
+            payment_destination: intent.payment_destination,
             market_state_version,
             equity_if_yes,
             equity_if_no,
@@ -1435,10 +1424,6 @@ impl ShieldedCollateralVault {
             state_updated_at,
             maximum_state_age,
             expected_version,
-            minimum_for_fill,
-            next_minimum_payment,
-            remaining_destination: remaining_destination.clone(),
-            remaining_shares,
             market_expiry: registration.expiry,
         };
         Self::execute_transition(
@@ -1451,7 +1436,7 @@ impl ShieldedCollateralVault {
             Self::exit_match_operation_binding(&env, &binding),
             action_expiry,
             transition,
-            3,
+            2,
         );
         let fill = client.match_exit(
             &env.current_contract_address(),
@@ -1464,11 +1449,10 @@ impl ShieldedCollateralVault {
             &conditional_lp_fees,
             &state_updated_at,
             &maximum_state_age,
-            &remaining_destination,
             &expected_version,
         );
         if fill.shares_transferred != shares
-            || fill.shares_remaining != remaining_shares
+            || fill.shares_remaining != 0
             || fill.seller_payment != payment
         {
             panic_with_error!(&env, Error::InvalidExit);
@@ -2857,6 +2841,19 @@ impl ShieldedCollateralVault {
             && is_valid_babyjub_encryption_point(env, &order.c2_x, &order.c2_y)
     }
 
+    fn valid_payment_destination(env: &Env, destination: &PaymentDestination) -> bool {
+        let commitment = U256::from_be_bytes(env, &Bytes::from(destination.commitment.clone()));
+        Self::canonical_nonzero_field(env, &commitment)
+            && Self::canonical_nonzero_field(env, &destination.spend_public_key)
+            && is_valid_babyjub_encryption_point(
+                env,
+                &destination.viewing_public_key_x,
+                &destination.viewing_public_key_y,
+            )
+            && Self::canonical_nonzero_field(env, &destination.note_id)
+            && Self::canonical_nonzero_field(env, &destination.blinding)
+    }
+
     fn is_zero_bytes(value: &BytesN<32>) -> bool {
         value.to_array().iter().all(|byte| *byte == 0)
     }
@@ -2908,29 +2905,6 @@ impl ShieldedCollateralVault {
             panic_with_error!(env, Error::InvalidExit);
         }
         registration
-    }
-
-    fn minimum_exit_payment(
-        env: &Env,
-        minimum_remaining: i128,
-        shares: i128,
-        shares_remaining: i128,
-    ) -> i128 {
-        if minimum_remaining < 0
-            || shares <= 0
-            || shares_remaining <= 0
-            || shares > shares_remaining
-        {
-            panic_with_error!(env, Error::InvalidExit);
-        }
-        if shares == shares_remaining {
-            return minimum_remaining;
-        }
-        minimum_remaining
-            .checked_mul(shares)
-            .and_then(|value| value.checked_add(shares_remaining - 1))
-            .and_then(|value| value.checked_div(shares_remaining))
-            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic))
     }
 
     fn increase_liabilities(env: &Env, amount: i128) {
@@ -3026,6 +3000,40 @@ impl ShieldedCollateralVault {
             9,
             U256::from_u128(env, binding.expected_version as u128),
         );
+        let (payment_high, payment_low) =
+            bytes32_limbs(env, &binding.payment_destination.commitment);
+        Self::set_operation_field(env, &mut fields, 10, payment_high);
+        Self::set_operation_field(env, &mut fields, 11, payment_low);
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            12,
+            binding.payment_destination.spend_public_key.clone(),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            13,
+            binding.payment_destination.viewing_public_key_x.clone(),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            14,
+            binding.payment_destination.viewing_public_key_y.clone(),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            15,
+            binding.payment_destination.note_id.clone(),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            16,
+            binding.payment_destination.blinding.clone(),
+        );
         OperationBinding {
             kind: BindingKind::ExitRequest,
             fields,
@@ -3077,8 +3085,8 @@ impl ShieldedCollateralVault {
         let mut fields = zero_fields(env);
         let (vault_high, vault_low) = address_limbs(env, &binding.liquidity_vault);
         let (exit_high, exit_low) = bytes32_limbs(env, &binding.exit_id);
-        let (destination_high, destination_low) = bytes32_limbs(env, &binding.destination);
-        let (remaining_high, remaining_low) = bytes32_limbs(env, &binding.remaining_destination);
+        let (payment_high, payment_low) =
+            bytes32_limbs(env, &binding.payment_destination.commitment);
         let values = [
             vault_high,
             vault_low,
@@ -3086,11 +3094,13 @@ impl ShieldedCollateralVault {
             exit_low,
             Self::binding_i128(env, binding.shares),
             Self::binding_i128(env, binding.payment),
-            Self::binding_i128(env, binding.shares_remaining),
-            Self::binding_i128(env, binding.minimum_payment_remaining),
-            destination_high,
-            destination_low,
-            U256::from_u128(env, binding.exit_expiry as u128),
+            payment_high,
+            payment_low,
+            binding.payment_destination.spend_public_key.clone(),
+            binding.payment_destination.viewing_public_key_x.clone(),
+            binding.payment_destination.viewing_public_key_y.clone(),
+            binding.payment_destination.note_id.clone(),
+            binding.payment_destination.blinding.clone(),
             U256::from_u128(env, binding.market_state_version as u128),
             Self::binding_i128(env, binding.equity_if_yes),
             Self::binding_i128(env, binding.equity_if_no),
@@ -3098,11 +3108,6 @@ impl ShieldedCollateralVault {
             U256::from_u128(env, binding.state_updated_at as u128),
             U256::from_u128(env, binding.maximum_state_age as u128),
             U256::from_u128(env, binding.expected_version as u128),
-            Self::binding_i128(env, binding.minimum_for_fill),
-            Self::binding_i128(env, binding.next_minimum_payment),
-            remaining_high,
-            remaining_low,
-            Self::binding_i128(env, binding.remaining_shares),
             U256::from_u128(env, binding.market_expiry as u128),
         ];
         for (index, value) in values.iter().enumerate() {

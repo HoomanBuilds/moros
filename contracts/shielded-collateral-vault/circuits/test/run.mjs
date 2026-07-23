@@ -288,6 +288,11 @@ expectInvalid("exit_request", "wrong-destination", (fixture) => {
     BigInt(fixture.contextFields[29]) + 1n
   ).toString();
 });
+expectInvalid("exit_request", "wrong-payment-template", (fixture) => {
+  fixture.contextFields[34] = (
+    BigInt(fixture.contextFields[34]) + 1n
+  ).toString();
+});
 expectInvalid("exit_cancel", "wrong-exit-note", (fixture) => {
   fixture.inPrivateData[0][0] = (
     BigInt(fixture.inPrivateData[0][0]) + 1n
@@ -301,9 +306,9 @@ expectInvalid("exit_match", "redirect-seller", (fixture) => {
     BigInt(fixture.outSpendPublicKey[0]) + 1n
   ).toString();
 });
-expectInvalid("exit_match", "wrong-remaining-destination", (fixture) => {
-  fixture.contextFields[43] = (
-    BigInt(fixture.contextFields[43]) + 1n
+expectInvalid("exit_match", "wrong-payment-destination", (fixture) => {
+  fixture.contextFields[29] = (
+    BigInt(fixture.contextFields[29]) + 1n
   ).toString();
 });
 

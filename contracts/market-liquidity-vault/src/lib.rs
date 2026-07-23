@@ -2,7 +2,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token,
-    Address, BytesN, Env,
+    Address, BytesN, Env, U256,
 };
 
 #[cfg(test)]
@@ -61,10 +61,22 @@ pub struct MarketSnapshot {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PaymentDestination {
+    pub commitment: BytesN<32>,
+    pub spend_public_key: U256,
+    pub viewing_public_key_x: U256,
+    pub viewing_public_key_y: U256,
+    pub note_id: U256,
+    pub blinding: U256,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExitIntent {
     pub shares_remaining: i128,
     pub minimum_payment_remaining: i128,
     pub destination: BytesN<32>,
+    pub payment_destination: PaymentDestination,
     pub expiry: u64,
     pub status: ExitStatus,
 }
@@ -597,6 +609,7 @@ impl MarketLiquidityVault {
         shares: i128,
         minimum_payment: i128,
         destination: BytesN<32>,
+        payment_destination: PaymentDestination,
         expiry: u64,
         expected_version: u64,
     ) -> Result<(), Error> {
@@ -604,7 +617,7 @@ impl MarketLiquidityVault {
         Self::require_version(&env, expected_version)?;
         if Self::get::<Phase>(&env, &DataKey::Phase) != Phase::Active
             || shares <= 0
-            || minimum_payment < 0
+            || minimum_payment <= 0
             || expiry <= env.ledger().timestamp()
         {
             return Err(Error::InvalidExit);
@@ -624,6 +637,7 @@ impl MarketLiquidityVault {
                 shares_remaining: shares,
                 minimum_payment_remaining: minimum_payment,
                 destination,
+                payment_destination,
                 expiry,
                 status: ExitStatus::Open,
             },
@@ -658,7 +672,6 @@ impl MarketLiquidityVault {
         conditional_lp_fees: i128,
         state_updated_at: u64,
         maximum_state_age: u64,
-        remaining_destination: BytesN<32>,
         expected_version: u64,
     ) -> Result<ExitFill, Error> {
         Self::require_controller(&env, &controller)?;
@@ -700,40 +713,14 @@ impl MarketLiquidityVault {
             .ok_or(Error::ExitNotFound)?;
         if intent.status != ExitStatus::Open
             || env.ledger().timestamp() > intent.expiry
-            || shares > intent.shares_remaining
+            || shares != intent.shares_remaining
+            || payment != intent.minimum_payment_remaining
         {
             return Err(Error::InvalidExit);
         }
-        let minimum_for_fill = if shares == intent.shares_remaining {
-            intent.minimum_payment_remaining
-        } else {
-            let numerator = intent
-                .minimum_payment_remaining
-                .checked_mul(shares)
-                .ok_or(Error::Arithmetic)?;
-            numerator
-                .checked_add(intent.shares_remaining - 1)
-                .ok_or(Error::Arithmetic)?
-                .checked_div(intent.shares_remaining)
-                .ok_or(Error::Arithmetic)?
-        };
-        if payment < minimum_for_fill {
-            return Err(Error::InvalidExit);
-        }
-
-        intent.shares_remaining = intent
-            .shares_remaining
-            .checked_sub(shares)
-            .ok_or(Error::Arithmetic)?;
-        intent.minimum_payment_remaining = intent
-            .minimum_payment_remaining
-            .checked_sub(minimum_for_fill)
-            .ok_or(Error::Arithmetic)?;
-        if intent.shares_remaining == 0 {
-            intent.status = ExitStatus::Matched;
-        } else {
-            intent.destination = remaining_destination;
-        }
+        intent.shares_remaining = 0;
+        intent.minimum_payment_remaining = 0;
+        intent.status = ExitStatus::Matched;
         env.storage().persistent().set(&key, &intent);
         Self::bump_key(&env, &key);
         let locked = Self::get::<i128>(&env, &DataKey::Locked);
