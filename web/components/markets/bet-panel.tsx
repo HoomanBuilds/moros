@@ -19,18 +19,22 @@ import { formatTokenAmount, privacyStakeForOrder } from "@/lib/stellar/amount";
 import { NETWORK } from "@/lib/network";
 import { unlockPositionBackup } from "@/lib/positions/backup";
 import { PLATFORM_FEE_BPS } from "@/lib/markets/deploy-constants";
+import { getPrivateConfig } from "@/lib/private/client";
+import { openPrivateWallet } from "@/lib/private/wallet";
+import { shieldUsdc } from "@/lib/private/actions";
 
 const STAGES: { key: BetStage; label: string }[] = [
-  { key: "securing", label: "Securing encrypted position recovery" },
-  { key: "hashing", label: "Hashing commitment" },
-  { key: "placing", label: "Placing order on-chain" },
-  { key: "proving", label: "Proving privately in your browser - this can take a few minutes" },
-  { key: "submitting", label: "Submitting ciphertext to committee" },
-  { key: "done", label: "Position placed privately" },
+  { key: "securing", label: "Unlocking private recovery" },
+  { key: "hashing", label: "Preparing the encrypted order" },
+  { key: "placing", label: "Checking the shared private vault" },
+  { key: "proving", label: "Generating the order proof in your browser" },
+  { key: "submitting", label: "Relaying the unlinkable order" },
+  { key: "done", label: "Order accepted into the private batch" },
 ];
 
 const YES = "#16c784";
 const NO = "#f0564a";
+const PRIVATE_ORDER_RESERVE = 10_250_000n;
 
 function SideButton({
   active,
@@ -73,12 +77,16 @@ export function BetPanel() {
   const [accountState, setAccountState] = useState<CollateralAccountState | null>(null);
   const [accountLoading, setAccountLoading] = useState(false);
   const [trustlineLoading, setTrustlineLoading] = useState(false);
+  const [privateStack, setPrivateStack] = useState(false);
+  const [privateBalance, setPrivateBalance] = useState<bigint | null>(null);
+  const [privateUnlocking, setPrivateUnlocking] = useState(false);
+  const [shielding, setShielding] = useState(false);
   const busy = stage !== null && stage !== "done";
   const rulesInvalid = data?.resolverType === "event" && !data.rulesVerified;
   const closed = data ? !data.acceptingOrders || rulesInvalid : false;
 
   const prob = side === "1" ? data?.probYes ?? null : data ? 1 - data.probYes : null;
-  const positionSize = Number(amount);
+  const positionSize = privateStack ? 1 : Number(amount);
   const feeBps = data?.feeBps ?? PLATFORM_FEE_BPS;
   const feeRate = feeBps / 10_000;
   const feeLabel = `${feeBps / 100}%`;
@@ -95,6 +103,20 @@ export function BetPanel() {
     stakeAtomic = null;
   }
   const insufficient = !!accountState && stakeAtomic !== null && accountState.balanceAtomic < stakeAtomic;
+
+  useEffect(() => {
+    let cancelled = false;
+    getPrivateConfig()
+      .then((config) => {
+        if (!cancelled) setPrivateStack(poolId === config.contracts.sharedVault);
+      })
+      .catch(() => {
+        if (!cancelled) setPrivateStack(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [poolId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,16 +152,70 @@ export function BetPanel() {
     setWarning("");
     setStage(null);
     try {
-      if (!accountState?.hasTrustline) throw new Error(`Enable ${collateral.code} before placing a bet`);
-      if (insufficient) throw new Error(`Insufficient ${collateral.code} balance`);
+      if (!privateStack && !accountState?.hasTrustline) throw new Error(`Enable ${collateral.code} before placing a bet`);
+      if (!privateStack && insufficient) throw new Error(`Insufficient ${collateral.code} balance`);
       setStage("securing");
       const backupKey = await unlockPositionBackup(address);
-      const result = await runBet({ side, amount, address, collateral, marketId, poolId, backupKey, onStage: setStage });
+      setStage("placing");
+      const result = await runBet({
+        side,
+        amount: privateStack ? "1" : amount,
+        address,
+        collateral,
+        marketId,
+        poolId,
+        backupKey,
+        onStage: setStage,
+      });
       if (!result.backupSynced) setWarning("Position placed, but encrypted cloud backup needs attention in Portfolio. Keep this browser data safe.");
-      setAccountState(await getCollateralAccountState(address, collateral));
+      if (privateStack) {
+        setPrivateBalance((await openPrivateWallet(address)).balance);
+      } else {
+        setAccountState(await getCollateralAccountState(address, collateral));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "private bet failed");
       setStage(null);
+    }
+  }
+
+  async function unlockPrivateBalance() {
+    setError("");
+    setPrivateUnlocking(true);
+    try {
+      setPrivateBalance((await openPrivateWallet(address)).balance);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Private balance could not be unlocked");
+    } finally {
+      setPrivateUnlocking(false);
+    }
+  }
+
+  async function shieldForBet() {
+    setError("");
+    setShielding(true);
+    try {
+      if (!accountState?.hasTrustline) throw new Error(`Enable ${collateral.code} before shielding funds`);
+      const amountAtomic = 2n * 10n ** BigInt(collateral.decimals);
+      if (accountState.balanceAtomic < amountAtomic) {
+        throw new Error(`Wallet needs at least 2 ${collateral.code}`);
+      }
+      const prior = privateBalance ?? 0n;
+      await shieldUsdc(address, amountAtomic);
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        const wallet = await openPrivateWallet(address);
+        if (wallet.balance > prior) {
+          setPrivateBalance(wallet.balance);
+          setAccountState(await getCollateralAccountState(address, collateral));
+          return;
+        }
+      }
+      throw new Error("Deposit confirmed, but the private indexer has not published the note yet");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "USDC deposit failed");
+    } finally {
+      setShielding(false);
     }
   }
 
@@ -195,18 +271,24 @@ export function BetPanel() {
 
       <div className="space-y-2">
         <span className="block text-xs font-mono text-muted-foreground uppercase tracking-wider">
-          Amount ({collateral.code})
+          {privateStack ? "Fixed batch position" : `Amount (${collateral.code})`}
         </span>
-        <Input
-          type="number"
-          min="1"
-          max="1000"
-          step="1"
-          value={amount}
-          disabled={busy || closed}
-          onChange={(e) => setAmount(e.target.value)}
-          className="h-11 border-white/15 bg-white/[0.04] text-base focus-visible:border-white/30"
-        />
+        {privateStack ? (
+          <div className="rounded-md border border-white/15 bg-white/[0.04] px-3 py-3 font-mono text-sm">
+            1 {side === "1" ? "YES" : "NO"} position
+          </div>
+        ) : (
+          <Input
+            type="number"
+            min="1"
+            max="1000"
+            step="1"
+            value={amount}
+            disabled={busy || closed}
+            onChange={(e) => setAmount(e.target.value)}
+            className="h-11 border-white/15 bg-white/[0.04] text-base focus-visible:border-white/30"
+          />
+        )}
         <div className="space-y-1.5 pt-1 font-mono text-xs text-muted-foreground">
           <div className="flex items-center justify-between">
             <span>Position size</span>
@@ -218,14 +300,32 @@ export function BetPanel() {
             <span>Estimated profit after fee</span>
             <span className="text-foreground">{netProfit !== null ? `~${netProfit.toFixed(2)} ${collateral.code}` : "--"}</span>
           </div>
-          <div className="flex items-center justify-between">
-            <span>Privacy bucket locked</span>
-            <span className="text-foreground">{stakeAmount ? `${stakeAmount} ${collateral.code}` : "--"}</span>
-          </div>
-          <p className="text-[10px] leading-snug text-muted-foreground/70">
-            Your exact position amount stays encrypted inside a public collateral bucket. Unused collateral is returned at redemption. Moros charges {feeLabel} only on winning profit.
-          </p>
-          {address && accountState?.hasTrustline && (
+          {privateStack ? (
+            <>
+              <div className="flex items-center justify-between">
+                <span>Batch pricing</span>
+                <span className="text-foreground">Same clearing price</span>
+              </div>
+              <p className="text-[10px] leading-snug text-muted-foreground/70">
+                Eight orders clear together, with at least two orders on each side. Your side stays encrypted until aggregate batch settlement. The fee depends on the batch clearing probability and never exceeds the market cap.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span>Privacy bucket locked</span>
+                <span className="text-foreground">{stakeAmount ? `${stakeAmount} ${collateral.code}` : "--"}</span>
+              </div>
+              <p className="text-[10px] leading-snug text-muted-foreground/70">
+                Your exact position amount stays encrypted inside a public collateral bucket. Unused collateral is returned at redemption. Moros charges {feeLabel} only on winning profit.
+              </p>
+            </>
+          )}
+          {privateStack && privateBalance !== null ? (
+            <p className="text-[10px] leading-snug text-muted-foreground/70">
+              Private balance: {formatTokenAmount(privateBalance, collateral.decimals, 2)} {collateral.code}
+            </p>
+          ) : address && accountState?.hasTrustline && (
             <p className="text-[10px] leading-snug text-muted-foreground/70">
               Available: {formatTokenAmount(accountState.balanceAtomic, collateral.decimals, 2)} {collateral.code}
             </p>
@@ -250,7 +350,7 @@ export function BetPanel() {
             Position placed privately
           </div>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Your side and exact position amount are encrypted, while the collateral bucket is public. The committee only decrypts a batch net. Track the position under Portfolio and redeem or refund when eligible.
+            Your side is encrypted and every order in this batch receives the same clearing price for its side. Track the position under Portfolio and claim or refund when eligible.
           </p>
           <Button className="w-full" onClick={reset}>Place another bet</Button>
         </div>
@@ -258,6 +358,28 @@ export function BetPanel() {
         <Button className="w-full" onClick={connect}>
           Connect wallet to bet
         </Button>
+      ) : privateStack && privateBalance === null ? (
+        <Button className="w-full" disabled={privateUnlocking} onClick={unlockPrivateBalance}>
+          {privateUnlocking && <Spinner />}
+          {privateUnlocking ? "Unlocking private balance" : "Unlock private balance"}
+        </Button>
+      ) : privateStack && privateBalance !== null && privateBalance < PRIVATE_ORDER_RESERVE ? (
+        accountState && !accountState.hasTrustline ? (
+          <div className="space-y-3">
+            <Button className="w-full" disabled={trustlineLoading} onClick={enableCollateral}>
+              {trustlineLoading && <Spinner />}
+              {trustlineLoading ? `Enabling ${collateral.code}` : `Enable ${collateral.code}`}
+            </Button>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              The trustline is needed only to move public testnet USDC into your private Moros balance.
+            </p>
+          </div>
+        ) : (
+          <Button className="w-full" disabled={shielding || accountLoading} onClick={shieldForBet}>
+            {shielding && <Spinner />}
+            {shielding ? "Shielding 2 USDC" : "Shield 2 USDC to bet"}
+          </Button>
+        )
       ) : accountLoading ? (
         <Button className="w-full" disabled>
           <Spinner />
@@ -279,7 +401,7 @@ export function BetPanel() {
           )}
         </div>
       ) : (
-        <Button className="w-full" disabled={busy || insufficient || !stakeAtomic} onClick={submit}>
+        <Button className="w-full" disabled={busy || (!privateStack && (insufficient || !stakeAtomic))} onClick={submit}>
           {busy && <Spinner />}
           {busy ? "Placing private bet" : insufficient ? `Insufficient ${collateral.code}` : "Place private bet"}
         </Button>

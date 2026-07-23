@@ -4,12 +4,13 @@ const SCALE = 1n << 32n;
 
 export type MarketOutcome = "YES" | "NO" | "VOID" | "LIVE";
 export type ChainOrderStatus = "Pending" | "Included" | "Refunded" | "Redeemed";
-export type PositionAction = "retry" | "claim" | "recover" | "refund" | null;
+export type PositionAction = "retry" | "claim" | "recover" | "refund" | "recover-change" | null;
 export type PositionLifecycle =
   | "awaiting_submission"
   | "awaiting_batch"
   | "active"
   | "closed"
+  | "recover_execution_change"
   | "claim_winnings"
   | "recover_collateral"
   | "lost"

@@ -285,6 +285,20 @@ export async function fetchFundingMarkets(): Promise<RegistryMarket[]> {
     .map(mapRegistryMarket);
 }
 
+export async function fetchLiquidityMarkets(): Promise<RegistryMarket[]> {
+  const client = getBrowserClient();
+  if (!client) return [];
+  const { data, error } = await client
+    .from("markets_meta")
+    .select(REGISTRY_SELECT)
+    .not("liquidity_vault_id", "is", null)
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+  return (data as Record<string, unknown>[])
+    .filter((row) => row.market_id && row.liquidity_vault_id)
+    .map(mapRegistryMarket);
+}
+
 export async function saveMarketToRegistry(entry: {
   marketId: string;
   poolId?: string;

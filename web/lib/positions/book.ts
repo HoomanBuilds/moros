@@ -18,6 +18,12 @@ export type Position = {
   backupError?: string;
   submissionError?: string;
   settlementTxHash?: string;
+  changeTxHash?: string;
+  protocol?: "shared-vault";
+  privateEpoch?: string;
+  privateSequence?: string;
+  executionChangeNullifier?: string;
+  stakeAmountAtomic?: string;
 };
 
 const KEY = "moros.positions";
@@ -52,6 +58,39 @@ function normalizePosition(value: unknown, fallbackAddress?: string): Position |
   if (!Number.isFinite(placedAt) || placedAt <= 0) return null;
   const settlementTxHash = row.settlementTxHash ? String(row.settlementTxHash) : undefined;
   if (settlementTxHash && !TX_HASH.test(settlementTxHash)) return null;
+  const changeTxHash = row.changeTxHash ? String(row.changeTxHash) : undefined;
+  if (changeTxHash && !TX_HASH.test(changeTxHash)) return null;
+  const protocol = row.protocol === "shared-vault" ? "shared-vault" : undefined;
+  const privateEpoch = row.privateEpoch === undefined
+    ? undefined
+    : String(row.privateEpoch);
+  const privateSequence = row.privateSequence === undefined
+    ? undefined
+    : String(row.privateSequence);
+  const executionChangeNullifier = row.executionChangeNullifier === undefined
+    ? undefined
+    : String(row.executionChangeNullifier);
+  const stakeAmountAtomic = row.stakeAmountAtomic === undefined
+    ? undefined
+    : String(row.stakeAmountAtomic);
+  if (
+    protocol &&
+    (
+      !privateEpoch ||
+      !DECIMAL.test(privateEpoch) ||
+      !privateSequence ||
+      !DECIMAL.test(privateSequence) ||
+      BigInt(privateSequence) === 0n ||
+      !executionChangeNullifier ||
+      !DECIMAL.test(executionChangeNullifier) ||
+      BigInt(executionChangeNullifier) === 0n ||
+      !stakeAmountAtomic ||
+      !DECIMAL.test(stakeAmountAtomic) ||
+      BigInt(stakeAmountAtomic) === 0n
+    )
+  ) {
+    return null;
+  }
   return {
     address,
     market,
@@ -70,6 +109,12 @@ function normalizePosition(value: unknown, fallbackAddress?: string): Position |
     backupError: row.backupError ? String(row.backupError) : undefined,
     submissionError: row.submissionError ? String(row.submissionError) : undefined,
     settlementTxHash,
+    changeTxHash,
+    protocol,
+    privateEpoch,
+    privateSequence,
+    executionChangeNullifier,
+    stakeAmountAtomic,
   };
 }
 
@@ -159,7 +204,7 @@ export function listPositions(address: string): Position[] {
   return [...(store()[address] ?? [])];
 }
 
-export function updatePosition(address: string, commitment: string, update: Partial<Pick<Position, "pool" | "status" | "backupStatus" | "backupError" | "submissionError" | "settlementTxHash">>) {
+export function updatePosition(address: string, commitment: string, update: Partial<Pick<Position, "pool" | "status" | "backupStatus" | "backupError" | "submissionError" | "settlementTxHash" | "changeTxHash">>) {
   const book = store();
   const position = (book[address] ?? []).find((row) => row.commitment === commitment);
   if (!position) return;

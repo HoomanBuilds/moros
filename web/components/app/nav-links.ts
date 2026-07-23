@@ -12,6 +12,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { name: "Markets", href: "/app" },
       { name: "Create", href: "/app/create" },
+      { name: "Liquidity", href: "/app/liquidity" },
       { name: "Portfolio", href: "/app/portfolio" },
       { name: "Profile", href: "/app/profile" },
     ],

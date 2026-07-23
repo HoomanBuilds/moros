@@ -9,6 +9,8 @@ import type { PrivateArchiveKeys } from "@/lib/private-sync/crypto";
 import type { Position } from "@/lib/positions/book";
 import { NETWORK, type CollateralAsset } from "@/lib/network";
 import { privacyStakeForOrder } from "@/lib/stellar/amount";
+import { getPrivateConfig } from "@/lib/private/client";
+import { placePrivateOrder } from "@/lib/private/actions";
 
 const R = 6554484396890773809930967563523245729705921265872317281365359162392183254199n;
 
@@ -27,6 +29,58 @@ export async function runBet(
   { side: BetSide; amount: string; address: string; collateral: CollateralAsset; marketId: string; poolId: string; backupKey: PrivateArchiveKeys; onStage: (s: BetStage) => void }
 ) {
   if (collateral.sac !== NETWORK.collateral.sac) throw new Error("Moros testnet markets require Stellar USDC");
+  const privateConfig = await getPrivateConfig();
+  if (poolId === privateConfig.contracts.sharedVault) {
+    if (amount !== "1") throw new Error("Private batches currently use one fixed position per order");
+    onStage("hashing");
+    onStage("proving");
+    const placed = await placePrivateOrder({
+      address,
+      market: marketId,
+      side: side === "1" ? 1 : 0,
+      onStatus: (status) => {
+        if (status.includes("Relaying")) onStage("submitting");
+      },
+    });
+    const stakeUnits = (
+      (placed.positionBudget + 10n ** BigInt(collateral.decimals) - 1n) /
+      10n ** BigInt(collateral.decimals)
+    ).toString();
+    const position: Position = {
+      address,
+      market: marketId,
+      pool: poolId,
+      side,
+      amount: "1",
+      stakeAmount: stakeUnits,
+      stakeAmountAtomic: placed.positionBudget.toString(),
+      collateralCode: collateral.code,
+      secret: placed.encryptionRandomness.toString(),
+      nullifier: placed.positionNullifier.toString(),
+      executionChangeNullifier: placed.executionChangeNullifier.toString(),
+      commitment: placed.positionCommitment.toString(),
+      txHash: placed.hash,
+      placedAt: Date.now(),
+      status: "submitted",
+      backupStatus: "local",
+      protocol: "shared-vault",
+      privateEpoch: placed.epoch.toString(),
+      privateSequence: placed.sequence.toString(),
+    };
+    addPosition(position);
+    let backupSynced = false;
+    try {
+      await savePositionBackup(position, backupKey);
+      backupSynced = true;
+    } catch (cause) {
+      updatePosition(address, position.commitment, {
+        backupStatus: "local",
+        backupError: cause instanceof Error ? cause.message : "Encrypted backup failed",
+      });
+    }
+    onStage("done");
+    return { backupSynced };
+  }
   await registerPool(marketId, poolId);
   const pk = await getPk();
 

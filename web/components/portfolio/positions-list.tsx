@@ -33,6 +33,10 @@ import {
 import { findMarket } from "@/lib/markets/registry";
 import { retryBetSubmission, type BetStage } from "@/lib/bet/flow";
 import { runRedeem, type RedeemStage } from "@/lib/redeem/flow";
+import {
+  getPrivatePositionState,
+  runPrivatePositionAction,
+} from "@/lib/private/actions";
 import { NETWORK } from "@/lib/network";
 import { formatTokenAmount } from "@/lib/stellar/amount";
 import { outcomeLabel } from "@/lib/stellar/derive";
@@ -51,6 +55,8 @@ type ChainState = {
   action?: PositionAction;
   settlement?: SettlementEstimate;
   feeBps?: number;
+  privateChangeAmount?: bigint;
+  privateTerminalAmount?: bigint;
 };
 
 const SIDE_STYLE = {
@@ -63,6 +69,7 @@ const LIFECYCLE: Record<PositionLifecycle, { label: string; detail: string; tone
   awaiting_batch: { label: "Awaiting batch", detail: "The committee has the encrypted order and is waiting for a private batch.", tone: "#69a7ff" },
   active: { label: "Active", detail: "The order is included and the market is still open.", tone: "#69a7ff" },
   closed: { label: "Resolving", detail: "Betting is closed. Final batching and oracle resolution are pending.", tone: "#f5b942" },
+  recover_execution_change: { label: "USDC ready", detail: "The batch executed. Recover the unused order budget without revealing the position side.", tone: "#16c784" },
   claim_winnings: { label: "Won", detail: "Winnings and unused collateral are ready to claim.", tone: "#16c784" },
   recover_collateral: { label: "Lost", detail: "No winnings were earned. Remaining unused USDC is ready to recover.", tone: "#f0564a" },
   lost: { label: "Lost", detail: "This position earned no winnings and has no remaining collateral to recover.", tone: "#f0564a" },
@@ -72,7 +79,7 @@ const LIFECYCLE: Record<PositionLifecycle, { label: string; detail: string; tone
   refunded: { label: "Refunded", detail: "The full public collateral bucket was returned.", tone: "#a1a1aa" },
 };
 
-const ACTIVE = new Set<PositionLifecycle>(["awaiting_submission", "awaiting_batch", "active", "closed"]);
+const ACTIVE = new Set<PositionLifecycle>(["awaiting_submission", "awaiting_batch", "active", "closed", "recover_execution_change"]);
 const SETTLED = new Set<PositionLifecycle>(["claimed", "recovered", "refunded", "lost"]);
 
 function queryPosition(position: Position) {
@@ -82,6 +89,66 @@ function queryPosition(position: Position) {
     return Promise.resolve<ChainState>({
       supported: false,
       title: entry?.title ?? "Unavailable test market",
+    });
+  }
+  if (position.protocol === "shared-vault") {
+    if (
+      position.privateEpoch === undefined ||
+      position.privateSequence === undefined ||
+      position.executionChangeNullifier === undefined ||
+      position.stakeAmountAtomic === undefined
+    ) {
+      return Promise.reject(new Error("Private activity record is incomplete"));
+    }
+    return Promise.all([
+      getMarketInfo(position.market),
+      getPrivatePositionState({
+        address: position.address,
+        market: position.market,
+        epochNumber: BigInt(position.privateEpoch),
+        sequence: BigInt(position.privateSequence),
+        positionCommitment: BigInt(position.commitment),
+        side: position.side === "1" ? 1 : 0,
+        positionBudget: BigInt(position.stakeAmountAtomic),
+        executionChangeNullifier: BigInt(position.executionChangeNullifier),
+        terminalNullifier: BigInt(position.nullifier),
+      }),
+    ]).then(([info, privateState]) => {
+      const winner =
+        (position.side === "1" && privateState.outcome === "YES") ||
+        (position.side === "0" && privateState.outcome === "NO");
+      const now = Math.floor(Date.now() / 1_000);
+      let lifecycle: PositionLifecycle;
+      if (privateState.terminalSpent) {
+        lifecycle = privateState.outcome === "VOID" ||
+          privateState.orderStatus === "Pending"
+          ? "refunded"
+          : winner
+            ? "claimed"
+            : "lost";
+      } else if (privateState.action === "recover-change") {
+        lifecycle = "recover_execution_change";
+      } else if (privateState.action === "claim") {
+        lifecycle = "claim_winnings";
+      } else if (privateState.action === "refund") {
+        lifecycle = "full_refund";
+      } else if (privateState.orderStatus === "Pending") {
+        lifecycle = "awaiting_batch";
+      } else if (privateState.outcome === "LIVE") {
+        lifecycle = now < Number(info.expiry) ? "active" : "closed";
+      } else {
+        lifecycle = winner ? "claim_winnings" : "lost";
+      }
+      return {
+        supported: true,
+        title: entry?.title ?? `${String(info.asset)} price market`,
+        poolId,
+        outcome: privateState.outcome,
+        lifecycle,
+        action: privateState.action,
+        privateChangeAmount: privateState.changeAmount,
+        privateTerminalAmount: privateState.terminalAmount,
+      } satisfies ChainState;
     });
   }
   return Promise.all([
@@ -140,9 +207,15 @@ function queryPosition(position: Position) {
 }
 
 function actionLabel(action: PositionAction, busy: boolean): string {
-  if (busy) return action === "refund" ? "Refunding" : action === "retry" ? "Retrying" : "Proving claim";
+  if (busy) {
+    if (action === "refund") return "Refunding";
+    if (action === "retry") return "Retrying";
+    if (action === "recover-change") return "Recovering";
+    return "Proving claim";
+  }
   if (action === "claim") return "Claim winnings";
   if (action === "recover") return "Recover remaining USDC";
+  if (action === "recover-change") return "Recover unused USDC";
   if (action === "refund") return "Claim full refund";
   if (action === "retry") return "Retry private submission";
   return "Unavailable";
@@ -159,7 +232,7 @@ function PositionActionButton({
 }) {
   const address = useWalletAddress();
   const [busy, setBusy] = useState(false);
-  const [stage, setStage] = useState<RedeemStage | BetStage | null>(null);
+  const [stage, setStage] = useState<RedeemStage | BetStage | string | null>(null);
   const [error, setError] = useState("");
   const action = state.action;
 
@@ -170,7 +243,35 @@ function PositionActionButton({
     try {
       let status: "submitted" | "redeemed" | "refunded";
       let settlementTxHash: string | undefined;
-      if (action === "retry") {
+      let changeTxHash: string | undefined;
+      if (position.protocol === "shared-vault") {
+        if (
+          action === "retry" ||
+          action === "recover" ||
+          position.privateEpoch === undefined ||
+          position.privateSequence === undefined
+        ) {
+          throw new Error("Private position action is incompatible");
+        }
+        const result = await runPrivatePositionAction({
+          address,
+          market: position.market,
+          epochNumber: BigInt(position.privateEpoch),
+          sequence: BigInt(position.privateSequence),
+          positionCommitment: BigInt(position.commitment),
+          side: position.side === "1" ? 1 : 0,
+          encryptionRandomness: BigInt(position.secret),
+          action,
+          onStatus: setStage,
+        });
+        if (action === "recover-change") {
+          status = "submitted";
+          changeTxHash = result.hash;
+        } else {
+          status = action === "refund" ? "refunded" : "redeemed";
+          settlementTxHash = result.hash;
+        }
+      } else if (action === "retry") {
         const backupKey = await unlockPositionBackup(address);
         await retryBetSubmission({ position, poolId: state.poolId, backupKey, onStage: setStage });
         status = "submitted";
@@ -189,10 +290,19 @@ function PositionActionButton({
         settlementTxHash = result.txHash;
         status = "redeemed";
       }
-      updatePosition(address, position.commitment, { status, settlementTxHash });
+      updatePosition(address, position.commitment, {
+        status,
+        settlementTxHash,
+        changeTxHash,
+      });
       try {
         const backupKey = await preparePositionBackup(address);
-        await savePositionBackup({ ...position, status, settlementTxHash }, backupKey);
+        await savePositionBackup({
+          ...position,
+          status,
+          settlementTxHash,
+          changeTxHash,
+        }, backupKey);
       } catch (cause) {
         updatePosition(address, position.commitment, {
           backupStatus: "local",
@@ -277,7 +387,11 @@ function PositionCard({
           </div>
           <div>
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">USDC locked</p>
-            <p className="mt-1 text-sm">{position.stakeAmount} USDC</p>
+            <p className="mt-1 text-sm">
+              {position.stakeAmountAtomic
+                ? formatTokenAmount(BigInt(position.stakeAmountAtomic), NETWORK.collateral.decimals, 4)
+                : position.stakeAmount} USDC
+            </p>
           </div>
           <div>
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Outcome</p>
@@ -300,10 +414,33 @@ function PositionCard({
             </div>
           </div>
         )}
+        {state?.privateChangeAmount !== undefined &&
+          (state.action === "recover-change" || position.changeTxHash) && (
+          <div className="rounded-md border border-foreground/10 bg-foreground/[0.025] p-4">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Unused order budget</p>
+            <p className="mt-1 text-sm font-medium">
+              {formatTokenAmount(state.privateChangeAmount, NETWORK.collateral.decimals, 4)} USDC
+            </p>
+          </div>
+        )}
+        {state?.privateTerminalAmount !== undefined &&
+          state.privateTerminalAmount > 0n &&
+          (state.action === "claim" || lifecycle === "claimed") && (
+          <div className="rounded-md border border-foreground/10 bg-foreground/[0.025] p-4">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Private payout</p>
+            <p className="mt-1 text-sm font-medium">
+              {formatTokenAmount(state.privateTerminalAmount, NETWORK.collateral.decimals, 4)} USDC
+            </p>
+          </div>
+        )}
         {showsRefund && (
           <div className="rounded-md border border-foreground/10 bg-foreground/[0.025] p-4">
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Full refund</p>
-            <p className="mt-1 text-sm font-medium">{position.stakeAmount} USDC</p>
+            <p className="mt-1 text-sm font-medium">
+              {state?.privateTerminalAmount !== undefined
+                ? formatTokenAmount(state.privateTerminalAmount, NETWORK.collateral.decimals, 4)
+                : position.stakeAmount} USDC
+            </p>
           </div>
         )}
 
@@ -320,6 +457,11 @@ function PositionCard({
           {position.settlementTxHash && (
             <a href={NETWORK.transactionExplorer(position.settlementTxHash)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
               Settlement transaction <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+          {position.changeTxHash && (
+            <a href={NETWORK.transactionExplorer(position.changeTxHash)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
+              Change recovery transaction <ExternalLink className="h-3 w-3" />
             </a>
           )}
           <span className={position.backupStatus === "synced" ? "text-emerald-400" : "text-amber-300"}>
