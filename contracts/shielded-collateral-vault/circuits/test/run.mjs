@@ -82,6 +82,7 @@ generate("deposit");
 generate("transfer");
 generate("withdraw");
 generate("order");
+run("node", [resolve(here, "generate-liquidity-fixtures.mjs")]);
 
 compile("output_note", resolve(here, "output_note.circom"));
 validWitness("output_note");
@@ -112,6 +113,10 @@ for (const name of ["deposit", "transfer", "withdraw"]) {
 }
 compile("order");
 validWitness("order");
+for (const name of ["liquidity_fund", "liquidity_exit", "liquidity_redeem"]) {
+  compile(name);
+  validWitness(name);
+}
 
 expectInvalid("transfer", "value-creation", (fixture) => {
   fixture.outAmount[0] = (BigInt(fixture.outAmount[0]) + 1n).toString();
@@ -145,5 +150,22 @@ expectInvalid("order", "encryption-randomness", (fixture) => {
     BigInt(fixture.encryptionRandomness) + 1n
   ).toString();
 });
+expectInvalid("liquidity_fund", "share-amount", (fixture) => {
+  fixture.outAmount[1] = (BigInt(fixture.outAmount[1]) + 1n).toString();
+});
+expectInvalid("liquidity_fund", "funding-conservation", (fixture) => {
+  fixture.outAmount[0] = (BigInt(fixture.outAmount[0]) + 1n).toString();
+});
+expectInvalid("liquidity_exit", "wrong-market-payload", (fixture) => {
+  fixture.inPayloadHash[0] = (
+    BigInt(fixture.inPayloadHash[0]) + 1n
+  ).toString();
+});
+expectInvalid("liquidity_exit", "share-conservation", (fixture) => {
+  fixture.outAmount[1] = (BigInt(fixture.outAmount[1]) + 1n).toString();
+});
+expectInvalid("liquidity_redeem", "terminal-remainder", (fixture) => {
+  fixture.outAmount[1] = "1";
+});
 
-console.log("private balance and order circuit fixtures passed");
+console.log("private balance, order, and liquidity circuit fixtures passed");

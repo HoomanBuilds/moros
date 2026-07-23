@@ -145,6 +145,21 @@ Accepted orders use a depth-6 Poseidon2 Merkle tree with capacity 64, matching t
 
 Refund, execution-change, and claim calls do not publish an acceptance sequence or position commitment. Their circuits prove private membership under the sealed accepted or allocation root, and their purpose-specific nullifiers prevent reuse.
 
+## Liquidity proof bindings
+
+Liquidity funding, pre-activation exit, and terminal redemption use the liquidity binding:
+
+| Binding index | Field |
+| --- | --- |
+| 0 to 1 | Market liquidity-vault address limbs |
+| 2 | Commitment of the new or remaining LP-share note |
+| 3 | Shares minted or burned |
+| 4 | USDC assets transferred |
+| 5 | Expected liquidity-vault state version |
+| 6 to 23 | Zero |
+
+An LP-share note uses purpose `3`, stores its share count as the note amount, and binds `Poseidon2(1011, liquidityVaultHigh, liquidityVaultLow)` as its payload. Funding spends liquid USDC notes, returns liquid change, and creates the exact share note named by the binding. Exit and terminal redemption spend only LP-share notes for that liquidity vault, create the exact public USDC amount as a new shielded balance note, and return any unburned shares in the bound output commitment. A full redemption produces a unique zero-value padding note in the remaining-share slot.
+
 ## Allocation binding
 
 | Binding index | Field |
