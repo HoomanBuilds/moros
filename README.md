@@ -164,7 +164,7 @@ Production registration validates market and pool linkage, collateral, resolver 
 - /app/market/[id]: lifecycle-aware market terminal, betting, rules, comments, and resolution actions
 - /app/portfolio: position-specific redemption and refunds
 
-Social features use wallet-signature authentication with Supabase. Comment images are validated before upload and associated with the authenticated wallet comment. Trade secrets never go to Supabase.
+Social features use wallet-signature authentication with a public Supabase project. Comment images are validated before upload and associated with the authenticated wallet comment. Private activity uses a separate server-only Supabase project containing only opaque, fixed-size encrypted pages. Trade secrets never enter the public social database or plaintext private-sync columns.
 
 ## Testnet deployments
 

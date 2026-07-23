@@ -20,12 +20,13 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
-export function backupMessage(address: string, network: string): string {
+export function backupMessage(address: string, network: string, vault = "standalone-export"): string {
   return [
-    "Moros private position recovery",
+    "Moros private activity recovery",
     `Network: ${network}`,
+    `Vault: ${vault}`,
     `Wallet: ${address}`,
-    "Purpose: encrypt and recover private position notes",
+    "Purpose: derive isolated encryption and synchronization keys",
     "This signature does not submit a transaction or authorize spending.",
   ].join("\n");
 }

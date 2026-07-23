@@ -1,8 +1,8 @@
-# Supabase social layer
+# Supabase boundaries
 
-This app can optionally use Supabase for a public social layer: profiles, market metadata, comments, reactions, and watchlists. It is entirely optional. With no Supabase project configured, the app builds and trades normally, and every social feature is simply inert.
+Moros uses two separate Supabase boundaries. The public social project stores profiles, market metadata, comments, reactions, watchlists, and public media. The private sync project stores only opaque encrypted activity pages and must use separate server-only credentials.
 
-## Setup
+## Public social project
 
 1. Create a Supabase project at https://supabase.com.
 2. Open the SQL editor and run `supabase/schema.sql` from this directory. It creates the social tables, one-time wallet sign-in challenges, row level security policies, and the avatar, market banner, and comment image storage buckets.
@@ -17,4 +17,19 @@ This app can optionally use Supabase for a public social layer: profiles, market
 
 ## Privacy boundary
 
-The social layer is public and opt-in, tied only to a connected wallet address, and is completely separate from the trade path. No order openings, amounts, sides, secrets, nullifiers, or proof witnesses are sent to Supabase. A user can create, bet, resolve, claim, and refund without touching Supabase, though a market will not appear in the shared off-chain catalog until its public metadata is listed.
+The social layer is public and opt-in, tied only to a connected wallet address, and separate from the trade path. No order openings, amounts, sides, secrets, nullifiers, or proof witnesses are sent to this project.
+
+## Private activity sync project
+
+1. Create a separate Supabase project.
+2. Apply `supabase/migrations/20260723000000_opaque_private_activity_sync.sql`.
+3. Set `PRIVATE_SYNC_SUPABASE_URL` and `PRIVATE_SYNC_SUPABASE_SERVICE_ROLE_KEY` only in the server deployment.
+4. Set `NEXT_PUBLIC_SHARED_VAULT_ID` to the deployed shared vault.
+
+The browser never opens a Supabase session for private activity. A dedicated API route accepts fixed-shape requests signed by an archive key derived in the browser from a deterministic wallet recovery signature. The server writes with the private project's service role.
+
+The private project stores only opaque bucket and page IDs, a derived verification key, schema and generation numbers, fixed-size AES-256-GCM ciphertext, nonces, ciphertext hashes, and server timestamps. Wallet addresses, market IDs, transaction hashes, commitments, nullifiers, sides, amounts, statuses, LP shares, and exact action times are encrypted inside each fixed-size page.
+
+Writes use compare-and-swap generations. Request nonces are single-use and expire. The browser merges a remote snapshot with validated local records and retries a generation conflict. Supabase is a recovery cache, not the source of truth for balances, ownership, market state, claims, or refunds.
+
+The gateway still observes request IP addresses and timing. This design prevents database administrators from reading activity contents, but it does not claim network-level anonymity.

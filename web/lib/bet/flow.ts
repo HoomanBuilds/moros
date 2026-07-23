@@ -5,6 +5,7 @@ import { getPk, getProof, postOrder, registerPool } from "@/lib/committee/client
 import { placeOrder } from "@/lib/stellar/write";
 import { addPosition, updatePosition } from "@/lib/positions/book";
 import { savePositionBackup } from "@/lib/positions/backup";
+import type { PrivateArchiveKeys } from "@/lib/private-sync/crypto";
 import type { Position } from "@/lib/positions/book";
 import { NETWORK, type CollateralAsset } from "@/lib/network";
 import { privacyStakeForOrder } from "@/lib/stellar/amount";
@@ -23,7 +24,7 @@ export type BetStage = "securing" | "hashing" | "placing" | "proving" | "submitt
 
 export async function runBet(
   { side, amount, address, collateral, marketId, poolId, backupKey, onStage }:
-  { side: BetSide; amount: string; address: string; collateral: CollateralAsset; marketId: string; poolId: string; backupKey: CryptoKey; onStage: (s: BetStage) => void }
+  { side: BetSide; amount: string; address: string; collateral: CollateralAsset; marketId: string; poolId: string; backupKey: PrivateArchiveKeys; onStage: (s: BetStage) => void }
 ) {
   if (collateral.sac !== NETWORK.collateral.sac) throw new Error("Moros testnet markets require Stellar USDC");
   await registerPool(marketId, poolId);
@@ -100,7 +101,7 @@ export async function retryBetSubmission({
 }: {
   position: Position;
   poolId: string;
-  backupKey?: CryptoKey;
+  backupKey?: PrivateArchiveKeys;
   onStage: (stage: BetStage) => void;
 }) {
   await registerPool(position.market, poolId);

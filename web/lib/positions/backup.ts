@@ -2,78 +2,105 @@
 
 import { getKit } from "@/lib/wallet";
 import { NETWORK } from "@/lib/network";
-import { getBrowserClient } from "@/lib/supabase/client";
-import { signInWithWallet } from "@/lib/supabase/auth";
-import { backupMessage, decryptPosition, deriveBackupKey, encryptPosition } from "./crypto";
+import {
+  readPrivateArchive,
+  registerPrivateArchive,
+  writePrivateArchive,
+} from "@/lib/private-sync/client";
+import {
+  derivePrivateArchiveKeys,
+  joinArchivePages,
+  splitArchivePages,
+  type PrivateArchiveKeys,
+} from "@/lib/private-sync/crypto";
+import { backupMessage, decryptPosition, encryptPosition } from "./crypto";
 import { listPositions, mergePositions, updatePosition, type Position } from "./book";
 
-const unlockedKeys = new Map<string, CryptoKey>();
+const unlockedKeys = new Map<string, PrivateArchiveKeys>();
+const CONTRACT = /^C[A-Z2-7]{55}$/u;
 
-async function ensureWalletSession(address: string) {
-  const client = getBrowserClient();
-  if (!client) throw new Error("Encrypted position backup is not configured");
-  const { data } = await client.auth.getSession();
-  if (data.session?.user.app_metadata?.wallet === address) return client;
-  const result = await signInWithWallet(address);
-  if (!result.ok) throw new Error(result.error);
-  return client;
+function archiveVault(): string {
+  const configured = process.env.NEXT_PUBLIC_SHARED_VAULT_ID || NETWORK.poolId;
+  if (!CONTRACT.test(configured)) throw new Error("Private activity sync vault is not configured");
+  return configured;
 }
 
-export async function unlockPositionBackup(address: string): Promise<CryptoKey> {
-  const existing = unlockedKeys.get(address);
+export async function unlockPositionBackup(address: string): Promise<PrivateArchiveKeys> {
+  const vault = archiveVault();
+  const cacheKey = `${address}:${NETWORK.id}:${vault}`;
+  const existing = unlockedKeys.get(cacheKey);
   if (existing) return existing;
-  const message = backupMessage(address, NETWORK.id);
+  const message = backupMessage(address, NETWORK.id, vault);
   const { signedMessage } = await getKit().signMessage(message, { address });
-  const key = await deriveBackupKey(address, NETWORK.id, signedMessage);
-  unlockedKeys.set(address, key);
-  return key;
+  const keys = await derivePrivateArchiveKeys(address, NETWORK.id, vault, signedMessage);
+  unlockedKeys.set(cacheKey, keys);
+  return keys;
 }
 
-export async function preparePositionBackup(address: string): Promise<CryptoKey> {
-  await ensureWalletSession(address);
-  return unlockPositionBackup(address);
+export async function preparePositionBackup(address: string): Promise<PrivateArchiveKeys> {
+  const keys = await unlockPositionBackup(address);
+  await registerPrivateArchive(keys);
+  return keys;
 }
 
-export async function savePositionBackup(position: Position, key: CryptoKey): Promise<void> {
-  const client = await ensureWalletSession(position.address);
-  if (!position.pool) throw new Error("Position pool is missing");
-  const encrypted = await encryptPosition(position, key);
-  const { error } = await client.from("private_positions").upsert({
-    wallet: position.address,
-    commitment: position.commitment,
-    market_id: position.market,
-    pool_id: position.pool,
-    tx_hash: position.txHash,
-    placed_at: new Date(position.placedAt).toISOString(),
-    ciphertext: encrypted.ciphertext,
-    encryption_iv: encrypted.iv,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "wallet,commitment" });
-  if (error) throw new Error(error.message);
+function assertOwner(position: Position, keys: PrivateArchiveKeys) {
+  if (position.address !== keys.address) throw new Error("Private activity key does not match this wallet");
+}
+
+async function synchronize(
+  address: string,
+  keys: PrivateArchiveKeys,
+  includeLocal: boolean,
+): Promise<Position[]> {
+  if (keys.address !== address) throw new Error("Private activity key does not match this wallet");
+  await registerPrivateArchive(keys);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const snapshot = await readPrivateArchive(keys);
+    const remote = snapshot.pages.length === 0 ? [] : await joinArchivePages(keys, snapshot.pages);
+    if (!includeLocal) return remote;
+    mergePositions(address, remote);
+    const positions = listPositions(address);
+    const pages = await splitArchivePages(keys, positions);
+    try {
+      await writePrivateArchive(keys, snapshot.generation, pages);
+      return positions;
+    } catch (error) {
+      if (attempt === 2 || !(error instanceof Error && "generation" in error)) throw error;
+    }
+  }
+  throw new Error("Private activity archive could not be synchronized");
+}
+
+export async function savePositionBackup(
+  position: Position,
+  keys: PrivateArchiveKeys,
+): Promise<void> {
+  assertOwner(position, keys);
+  mergePositions(position.address, [position]);
+  await synchronize(position.address, keys, true);
   updatePosition(position.address, position.commitment, {
     backupStatus: "synced",
     backupError: undefined,
   });
 }
 
-export async function restorePositionBackups(address: string, key?: CryptoKey): Promise<number> {
-  const client = await ensureWalletSession(address);
-  const backupKey = key ?? await unlockPositionBackup(address);
-  const { data, error } = await client
-    .from("private_positions")
-    .select("ciphertext, encryption_iv")
-    .eq("wallet", address)
-    .order("placed_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  const positions: Position[] = [];
-  for (const row of data ?? []) {
-    positions.push(await decryptPosition(row.ciphertext, row.encryption_iv, backupKey));
-  }
+export async function restorePositionBackups(
+  address: string,
+  keys?: PrivateArchiveKeys,
+): Promise<number> {
+  const archiveKeys = keys ?? await unlockPositionBackup(address);
+  const positions = await synchronize(address, archiveKeys, false);
   return mergePositions(address, positions);
 }
 
-export async function exportEncryptedPositionFile(address: string, key: CryptoKey): Promise<string> {
-  const records = await Promise.all(listPositions(address).map((position) => encryptPosition(position, key)));
+export async function exportEncryptedPositionFile(
+  address: string,
+  keys: PrivateArchiveKeys,
+): Promise<string> {
+  if (keys.address !== address) throw new Error("Private activity key does not match this wallet");
+  const records = await Promise.all(
+    listPositions(address).map((position) => encryptPosition(position, keys.encryptionKey)),
+  );
   return JSON.stringify({
     format: "moros-private-positions",
     network: NETWORK.id,
@@ -83,22 +110,38 @@ export async function exportEncryptedPositionFile(address: string, key: CryptoKe
   }, null, 2);
 }
 
-export async function importEncryptedPositionFile(contents: string, address: string, key: CryptoKey): Promise<number> {
+export async function importEncryptedPositionFile(
+  contents: string,
+  address: string,
+  keys: PrivateArchiveKeys,
+): Promise<number> {
+  if (keys.address !== address) throw new Error("Private activity key does not match this wallet");
   const parsed = JSON.parse(contents) as {
     format?: unknown;
     network?: unknown;
     address?: unknown;
     records?: unknown;
   };
-  if (parsed.format !== "moros-private-positions" || parsed.network !== NETWORK.id || parsed.address !== address || !Array.isArray(parsed.records)) {
+  if (parsed.format !== "moros-private-positions"
+    || parsed.network !== NETWORK.id
+    || parsed.address !== address
+    || !Array.isArray(parsed.records)) {
     throw new Error("This recovery file does not match the connected wallet and network");
   }
   const positions: Position[] = [];
   for (const record of parsed.records) {
-    if (!record || typeof record !== "object") throw new Error("Recovery file contains an invalid record");
+    if (!record || typeof record !== "object") {
+      throw new Error("Recovery file contains an invalid record");
+    }
     const row = record as Record<string, unknown>;
-    if (typeof row.ciphertext !== "string" || typeof row.iv !== "string") throw new Error("Recovery file contains an invalid record");
-    positions.push(await decryptPosition(row.ciphertext, row.iv, key));
+    if (typeof row.ciphertext !== "string" || typeof row.iv !== "string") {
+      throw new Error("Recovery file contains an invalid record");
+    }
+    positions.push(await decryptPosition(
+      row.ciphertext,
+      row.iv,
+      keys.encryptionKey,
+    ));
   }
   return mergePositions(address, positions);
 }
