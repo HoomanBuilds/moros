@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   Networks,
   rpc,
+  scValToNative,
 } from "@stellar/stellar-sdk";
 import { cfg } from "./config.mjs";
 import {
@@ -18,6 +19,7 @@ import {
 } from "./private-batch-coordinator.mjs";
 import { PrivateAllocationRegistry } from "./private-allocation-registry.mjs";
 import { PrivateArtifactStore } from "./private-artifacts.mjs";
+import { PrivateExitRegistry } from "./private-exit-registry.mjs";
 import { PrivateOutputIndexer } from "./private-indexer.mjs";
 import { PrivateMarketRegistry } from "./private-market-registry.mjs";
 import { PrivateProposalRegistry } from "./private-proposal-registry.mjs";
@@ -57,6 +59,7 @@ const OUTPUT_STATE = resolve(RUNTIME_ROOT, "outputs.json");
 const MARKET_STATE = resolve(RUNTIME_ROOT, "markets.json");
 const PROPOSAL_STATE = resolve(RUNTIME_ROOT, "proposals.json");
 const ALLOCATION_STATE = resolve(RUNTIME_ROOT, "allocations.json");
+const EXIT_STATE = resolve(RUNTIME_ROOT, "exits.json");
 const TICK_MS = Number(process.env.PRIVATE_TICK_MS || 10_000);
 const MAX_BODY = 256 * 1024;
 const ALLOWED_ORIGINS = new Set(
@@ -75,6 +78,10 @@ function resultValue(value) {
 
 function hash(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function exitKey(entry) {
+  return `${entry.liquidityVault}:${entry.exitId}`;
 }
 
 function readJson(path) {
@@ -226,6 +233,7 @@ async function main() {
   await indexer.sync();
 
   const marketClients = new Map();
+  const liquidityClients = new Map();
   const getMarketClient = async (market) => {
     if (!marketClients.has(market)) {
       marketClients.set(market, await contractClient({
@@ -237,6 +245,18 @@ async function main() {
       }));
     }
     return marketClients.get(market);
+  };
+  const getLiquidityClient = async (liquidityVault) => {
+    if (!liquidityClients.has(liquidityVault)) {
+      liquidityClients.set(liquidityVault, await contractClient({
+        server,
+        contractId: liquidityVault,
+        source,
+        rpcUrl: RPC_URL,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      }));
+    }
+    return liquidityClients.get(liquidityVault);
   };
   const registry = new PrivateMarketRegistry({
     stateFile: MARKET_STATE,
@@ -298,6 +318,37 @@ async function main() {
   for (const proposal of proposals.list()) {
     await proposals.register(proposal.proposalId);
   }
+  const exits = new PrivateExitRegistry({
+    stateFile: EXIT_STATE,
+    verify: async (entry) => {
+      const market = await getMarketClient(entry.market);
+      const privateConfig = resultValue(await market.private_config());
+      if (
+        !privateConfig ||
+        privateConfig.batcher !== vaultId ||
+        privateConfig.liquidity_vault !== entry.liquidityVault
+      ) {
+        throw new Error("liquidity exit market wiring does not match");
+      }
+      const liquidity = await getLiquidityClient(entry.liquidityVault);
+      const [info, intent] = await Promise.all([
+        liquidity.info(),
+        liquidity.exit_intent({
+          exit_id: Buffer.from(entry.exitId, "hex"),
+        }),
+      ]);
+      const decodedInfo = resultValue(info);
+      if (
+        decodedInfo.share_controller !== vaultId ||
+        decodedInfo.market !== entry.market ||
+        !resultValue(intent)
+      ) {
+        throw new Error("liquidity exit is not registered on the linked vault");
+      }
+      return entry;
+    },
+  });
+  for (const exit of exits.list()) await exits.register(exit);
 
   const batchRoot = resolve(ARTIFACT_ROOT, "batch");
   const allocations = new PrivateAllocationRegistry({
@@ -333,6 +384,7 @@ async function main() {
     outputs: Number(vaultInfo.next_leaf_index),
     markets: {},
     proposals: {},
+    exits: {},
     errors: [],
   };
   let ticking = false;
@@ -435,6 +487,32 @@ async function main() {
     };
   };
 
+  const readExit = async (entry) => {
+    const liquidity = await getLiquidityClient(entry.liquidityVault);
+    const [intent, snapshot, info] = await Promise.all([
+      liquidity.exit_intent({
+        exit_id: Buffer.from(entry.exitId, "hex"),
+      }),
+      liquidity.market_snapshot(),
+      liquidity.info(),
+    ]);
+    const decodedIntent = resultValue(intent);
+    if (!decodedIntent) throw new Error("registered liquidity exit is missing");
+    const decodedSnapshot = resultValue(snapshot);
+    const decodedInfo = resultValue(info);
+    return {
+      ...entry,
+      status: phaseName(decodedIntent.status),
+      intent: {
+        ...decodedIntent,
+        status: phaseName(decodedIntent.status),
+      },
+      snapshot: decodedSnapshot,
+      stateVersion: decodedInfo.state_version,
+      checkedAt: new Date().toISOString(),
+    };
+  };
+
   const tick = async () => {
     if (ticking) return;
     ticking = true;
@@ -457,6 +535,24 @@ async function main() {
           runtime.errors.push({
             at: new Date().toISOString(),
             proposal: proposal.proposalId,
+            error: String(error?.message || error),
+          });
+          runtime.errors = runtime.errors.slice(-20);
+        }
+      }
+      for (const exit of exits.list()) {
+        try {
+          runtime.exits[exitKey(exit)] = await readExit(exit);
+        } catch (error) {
+          runtime.exits[exitKey(exit)] = {
+            ...exit,
+            status: "Error",
+            checkedAt: new Date().toISOString(),
+            error: String(error?.message || error),
+          };
+          runtime.errors.push({
+            at: new Date().toISOString(),
+            exit: exit.exitId,
             error: String(error?.message || error),
           });
           runtime.errors = runtime.errors.slice(-20);
@@ -595,6 +691,35 @@ async function main() {
         return;
       }
       if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/private/exits"
+      ) {
+        const market = requestUrl.searchParams.get("market");
+        const liquidityVault = requestUrl.searchParams.get("liquidityVault");
+        const status = requestUrl.searchParams.get("status");
+        const offset = Number(requestUrl.searchParams.get("offset") || 0);
+        const limit = Number(requestUrl.searchParams.get("limit") || 100);
+        if (
+          !Number.isSafeInteger(offset) ||
+          offset < 0 ||
+          !Number.isSafeInteger(limit) ||
+          limit < 1 ||
+          limit > 200
+        ) {
+          throw new Error("invalid liquidity exit pagination");
+        }
+        const filtered = Object.values(runtime.exits).filter((entry) =>
+          (!market || entry.market === market) &&
+          (!liquidityVault || entry.liquidityVault === liquidityVault) &&
+          (!status || entry.status === status)
+        );
+        sendJson(request, response, 200, {
+          exits: filtered.slice(offset, offset + limit),
+          total: filtered.length,
+        });
+        return;
+      }
+      if (
         request.method === "POST" &&
         requestUrl.pathname === "/private/register-proposal"
       ) {
@@ -627,6 +752,25 @@ async function main() {
       }
       if (
         request.method === "POST" &&
+        requestUrl.pathname === "/private/register-exit"
+      ) {
+        const clientKey = request.socket.remoteAddress || "unknown";
+        if (!perClient.take(`exit:${clientKey}`).allowed) {
+          sendJson(request, response, 429, { error: "rate limit exceeded" });
+          return;
+        }
+        const body = await readBody(request);
+        const exit = await exits.register({
+          market: body.market,
+          liquidityVault: body.liquidityVault,
+          exitId: body.exitId,
+        });
+        runtime.exits[exitKey(exit)] = await readExit(exit);
+        sendJson(request, response, 200, runtime.exits[exitKey(exit)]);
+        return;
+      }
+      if (
+        request.method === "POST" &&
         requestUrl.pathname === "/private/relay"
       ) {
         const clientKey = request.socket.remoteAddress || "unknown";
@@ -646,6 +790,25 @@ async function main() {
           args: relay.args,
           networkPassphrase: NETWORK_PASSPHRASE,
         }));
+        if (relay.method === "request_liquidity_exit") {
+          const entry = {
+            market: scValToNative(relay.args[0]),
+            liquidityVault: scValToNative(relay.args[1]),
+            exitId: Buffer.from(scValToNative(relay.args[2])).toString("hex"),
+          };
+          try {
+            const exit = await exits.register(entry);
+            runtime.exits[exitKey(exit)] = await readExit(exit);
+          } catch (error) {
+            submitted.exitRegistrationPending = true;
+            runtime.errors.push({
+              at: new Date().toISOString(),
+              exit: entry.exitId,
+              error: String(error?.message || error),
+            });
+            runtime.errors = runtime.errors.slice(-20);
+          }
+        }
         sendJson(request, response, 200, submitted);
         return;
       }

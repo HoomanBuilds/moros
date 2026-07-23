@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import { StrKey } from "@stellar/stellar-sdk";
 import { parseRange } from "./private-artifacts.mjs";
 import { PrivateAllocationRegistry } from "./private-allocation-registry.mjs";
+import { PrivateExitRegistry } from "./private-exit-registry.mjs";
 import { PrivateMarketRegistry } from "./private-market-registry.mjs";
 import { PrivateProposalRegistry } from "./private-proposal-registry.mjs";
 
@@ -87,6 +88,46 @@ try {
   assert.deepEqual(resumed.list(), proposals.list());
 } finally {
   rmSync(proposalDirectory, { recursive: true, force: true });
+}
+
+const exitDirectory = mkdtempSync(resolve(tmpdir(), "moros-private-exits-"));
+const exitFile = resolve(exitDirectory, "exits.json");
+const exitId = "b".repeat(64);
+const secondLiquidityVault = StrKey.encodeContract(Buffer.alloc(32, 6));
+
+try {
+  const exits = new PrivateExitRegistry({
+    stateFile: exitFile,
+    verify: async (entry) => entry,
+  });
+  await exits.register({ market, liquidityVault, exitId });
+  await exits.register({ market, liquidityVault, exitId });
+  await exits.register({
+    market,
+    liquidityVault: secondLiquidityVault,
+    exitId,
+  });
+  assert.equal(exits.list().length, 2);
+  assert.ok(exits.list().some((entry) =>
+    entry.liquidityVault === liquidityVault && entry.exitId === exitId
+  ));
+  assert.ok(exits.list().some((entry) =>
+    entry.liquidityVault === secondLiquidityVault && entry.exitId === exitId
+  ));
+  await assert.rejects(
+    () => exits.register({ market, liquidityVault, exitId: "bad" }),
+    /invalid/,
+  );
+
+  const resumed = new PrivateExitRegistry({
+    stateFile: exitFile,
+    verify: async () => {
+      throw new Error("verification should not run while loading state");
+    },
+  });
+  assert.deepEqual(resumed.list(), exits.list());
+} finally {
+  rmSync(exitDirectory, { recursive: true, force: true });
 }
 
 const allocationDirectory = mkdtempSync(resolve(tmpdir(), "moros-private-allocations-"));

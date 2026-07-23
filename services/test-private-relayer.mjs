@@ -30,6 +30,20 @@ assert.throws(
   }),
   /invalid relay argument/,
 );
+assert.equal(
+  decodeRelayRequest({
+    method: "request_liquidity_exit",
+    args: Array(12).fill(argument),
+  }).args.length,
+  12,
+);
+assert.equal(
+  decodeRelayRequest({
+    method: "match_liquidity_exit",
+    args: Array(15).fill(argument),
+  }).args.length,
+  15,
+);
 
 const limiter = new FixedWindowRateLimiter({ limit: 2, windowMs: 1_000 });
 assert.equal(limiter.take("client", 1_000).allowed, true);
