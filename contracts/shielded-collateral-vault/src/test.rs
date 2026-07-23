@@ -843,6 +843,7 @@ fn batch_statement(
         committee_statement_hash: submission.committee_statement_hash.clone(),
         allocation_root: submission.allocation_root.clone(),
         included_root: submission.included_root.clone(),
+        lot_size: setup.vault.registration(market).unwrap().lot_size,
         quote: batch_quote(
             LmsrMarketClient::new(&setup.env, market).quote_private_batch(
                 &epoch.market_state_version,
@@ -954,6 +955,7 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
         epoch: 0,
         allocation_root: batch.allocation_root.clone(),
         outcome: SettlementState::Pending,
+        lot_size: S,
         quote: batch.quote.clone(),
     };
     let change_operation_binding =
@@ -1034,6 +1036,7 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
         epoch: 0,
         allocation_root: batch.allocation_root,
         outcome: SettlementState::Yes,
+        lot_size: S,
         quote: batch.quote,
     };
     let claim_operation_binding =

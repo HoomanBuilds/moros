@@ -185,7 +185,12 @@ An LP-share note uses purpose `3`, stores its share count as the note amount, an
 | 18 | Refundable fee escrow |
 | 19 | Conditional LP fee |
 | 20 | Conditional protocol fee |
-| 21 to 23 | Zero |
+| 21 | Immutable fixed lot size |
+| 22 to 23 | Zero |
+
+The allocation leaf is `Poseidon2(1012, marketHigh, marketLow, epoch, sequence, positionCommitment, side, charge, fee, payout)`. Its depth-6 Merkle proof stays private. The charge is selected from the proof-bound YES or NO charge by the hidden side. The payout is derived from the immutable lot size as `ceil(lotSize * 10^7 / 2^32)`.
+
+Execution-change proofs use nullifier domain `3` and return exactly `positionBudget - charge - fee`. Terminal claim, short-epoch refund, and VOID refund proofs use nullifier domain `4`, so change recovery cannot consume terminal rights and a terminal right cannot be used twice. A winning claim returns the exact lot payout, a losing claim returns only padding, a short-epoch refund returns the complete position budget, and a VOID refund returns the executed charge plus fee. Combined execution change and VOID refund exactly reconstruct the original position budget.
 
 ## Treasury binding
 
@@ -248,7 +253,7 @@ An active exit match has 20 public fields. It uses three nullifier slots and fou
 
 ## Batch public signals
 
-Every batch proof has exactly 44 public field elements in this order:
+Every batch proof has exactly 45 public field elements in this order:
 
 | Index | Field |
 | --- | --- |
@@ -268,24 +273,25 @@ Every batch proof has exactly 44 public field elements in this order:
 | 22 to 23 | Committee statement hash limbs |
 | 24 | Allocation root |
 | 25 | Included-position root |
-| 26 | Market state version |
-| 27 | Batch size |
-| 28 | YES count |
-| 29 | NO count |
-| 30 | Pre-batch YES price |
-| 31 | Post-batch YES price |
-| 32 | Uniform YES price |
-| 33 | Uniform NO price |
-| 34 | Exact aggregate market charge |
-| 35 | YES aggregate market cost |
-| 36 | NO aggregate market cost |
-| 37 | YES charge per position |
-| 38 | NO charge per position |
-| 39 | Protocol rounding contribution |
-| 40 | Fee per position |
-| 41 | Refundable fee escrow |
-| 42 | Conditional LP fee |
-| 43 | Conditional protocol fee |
+| 26 | Immutable fixed lot size |
+| 27 | Market state version |
+| 28 | Batch size |
+| 29 | YES count |
+| 30 | NO count |
+| 31 | Pre-batch YES price |
+| 32 | Post-batch YES price |
+| 33 | Uniform YES price |
+| 34 | Uniform NO price |
+| 35 | Exact aggregate market charge |
+| 36 | YES aggregate market cost |
+| 37 | NO aggregate market cost |
+| 38 | YES charge per position |
+| 39 | NO charge per position |
+| 40 | Protocol rounding contribution |
+| 41 | Fee per position |
+| 42 | Refundable fee escrow |
+| 43 | Conditional LP fee |
+| 44 | Conditional protocol fee |
 
 ## Groth16 proof encoding
 

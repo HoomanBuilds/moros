@@ -138,6 +138,7 @@ fn batch_statement(env: &Env) -> BatchProofStatement {
         committee_statement_hash: id(env, 15),
         allocation_root: U256::from_u32(env, 19),
         included_root: U256::from_u32(env, 20),
+        lot_size: 4_294_967_296,
         quote: BatchQuote {
             state_version: 0,
             batch_size: 8,

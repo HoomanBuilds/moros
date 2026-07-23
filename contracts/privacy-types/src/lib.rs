@@ -8,7 +8,7 @@ use soroban_sdk::{
 
 pub const ACTION_PUBLIC_INPUTS: u32 = 15;
 pub const EXIT_MATCH_PUBLIC_INPUTS: u32 = 20;
-pub const BATCH_PUBLIC_INPUTS: u32 = 44;
+pub const BATCH_PUBLIC_INPUTS: u32 = 45;
 pub const OPERATION_BINDING_FIELDS: u32 = 24;
 pub const OPERATION_CONTEXT_FIELDS: u32 = 46;
 pub const OUTPUT_ENVELOPE_FIELDS: u32 = 15;
@@ -239,6 +239,7 @@ pub struct BatchProofStatement {
     pub committee_statement_hash: BytesN<32>,
     pub allocation_root: U256,
     pub included_root: U256,
+    pub lot_size: i128,
     pub quote: BatchQuote,
 }
 
@@ -552,6 +553,7 @@ pub fn batch_public_inputs(
     push_bytes32(env, &mut signals, &statement.committee_statement_hash);
     push_field(env, &mut signals, &statement.allocation_root)?;
     push_field(env, &mut signals, &statement.included_root)?;
+    push_nonnegative_i128(env, &mut signals, statement.lot_size)?;
 
     let quote = &statement.quote;
     signals.push_back(U256::from_u128(env, quote.state_version as u128));
@@ -939,6 +941,7 @@ mod test {
             committee_statement_hash: id(&env, 8),
             allocation_root: U256::from_u32(&env, 12),
             included_root: U256::from_u32(&env, 13),
+            lot_size: 14,
             quote: BatchQuote {
                 state_version: 1,
                 batch_size: 8,
@@ -962,7 +965,8 @@ mod test {
         };
         let signals = batch_public_inputs(&env, &statement).unwrap();
         assert_eq!(signals.len(), BATCH_PUBLIC_INPUTS);
-        assert_eq!(signals.get(26), Some(U256::from_u32(&env, 1)));
-        assert_eq!(signals.get(43), Some(U256::from_u32(&env, 23)));
+        assert_eq!(signals.get(26), Some(U256::from_u32(&env, 14)));
+        assert_eq!(signals.get(27), Some(U256::from_u32(&env, 1)));
+        assert_eq!(signals.get(44), Some(U256::from_u32(&env, 23)));
     }
 }

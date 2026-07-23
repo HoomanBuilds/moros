@@ -317,20 +317,19 @@ template PrivateOrder(noteLevels, acceptedLevels) {
     contextFields[40] === c2.xout;
     contextFields[41] === c2.yout;
 
-    component acceptedLeaf = Poseidon2Sponge(13);
-    acceptedLeaf.inputs[0] <== 1009;
-    acceptedLeaf.inputs[1] <== contextFields[18];
-    acceptedLeaf.inputs[2] <== contextFields[19];
-    acceptedLeaf.inputs[3] <== contextFields[22];
-    acceptedLeaf.inputs[4] <== contextFields[45];
-    acceptedLeaf.inputs[5] <== contextFields[10];
-    acceptedLeaf.inputs[6] <== contextFields[11];
-    acceptedLeaf.inputs[7] <== outputCommitment1;
-    acceptedLeaf.inputs[8] <== contextFields[38];
-    acceptedLeaf.inputs[9] <== contextFields[39];
-    acceptedLeaf.inputs[10] <== contextFields[40];
-    acceptedLeaf.inputs[11] <== contextFields[41];
-    acceptedLeaf.inputs[12] <== contextFields[33];
+    component acceptedLeaf = AcceptedOrderLeaf();
+    acceptedLeaf.market[0] <== contextFields[18];
+    acceptedLeaf.market[1] <== contextFields[19];
+    acceptedLeaf.epoch <== contextFields[22];
+    acceptedLeaf.sequence <== contextFields[45];
+    acceptedLeaf.actionId[0] <== contextFields[10];
+    acceptedLeaf.actionId[1] <== contextFields[11];
+    acceptedLeaf.positionCommitment <== outputCommitment1;
+    acceptedLeaf.ciphertext[0] <== contextFields[38];
+    acceptedLeaf.ciphertext[1] <== contextFields[39];
+    acceptedLeaf.ciphertext[2] <== contextFields[40];
+    acceptedLeaf.ciphertext[3] <== contextFields[41];
+    acceptedLeaf.committeeEpoch <== contextFields[33];
 
     component acceptedAppend = AppendOne(acceptedLevels);
     acceptedAppend.appendRoot <== contextFields[42];

@@ -54,9 +54,9 @@ function witness(name, fixture, destination) {
   );
 }
 
-function validWitness(name) {
-  const output = resolve(build, `${name}.wtns`);
-  const result = witness(name, resolve(here, `${name}.json`), output);
+function validWitness(name, fixtureName = name) {
+  const output = resolve(build, `${fixtureName}.wtns`);
+  const result = witness(name, resolve(here, `${fixtureName}.json`), output);
   if (result.status !== 0) {
     process.stderr.write(result.stdout ?? "");
     process.stderr.write(result.stderr ?? "");
@@ -83,6 +83,7 @@ generate("transfer");
 generate("withdraw");
 generate("order");
 run("node", [resolve(here, "generate-liquidity-fixtures.mjs")]);
+run("node", [resolve(here, "generate-position-fixtures.mjs")]);
 
 compile("output_note", resolve(here, "output_note.circom"));
 validWitness("output_note");
@@ -117,6 +118,11 @@ for (const name of ["liquidity_fund", "liquidity_exit", "liquidity_redeem"]) {
   compile(name);
   validWitness(name);
 }
+for (const name of ["execution_change", "claim", "refund"]) {
+  compile(name);
+  validWitness(name);
+}
+validWitness("refund", "void_refund");
 
 expectInvalid("transfer", "value-creation", (fixture) => {
   fixture.outAmount[0] = (BigInt(fixture.outAmount[0]) + 1n).toString();
@@ -167,5 +173,26 @@ expectInvalid("liquidity_exit", "share-conservation", (fixture) => {
 expectInvalid("liquidity_redeem", "terminal-remainder", (fixture) => {
   fixture.outAmount[1] = "1";
 });
+expectInvalid("execution_change", "allocation-membership", (fixture) => {
+  fixture.allocationSiblings[0] = (
+    BigInt(fixture.allocationSiblings[0]) + 1n
+  ).toString();
+});
+expectInvalid("execution_change", "change-inflation", (fixture) => {
+  fixture.outAmount[0] = (BigInt(fixture.outAmount[0]) + 1n).toString();
+});
+expectInvalid("claim", "losing-side-payout", (fixture) => {
+  fixture.inPrivateData[0] = "0";
+});
+expectInvalid("claim", "lot-size-payout", (fixture) => {
+  fixture.contextFields[43] = (
+    BigInt(fixture.contextFields[43]) + 1n
+  ).toString();
+});
+expectInvalid("refund", "accepted-membership", (fixture) => {
+  fixture.acceptedCiphertext[0] = (
+    BigInt(fixture.acceptedCiphertext[0]) + 1n
+  ).toString();
+});
 
-console.log("private balance, order, and liquidity circuit fixtures passed");
+console.log("private balance, order, liquidity, and position circuit fixtures passed");

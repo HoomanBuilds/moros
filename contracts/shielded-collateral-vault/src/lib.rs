@@ -281,6 +281,7 @@ pub struct AllocationBinding {
     pub epoch: u64,
     pub allocation_root: U256,
     pub outcome: SettlementState,
+    pub lot_size: i128,
     pub quote: BatchQuote,
 }
 
@@ -1376,6 +1377,7 @@ impl ShieldedCollateralVault {
             committee_statement_hash: submission.committee_statement_hash,
             allocation_root: submission.allocation_root.clone(),
             included_root: submission.included_root.clone(),
+            lot_size: registration.lot_size,
             quote: quote.clone(),
         };
         let verifier: Address = env.storage().instance().get(&DataKey::Verifier).unwrap();
@@ -1551,11 +1553,13 @@ impl ShieldedCollateralVault {
             panic_with_error!(&env, Error::InvalidPhase);
         }
         let batch = Self::batch_record(&env, &market, epoch_number);
+        let registration = Self::market_registration(&env, &market);
         let binding = AllocationBinding {
             market: market.clone(),
             epoch: epoch_number,
             allocation_root: batch.allocation_root,
             outcome: SettlementState::Pending,
+            lot_size: registration.lot_size,
             quote: batch.quote,
         };
         let operation_binding = Self::allocation_operation_binding(&env, &binding);
@@ -1593,11 +1597,13 @@ impl ShieldedCollateralVault {
             panic_with_error!(&env, Error::TooEarly);
         }
         let batch = Self::batch_record(&env, &market, epoch_number);
+        let registration = Self::market_registration(&env, &market);
         let binding = AllocationBinding {
             market: market.clone(),
             epoch: epoch_number,
             allocation_root: batch.allocation_root,
             outcome,
+            lot_size: registration.lot_size,
             quote: batch.quote,
         };
         let operation_binding = Self::allocation_operation_binding(&env, &binding);
@@ -2766,6 +2772,12 @@ impl ShieldedCollateralVault {
             &mut fields,
             20,
             Self::binding_i128(env, quote.conditional_protocol_fee),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            21,
+            Self::binding_i128(env, binding.lot_size),
         );
         OperationBinding {
             kind: BindingKind::Allocation,

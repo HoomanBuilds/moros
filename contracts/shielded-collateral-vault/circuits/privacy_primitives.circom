@@ -190,6 +190,58 @@ template AppendOne(levels) {
     newPath.root === newRoot;
 }
 
+template AcceptedOrderLeaf() {
+    signal input market[2];
+    signal input epoch;
+    signal input sequence;
+    signal input actionId[2];
+    signal input positionCommitment;
+    signal input ciphertext[4];
+    signal input committeeEpoch;
+    signal output out;
+
+    component hash = Poseidon2Sponge(13);
+    hash.inputs[0] <== 1009;
+    hash.inputs[1] <== market[0];
+    hash.inputs[2] <== market[1];
+    hash.inputs[3] <== epoch;
+    hash.inputs[4] <== sequence;
+    hash.inputs[5] <== actionId[0];
+    hash.inputs[6] <== actionId[1];
+    hash.inputs[7] <== positionCommitment;
+    hash.inputs[8] <== ciphertext[0];
+    hash.inputs[9] <== ciphertext[1];
+    hash.inputs[10] <== ciphertext[2];
+    hash.inputs[11] <== ciphertext[3];
+    hash.inputs[12] <== committeeEpoch;
+    out <== hash.out;
+}
+
+template AllocationLeaf() {
+    signal input market[2];
+    signal input epoch;
+    signal input sequence;
+    signal input positionCommitment;
+    signal input side;
+    signal input charge;
+    signal input fee;
+    signal input payout;
+    signal output out;
+
+    component hash = Poseidon2Sponge(10);
+    hash.inputs[0] <== 1012;
+    hash.inputs[1] <== market[0];
+    hash.inputs[2] <== market[1];
+    hash.inputs[3] <== epoch;
+    hash.inputs[4] <== sequence;
+    hash.inputs[5] <== positionCommitment;
+    hash.inputs[6] <== side;
+    hash.inputs[7] <== charge;
+    hash.inputs[8] <== fee;
+    hash.inputs[9] <== payout;
+    out <== hash.out;
+}
+
 template InputNote(levels, nullifierDomain) {
     signal input noteDomain;
     signal input membershipRoot;
