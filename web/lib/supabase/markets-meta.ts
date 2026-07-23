@@ -93,7 +93,56 @@ export type RegistryMarket = {
   resolutionRules?: string;
   voidRules?: string;
   rulesHash?: string;
+  proposalId?: string;
+  factoryId?: string;
+  liquidityVaultId?: string;
+  marketState?: "funding" | "ready" | "active" | "cancelled" | "settled";
+  liquidityTarget?: string;
+  fundingDeadline?: number;
+  activationCutoff?: number;
+  settlementTime?: number;
 };
+
+const REGISTRY_SELECT = "market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, title, category, subject, banner_url, banner_source_url, banner_attribution, banner_license, banner_license_url, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, proposal_id, factory_id, liquidity_vault_id, market_state, liquidity_target, funding_deadline, activation_cutoff, settlement_time, created_at";
+
+function mapRegistryMarket(r: Record<string, unknown>): RegistryMarket {
+  return {
+    marketId: r.market_id as string,
+    poolId: r.pool_id ? String(r.pool_id) : "",
+    asset: String(r.asset ?? "").toUpperCase(),
+    collateralCode: r.collateral_code ? String(r.collateral_code).toUpperCase() : undefined,
+    collateralIssuer: r.collateral_issuer ? String(r.collateral_issuer) : null,
+    collateralSac: r.collateral_sac ? String(r.collateral_sac) : undefined,
+    collateralDecimals: typeof r.collateral_decimals === "number" ? r.collateral_decimals : undefined,
+    createdAt: r.created_at ? Date.parse(r.created_at as string) : undefined,
+    title: r.title ? String(r.title) : undefined,
+    category: r.category ? String(r.category) : undefined,
+    subject: r.subject ? String(r.subject) : undefined,
+    bannerUrl: r.banner_url ? String(r.banner_url) : undefined,
+    bannerSourceUrl: r.banner_source_url ? String(r.banner_source_url) : undefined,
+    bannerAttribution: r.banner_attribution ? String(r.banner_attribution) : undefined,
+    bannerLicense: r.banner_license ? String(r.banner_license) : undefined,
+    bannerLicenseUrl: r.banner_license_url ? String(r.banner_license_url) : undefined,
+    resolverType: r.resolver_type === "event" ? "event" : r.resolver_type === "price" ? "price" : undefined,
+    resolutionSource: r.resolution_source ? String(r.resolution_source) : undefined,
+    backupResolutionSources: Array.isArray(r.resolution_backup_sources)
+      ? r.resolution_backup_sources.map(String)
+      : undefined,
+    resolutionRules: r.resolution_rules ? String(r.resolution_rules) : undefined,
+    voidRules: r.void_rules ? String(r.void_rules) : undefined,
+    rulesHash: r.rules_hash ? String(r.rules_hash) : undefined,
+    proposalId: r.proposal_id ? String(r.proposal_id) : undefined,
+    factoryId: r.factory_id ? String(r.factory_id) : undefined,
+    liquidityVaultId: r.liquidity_vault_id ? String(r.liquidity_vault_id) : undefined,
+    marketState: ["funding", "ready", "active", "cancelled", "settled"].includes(String(r.market_state))
+      ? r.market_state as RegistryMarket["marketState"]
+      : undefined,
+    liquidityTarget: r.liquidity_target ? String(r.liquidity_target) : undefined,
+    fundingDeadline: r.funding_deadline ? Date.parse(String(r.funding_deadline)) : undefined,
+    activationCutoff: r.activation_cutoff ? Date.parse(String(r.activation_cutoff)) : undefined,
+    settlementTime: r.settlement_time ? Date.parse(String(r.settlement_time)) : undefined,
+  };
+}
 
 export async function getMarketMeta(marketId: string): Promise<MarketMeta | null> {
   const client = getBrowserClient();
@@ -167,7 +216,7 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
 
   const primary = await client
     .from("markets_meta")
-    .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, title, category, subject, banner_url, banner_source_url, banner_attribution, banner_license, banner_license_url, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
+    .select(REGISTRY_SELECT)
     .not("pool_id", "is", null)
     .order("created_at", { ascending: false });
   let data = primary.data as Record<string, unknown>[] | null;
@@ -207,37 +256,38 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
 
   return data
     .filter((r) => r.market_id && r.pool_id)
-    .map((r) => ({
-      marketId: r.market_id as string,
-      poolId: r.pool_id as string,
-      asset: String(r.asset ?? "").toUpperCase(),
-      collateralCode: r.collateral_code ? String(r.collateral_code).toUpperCase() : undefined,
-      collateralIssuer: r.collateral_issuer ? String(r.collateral_issuer) : null,
-      collateralSac: r.collateral_sac ? String(r.collateral_sac) : undefined,
-      collateralDecimals: typeof r.collateral_decimals === "number" ? r.collateral_decimals : undefined,
-      createdAt: r.created_at ? Date.parse(r.created_at as string) : undefined,
-      title: r.title ? String(r.title) : undefined,
-      category: r.category ? String(r.category) : undefined,
-      subject: r.subject ? String(r.subject) : undefined,
-      bannerUrl: r.banner_url ? String(r.banner_url) : undefined,
-      bannerSourceUrl: r.banner_source_url ? String(r.banner_source_url) : undefined,
-      bannerAttribution: r.banner_attribution ? String(r.banner_attribution) : undefined,
-      bannerLicense: r.banner_license ? String(r.banner_license) : undefined,
-      bannerLicenseUrl: r.banner_license_url ? String(r.banner_license_url) : undefined,
-      resolverType: r.resolver_type === "event" ? "event" : r.resolver_type === "price" ? "price" : undefined,
-      resolutionSource: r.resolution_source ? String(r.resolution_source) : undefined,
-      backupResolutionSources: Array.isArray(r.resolution_backup_sources)
-        ? r.resolution_backup_sources.map(String)
-        : undefined,
-      resolutionRules: r.resolution_rules ? String(r.resolution_rules) : undefined,
-      voidRules: r.void_rules ? String(r.void_rules) : undefined,
-      rulesHash: r.rules_hash ? String(r.rules_hash) : undefined,
-    }));
+    .map(mapRegistryMarket);
+}
+
+export async function fetchFundingMarkets(): Promise<RegistryMarket[]> {
+  const client = getBrowserClient();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from("markets_meta")
+    .select(REGISTRY_SELECT)
+    .in("market_state", ["funding", "ready"])
+    .not("proposal_id", "is", null)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return [];
+  return (data as Record<string, unknown>[])
+    .filter((row) =>
+      row.market_id
+      && row.proposal_id
+      && row.factory_id
+      && row.liquidity_vault_id
+      && row.liquidity_target
+      && row.funding_deadline
+      && row.activation_cutoff
+      && row.settlement_time
+    )
+    .map(mapRegistryMarket);
 }
 
 export async function saveMarketToRegistry(entry: {
   marketId: string;
-  poolId: string;
+  poolId?: string;
   asset: string;
   collateralCode: string;
   collateralIssuer: string | null;
@@ -258,6 +308,14 @@ export async function saveMarketToRegistry(entry: {
   resolutionRules?: string;
   voidRules?: string;
   rulesHash?: string;
+  proposalId?: string;
+  factoryId?: string;
+  liquidityVaultId?: string;
+  marketState?: "funding" | "ready" | "active" | "cancelled" | "settled";
+  liquidityTarget?: string;
+  fundingDeadline?: number;
+  activationCutoff?: number;
+  settlementTime?: number;
 }): Promise<void> {
   const client = getBrowserClient();
   if (!client) throw new Error("The public market registry is not configured.");
@@ -267,7 +325,7 @@ export async function saveMarketToRegistry(entry: {
   const { data, error } = await client.from("markets_meta").upsert(
     {
       market_id: entry.marketId,
-      pool_id: entry.poolId,
+      pool_id: entry.poolId ?? null,
       asset: entry.asset,
       collateral_code: entry.collateralCode,
       collateral_issuer: entry.collateralIssuer,
@@ -288,6 +346,20 @@ export async function saveMarketToRegistry(entry: {
       resolution_rules: entry.resolutionRules ?? null,
       void_rules: entry.voidRules ?? null,
       rules_hash: entry.rulesHash ?? null,
+      proposal_id: entry.proposalId ?? null,
+      factory_id: entry.factoryId ?? null,
+      liquidity_vault_id: entry.liquidityVaultId ?? null,
+      market_state: entry.marketState ?? "active",
+      liquidity_target: entry.liquidityTarget ?? null,
+      funding_deadline: entry.fundingDeadline
+        ? new Date(entry.fundingDeadline).toISOString()
+        : null,
+      activation_cutoff: entry.activationCutoff
+        ? new Date(entry.activationCutoff).toISOString()
+        : null,
+      settlement_time: entry.settlementTime
+        ? new Date(entry.settlementTime).toISOString()
+        : null,
     },
     { onConflict: "market_id" },
   ).select("market_id").maybeSingle();

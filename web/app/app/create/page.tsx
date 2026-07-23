@@ -10,7 +10,6 @@ import {
   CircleDollarSign,
   Clock3,
   Database,
-  ExternalLink,
   Link2,
   LockKeyhole,
   ShieldCheck,
@@ -33,32 +32,21 @@ import {
   MarketCategoryIcon,
 } from "@/components/markets/market-category-icon";
 import { MarketBanner, MarketVisual } from "@/components/markets/market-visual";
-import { EVENT_MARKETS_ENABLED, MARKET_SUBSIDY, ORACLE_MODE } from "@/lib/markets/deploy-constants";
+import { EVENT_MARKETS_ENABLED, ORACLE_MODE } from "@/lib/markets/deploy-constants";
 import { useAssetPrice } from "@/lib/prices/use-asset-price";
 import { useWalletAddress, connectWallet } from "@/lib/wallet-store";
 import {
-  clearPendingDeployment,
-  deployShieldedMarket,
-  getPendingDeployment,
-  type DeployStep,
-  type PendingDeployment,
-} from "@/lib/markets/deploy";
-import { addMarket, refreshMarkets } from "@/lib/markets/registry";
+  clearPendingProposal,
+  getPendingProposal,
+  proposeMarket,
+  type PendingProposal,
+  type ProposalStep,
+} from "@/lib/markets/propose";
 import { saveMarketToRegistry } from "@/lib/supabase/markets-meta";
 import { uploadMarketBanner } from "@/lib/supabase/market-media";
-import { registerPool } from "@/lib/committee/client";
-import { activateMarket } from "@/lib/markets/activation";
 import { cn } from "@/lib/utils";
 import { NETWORK } from "@/lib/network";
 import {
-  addCollateralTrustline,
-  getCollateralAccountState,
-  type CollateralAccountState,
-} from "@/lib/stellar/collateral-account";
-import { formatTokenAmount } from "@/lib/stellar/amount";
-import { eventRulesHashHex } from "@/lib/markets/rules";
-import {
-  MIN_MARKET_LEAD_SECONDS,
   marketExpiryError,
   parseMarketExpiry,
   presetExpiryLocal,
@@ -73,24 +61,26 @@ import {
   type MarketCategory,
 } from "@/lib/markets/categories";
 
-const STEPS: { key: DeployStep; label: string }[] = [
-  { key: "market", label: "Deploying market contract" },
-  { key: "funding", label: "Funding guaranteed market solvency" },
-  { key: "pool", label: "Deploying shielded pool" },
-  { key: "batcher", label: "Linking pool as batcher" },
-  { key: "committee", label: "Configuring threshold committee" },
-  { key: "redeemvk", label: "Installing redeem verifying key" },
-  { key: "resolver", label: "Wiring the resolution contract" },
-  { key: "registration", label: "Registering market services" },
-  { key: "listing", label: "Publishing the market" },
-  { key: "done", label: "Shielded market live" },
+const STEPS: { key: ProposalStep; label: string }[] = [
+  { key: "configuration", label: "Checking private testnet policy" },
+  { key: "proposal", label: "Creating the market proposal" },
+  { key: "liquidity", label: "Opening the isolated LP vault" },
+  { key: "listing", label: "Publishing the funding round" },
+  { key: "done", label: "Funding round open" },
 ];
 
 const EXPIRY_PRESETS = [
-  { key: "1h", label: "1 hour", detail: "Intraday", seconds: 60 * 60 },
+  { key: "3h", label: "3 hours", detail: "Intraday", seconds: 3 * 60 * 60 },
   { key: "1d", label: "1 day", detail: "Tomorrow", seconds: 24 * 60 * 60 },
   { key: "7d", label: "7 days", detail: "This week", seconds: 7 * 24 * 60 * 60 },
   { key: "30d", label: "30 days", detail: "This month", seconds: 30 * 24 * 60 * 60 },
+];
+
+const PROPOSAL_MIN_LEAD_SECONDS = 2 * 60 * 60 + 10 * 60;
+const LIQUIDITY_TIERS = [
+  { atomic: "200000000", label: "20 USDC", detail: "Starter depth" },
+  { atomic: "500000000", label: "50 USDC", detail: "Standard depth" },
+  { atomic: "1000000000", label: "100 USDC", detail: "Deeper market" },
 ];
 
 const PRICE_CATEGORIES = MARKET_CATEGORIES.filter(isPriceCategory);
@@ -199,13 +189,15 @@ export default function CreatePage() {
   const [selectedExpiryPreset, setSelectedExpiryPreset] = useState("30d");
   const [minimumExpiry, setMinimumExpiry] = useState("");
   const [timeZone, setTimeZone] = useState("");
-  const [stage, setStage] = useState<DeployStep | null>(null);
+  const [liquidityTarget, setLiquidityTarget] = useState(LIQUIDITY_TIERS[0].atomic);
+  const [stage, setStage] = useState<ProposalStep | null>(null);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<{ marketId: string } | null>(null);
-  const [accountState, setAccountState] = useState<CollateralAccountState | null>(null);
-  const [accountLoading, setAccountLoading] = useState(false);
-  const [trustlineLoading, setTrustlineLoading] = useState(false);
-  const [pendingDeployment, setPendingDeployment] = useState<PendingDeployment | null>(null);
+  const [result, setResult] = useState<{
+    proposalId: string;
+    marketId: string;
+    liquidityVaultId: string;
+  } | null>(null);
+  const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const [attempted, setAttempted] = useState(false);
 
   const isPriceMarket = isPriceCategory(category);
@@ -239,15 +231,14 @@ export default function CreatePage() {
   const timingComplete = expiryValidationError === "";
   const settlementDate = timingComplete ? new Date(parseMarketExpiry(expiryLocal) * 1000) : null;
   const valid = detailsValid && timingComplete;
-  const subsidy = BigInt(MARKET_SUBSIDY);
-  const hasSubsidy = !!accountState?.hasTrustline && accountState.balanceAtomic >= subsidy;
-  const canFundDeployment = pendingDeployment?.funded || hasSubsidy;
   const activeIndex = stage ? STEPS.findIndex((s) => s.key === stage) : -1;
-  const busyLabel = stage === "registration"
-    ? "Registering market services"
+  const busyLabel = stage === "configuration"
+    ? "Checking policy"
     : stage === "listing"
-      ? "Publishing market"
-      : "Deploying market";
+      ? "Publishing funding round"
+      : stage === "liquidity"
+        ? "Opening LP vault"
+        : "Creating proposal";
   const categoryMode = isPriceMarket ? "price" : "event";
   const categoryPresentation = CATEGORY_PRESENTATION[category];
   const outcomeComplete = isPriceMarket ? strikeComplete : subjectComplete && questionComplete;
@@ -288,7 +279,7 @@ export default function CreatePage() {
   useEffect(() => {
     const now = Date.now();
     setExpiryLocal(presetExpiryLocal(30 * 24 * 60 * 60, now));
-    setMinimumExpiry(presetExpiryLocal(MIN_MARKET_LEAD_SECONDS, now));
+    setMinimumExpiry(presetExpiryLocal(PROPOSAL_MIN_LEAD_SECONDS, now));
     setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
 
@@ -307,30 +298,11 @@ export default function CreatePage() {
   }
 
   useEffect(() => {
-    let cancelled = false;
-    setAccountState(null);
-    if (!address) return;
-    setAccountLoading(true);
-    getCollateralAccountState(address, NETWORK.collateral)
-      .then((state) => {
-        if (!cancelled) setAccountState(state);
-      })
-      .catch((cause) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not read USDC balance");
-      })
-      .finally(() => {
-        if (!cancelled) setAccountLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [address]);
-
-  useEffect(() => {
-    const pending = address ? getPendingDeployment(address) : null;
-    setPendingDeployment(pending);
+    const pending = address ? getPendingProposal(address) : null;
+    setPendingProposal(pending);
     if (pending) {
       setExpiryLocal(toLocalDateTimeValue(new Date(pending.expiryUnix * 1000)));
+      setLiquidityTarget(pending.liquidityTarget);
       setSelectedExpiryPreset("");
     }
   }, [address]);
@@ -355,139 +327,90 @@ export default function CreatePage() {
     setStage(null);
     setAttempted(true);
     try {
-      if (!pendingDeployment && !valid) {
+      if (!pendingProposal && !valid) {
         requestAnimationFrame(() => document.getElementById(firstInvalidField)?.focus());
         if (!detailsValid) {
           throw new Error(isPriceMarket ? "Enter a valid strike price" : "Complete every outcome and resolution requirement");
         }
         throw new Error(expiryValidationError);
       }
-      if (!accountState?.hasTrustline) throw new Error("Enable USDC before creating a market");
-      if (!canFundDeployment) throw new Error("Insufficient USDC for the required market subsidy");
-      const expiryUnix = pendingDeployment?.expiryUnix ?? parseMarketExpiry(expiryLocal);
-      const marketAsset = isPriceMarket ? asset : category.toUpperCase();
-      const rulesHash = isPriceMarket ? undefined : eventRulesHashHex({
+      if (!address) throw new Error("Connect a Stellar wallet to create a market");
+      if (!isPriceMarket) {
+        throw new Error("Event markets stay disabled until their resolution operations are ready");
+      }
+      const expiryUnix = pendingProposal?.expiryUnix ?? parseMarketExpiry(expiryLocal);
+      const metadata = {
         title: question,
         category,
-        resolutionSource,
-        backupResolutionSources,
-        resolutionRules,
-        voidRules,
-      });
-      const { marketId, poolId, deployment } = await deployShieldedMarket({
+        bannerDownloadUrl: selectedImage?.kind === "commons" ? selectedImage.downloadUrl : undefined,
+        bannerSourceUrl: selectedImage?.kind === "commons" ? selectedImage.sourceUrl : undefined,
+        bannerAttribution: selectedImage?.attribution,
+        bannerLicense: selectedImage?.license,
+        bannerLicenseUrl: selectedImage?.kind === "commons" ? selectedImage.licenseUrl : undefined,
+      };
+      const proposal = await proposeMarket({
         address,
-        asset: marketAsset,
-        strikeUsd: isPriceMarket ? strikeNum : 0,
+        asset,
+        strikeUsd: strikeNum,
         expiryUnix,
-        resolverType: isPriceMarket ? "price" : "event",
-        rulesHash,
-        metadata: {
-          title: question,
-          category,
-          subject: isPriceMarket ? undefined : subject.trim(),
-          bannerDownloadUrl: selectedImage?.kind === "commons" ? selectedImage.downloadUrl : undefined,
-          bannerSourceUrl: selectedImage?.kind === "commons" ? selectedImage.sourceUrl : undefined,
-          bannerAttribution: isPriceMarket ? undefined : selectedImage?.attribution,
-          bannerLicense: isPriceMarket ? undefined : selectedImage?.license,
-          bannerLicenseUrl: selectedImage?.kind === "commons" ? selectedImage.licenseUrl : undefined,
-          resolutionSource: isPriceMarket ? undefined : resolutionSource.trim(),
-          backupResolutionSources: isPriceMarket ? undefined : backupResolutionSources,
-          resolutionRules: isPriceMarket ? undefined : resolutionRules.trim(),
-          voidRules: isPriceMarket ? undefined : voidRules.trim(),
-        },
-        resume: pendingDeployment,
+        liquidityTarget: BigInt(liquidityTarget),
+        metadata,
+        resume: pendingProposal,
         onStep: setStage,
-        onProgress: setPendingDeployment,
+        onProgress: setPendingProposal,
       });
-      const collateral = NETWORK.collateral;
-      const marketMetadata = deployment.metadata;
-      await activateMarket({
-        register: () => registerPool(marketId, poolId),
-        save: () => saveMarketToRegistry({
-          marketId,
-          poolId,
-          asset: deployment.asset,
-          collateralCode: collateral.code,
-          collateralIssuer: collateral.issuer,
-          collateralSac: collateral.sac,
-          collateralDecimals: collateral.decimals,
-          creator: address,
-          title: marketMetadata.title,
-          category: marketMetadata.category,
-          subject: marketMetadata.subject,
-          bannerSourceUrl: marketMetadata.bannerSourceUrl,
-          bannerAttribution: marketMetadata.bannerAttribution,
-          bannerLicense: marketMetadata.bannerLicense,
-          bannerLicenseUrl: marketMetadata.bannerLicenseUrl,
-          resolverType: deployment.resolverType,
-          resolutionSource: marketMetadata.resolutionSource,
-          backupResolutionSources: marketMetadata.backupResolutionSources,
-          resolutionRules: marketMetadata.resolutionRules,
-          voidRules: marketMetadata.voidRules,
-          rulesHash: deployment.rulesHash,
-        }),
-        onStage: setStage,
-      });
-      addMarket({
-        marketId,
-        poolId,
-        asset: deployment.asset,
-        kind: "shielded",
-        collateralCode: collateral.code,
-        collateralIssuer: collateral.issuer,
-        collateralSac: collateral.sac,
-        collateralDecimals: collateral.decimals,
-        createdAt: Date.now(),
-        title: marketMetadata.title,
-        category: marketMetadata.category,
-        subject: marketMetadata.subject,
-        bannerSourceUrl: marketMetadata.bannerSourceUrl,
-        bannerAttribution: marketMetadata.bannerAttribution,
-        bannerLicense: marketMetadata.bannerLicense,
-        bannerLicenseUrl: marketMetadata.bannerLicenseUrl,
-        resolverType: deployment.resolverType,
-        resolutionSource: marketMetadata.resolutionSource,
-        backupResolutionSources: marketMetadata.backupResolutionSources,
-        resolutionRules: marketMetadata.resolutionRules,
-        voidRules: marketMetadata.voidRules,
-        rulesHash: deployment.rulesHash,
+      setStage("listing");
+      await saveMarketToRegistry({
+        marketId: proposal.marketId,
+        asset: proposal.asset,
+        collateralCode: NETWORK.collateral.code,
+        collateralIssuer: NETWORK.collateral.issuer,
+        collateralSac: NETWORK.collateral.sac,
+        collateralDecimals: NETWORK.collateral.decimals,
+        creator: address,
+        title: proposal.metadata.title,
+        category: proposal.metadata.category,
+        bannerSourceUrl: proposal.metadata.bannerSourceUrl,
+        bannerAttribution: proposal.metadata.bannerAttribution,
+        bannerLicense: proposal.metadata.bannerLicense,
+        bannerLicenseUrl: proposal.metadata.bannerLicenseUrl,
+        resolverType: "price",
+        rulesHash: proposal.rulesHash,
+        proposalId: proposal.proposalId,
+        factoryId: proposal.factoryId,
+        liquidityVaultId: proposal.liquidityVaultId,
+        marketState: "funding",
+        liquidityTarget: proposal.liquidityTarget,
+        fundingDeadline: proposal.fundingDeadline * 1_000,
+        activationCutoff: proposal.activationCutoff * 1_000,
+        settlementTime: proposal.expiryUnix * 1_000,
       });
       const bannerSource = selectedImage
         ? selectedImage.kind === "upload"
           ? { kind: "upload" as const, file: selectedImage.file }
           : { kind: "commons" as const, downloadUrl: selectedImage.downloadUrl }
-        : marketMetadata.bannerDownloadUrl
-          ? { kind: "commons" as const, downloadUrl: marketMetadata.bannerDownloadUrl }
+        : proposal.metadata.bannerDownloadUrl
+          ? { kind: "commons" as const, downloadUrl: proposal.metadata.bannerDownloadUrl }
           : null;
       if (bannerSource) {
         try {
-          await uploadMarketBanner({ address, marketId, source: bannerSource });
+          await uploadMarketBanner({ address, marketId: proposal.marketId, source: bannerSource });
         } catch (cause) {
-          setError(cause instanceof Error ? cause.message : "The market is live, but its image could not be attached.");
+          setError(cause instanceof Error ? cause.message : "The funding round is open, but its image could not be attached.");
         }
       }
-      await refreshMarkets();
-      clearPendingDeployment(address);
-      setPendingDeployment(null);
+      clearPendingProposal(address);
+      setPendingProposal(null);
       setStage("done");
-      setResult({ marketId });
+      setResult({
+        proposalId: proposal.proposalId,
+        marketId: proposal.marketId,
+        liquidityVaultId: proposal.liquidityVaultId,
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "deploy failed");
+      setError(e instanceof Error ? e.message : "Market proposal failed");
       setStage(null);
-      setPendingDeployment(address ? getPendingDeployment(address) : null);
-    }
-  }
-
-  async function enableCollateral() {
-    setError("");
-    setTrustlineLoading(true);
-    try {
-      await addCollateralTrustline(address, NETWORK.collateral);
-      setAccountState(await getCollateralAccountState(address, NETWORK.collateral));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not enable USDC");
-    } finally {
-      setTrustlineLoading(false);
+      setPendingProposal(address ? getPendingProposal(address) : null);
     }
   }
 
@@ -527,7 +450,7 @@ export default function CreatePage() {
               { number: 1, label: "Type", complete: true },
               { number: 2, label: "Outcome", complete: outcomeComplete },
               { number: 3, label: "Resolution", complete: resolutionComplete },
-              { number: 4, label: "Deploy", complete: valid && canFundDeployment },
+              { number: 4, label: "Propose", complete: valid },
             ].map((item) => (
               <div key={item.number} className="flex items-center justify-center gap-2 text-[11px] text-foreground/55 sm:text-xs">
                 <span className={cn("inline-flex size-5 items-center justify-center rounded-full border font-mono text-[10px]", item.complete ? "border-[#eca8d6]/40 bg-[#eca8d6]/10 text-[#f4c5e4]" : "border-white/15")}>
@@ -862,9 +785,9 @@ export default function CreatePage() {
             <section className="space-y-6 p-5 sm:p-7">
               <SectionHeading
                 number={4}
-                title="Set timing and fund the market"
-                description="Choose when resolution begins and confirm the USDC needed to guarantee market solvency."
-                complete={valid && canFundDeployment}
+                title="Set timing and choose market depth"
+                description="Choose when resolution begins and how much permissionless liquidity the isolated market vault should raise."
+                complete={valid}
               />
 
               <fieldset className="space-y-3">
@@ -878,7 +801,7 @@ export default function CreatePage() {
                         type="button"
                         aria-label={expiry.label}
                         aria-pressed={selected}
-                        disabled={busy || !!pendingDeployment}
+                        disabled={busy || !!pendingProposal}
                         onClick={() => applyExpiryPreset(expiry.key, expiry.seconds)}
                         className={cn(
                           "min-h-16 rounded-lg border px-2 py-3 text-center transition-[border-color,background-color,color] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:opacity-50 motion-reduce:transition-none",
@@ -904,7 +827,7 @@ export default function CreatePage() {
                     step={60}
                     min={minimumExpiry || undefined}
                     value={expiryLocal}
-                    disabled={busy || !!pendingDeployment}
+                    disabled={busy || !!pendingProposal}
                     aria-describedby="settlement-time-description settlement-time-conversion"
                     aria-invalid={attempted && !timingComplete}
                     onChange={(event) => {
@@ -930,49 +853,50 @@ export default function CreatePage() {
                 <div className="flex items-start gap-3">
                   <AssetIcon asset="USDC" size="md" />
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium">Circle USDC on Stellar</p>
-                        <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-foreground/50">Testnet collateral</p>
-                      </div>
-                      <span className="font-mono text-sm text-foreground">
-                        {formatTokenAmount(subsidy, NETWORK.collateral.decimals, 7)} USDC
-                      </span>
-                    </div>
+                    <p className="text-sm font-medium">Permissionless USDC liquidity</p>
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-foreground/50">Isolated testnet LP vault</p>
                     <p className="mt-3 text-xs leading-relaxed text-foreground/50">
-                      The creator subsidy covers the LMSR worst-case loss. Every bet and payout uses USDC. XLM is only used for Stellar fees and account reserve.
+                      Creating the proposal requires no USDC. Anyone can privately fund its isolated LP vault before the deadline. Your wallet only pays normal Stellar transaction fees and account reserve.
                     </p>
-                    {address && accountState?.hasTrustline && (
-                      <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/[0.08] pt-3 text-xs">
-                        <span className="text-foreground/55">Wallet balance</span>
-                        <span className={cn("font-mono", hasSubsidy ? "text-emerald-200" : "text-red-300")}>
-                          {formatTokenAmount(accountState.balanceAtomic, NETWORK.collateral.decimals, 2)} USDC
-                        </span>
-                      </div>
-                    )}
                   </div>
                 </div>
+                <fieldset className="mt-4 grid grid-cols-1 gap-2 border-t border-white/[0.08] pt-4 sm:grid-cols-3">
+                  <legend className="sr-only">Liquidity target</legend>
+                  {LIQUIDITY_TIERS.map((tier) => {
+                    const selected = liquidityTarget === tier.atomic;
+                    return (
+                      <button
+                        key={tier.atomic}
+                        type="button"
+                        disabled={busy || !!pendingProposal}
+                        aria-pressed={selected}
+                        onClick={() => setLiquidityTarget(tier.atomic)}
+                        className={cn(
+                          "min-h-16 rounded-lg border px-3 py-2 text-left transition-[border-color,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 disabled:opacity-50",
+                          selected
+                            ? "border-[#eca8d6]/45 bg-[#eca8d6]/[0.07]"
+                            : "border-white/10 bg-black/15 hover:border-white/20",
+                        )}
+                      >
+                        <span className="block font-mono text-xs text-foreground">{tier.label}</span>
+                        <span className="mt-1 block text-[10px] text-foreground/50">{tier.detail}</span>
+                      </button>
+                    );
+                  })}
+                </fieldset>
               </div>
 
-              {pendingDeployment && (
+              {pendingProposal && (
                 <div className="rounded-lg border border-amber-300/30 bg-amber-300/[0.05] p-4">
                   <div className="flex items-start gap-3">
                     <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-200" aria-hidden="true" />
                     <div>
-                      <p className="text-sm font-medium text-amber-100">
-                        {pendingDeployment.complete ? "Market activation needs attention" : "Incomplete market setup found"}
-                      </p>
+                      <p className="text-sm font-medium text-amber-100">Incomplete market proposal found</p>
                       <p className="mt-2 text-xs leading-relaxed text-foreground/55">
-                        {pendingDeployment.complete
-                          ? "The contracts are confirmed on Stellar. Retry service registration and public listing without repeating transactions or paying the creator subsidy again."
-                          : `Resume the saved ${pendingDeployment.metadata.category} market from its last confirmed transaction. Moros reuses the deployed contracts and does not charge the creator subsidy twice.`}
+                        Resume the saved {pendingProposal.metadata.category} proposal from its last confirmed transaction. Moros reuses the deterministic proposal and LP vault addresses.
                       </p>
-                      {pendingDeployment.marketId && (
-                        <p className="mt-2 break-all font-mono text-[10px] text-foreground/50">Market: {pendingDeployment.marketId}</p>
-                      )}
-                      {pendingDeployment.poolId && (
-                        <p className="mt-1 break-all font-mono text-[10px] text-foreground/50">Pool: {pendingDeployment.poolId}</p>
-                      )}
+                      <p className="mt-2 break-all font-mono text-[10px] text-foreground/50">Proposal: {pendingProposal.proposalId}</p>
+                      <p className="mt-1 break-all font-mono text-[10px] text-foreground/50">LP vault: {pendingProposal.liquidityVaultId}</p>
                     </div>
                   </div>
                 </div>
@@ -983,36 +907,16 @@ export default function CreatePage() {
                   <WalletCards className="size-4" />
                   Connect wallet to create
                 </Button>
-              ) : accountLoading ? (
-                <Button type="button" size="lg" className="h-12 w-full" disabled>
-                  <Spinner />
-                  Checking USDC
-                </Button>
-              ) : accountState && !accountState.hasTrustline ? (
-                <div className="space-y-3">
-                  <Button type="button" size="lg" className="h-12 w-full" disabled={trustlineLoading} onClick={enableCollateral}>
-                    {trustlineLoading && <Spinner />}
-                    {trustlineLoading ? "Enabling USDC" : "Enable USDC"}
-                  </Button>
-                  {NETWORK.id === "testnet" && (
-                    <a href="https://faucet.circle.com/" target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 text-xs text-foreground/55 underline underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
-                      Get testnet USDC from Circle
-                      <ExternalLink className="size-3.5" aria-hidden="true" />
-                    </a>
-                  )}
-                </div>
               ) : (
-                <Button type="submit" size="lg" className="h-12 w-full" disabled={busy || !canFundDeployment}>
+                <Button type="submit" size="lg" className="h-12 w-full" disabled={busy || (!pendingProposal && !valid)}>
                   {busy && <Spinner />}
                   {busy
                     ? busyLabel
-                    : !canFundDeployment
-                      ? "Insufficient USDC for subsidy"
-                      : pendingDeployment
-                        ? "Resume market setup"
-                        : valid
-                          ? "Deploy shielded market"
-                          : "Complete market details"}
+                    : pendingProposal
+                      ? "Resume market proposal"
+                      : valid
+                        ? "Open funding round"
+                        : "Complete market details"}
                 </Button>
               )}
 
@@ -1033,9 +937,9 @@ export default function CreatePage() {
 
               {result && (
                 <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/[0.05] p-4" aria-live="polite">
-                  <p className="text-sm text-emerald-200">Your shielded market is live on {NETWORK.name}.</p>
-                  <Link href={`/app/market/${result.marketId}`} className="mt-3 inline-flex min-h-11 items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-[#eca8d6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
-                    Open your market
+                  <p className="text-sm text-emerald-200">Your funding round is open on {NETWORK.name}. The market activates only after its LP target is reached.</p>
+                  <Link href="/app/liquidity" className="mt-3 inline-flex min-h-11 items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-[#eca8d6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
+                    View funding rounds
                     <ArrowUpRight className="size-3.5" aria-hidden="true" />
                   </Link>
                 </div>

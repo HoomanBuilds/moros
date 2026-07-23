@@ -580,6 +580,9 @@ async function main() {
       fixedBatchSize: 8,
       minimumSideCount: 2,
       maximumPriceMovement: Q32 / 4n,
+      minimumFundingWindow: 3_600,
+      minimumOpenWindow: 3_600,
+      maximumMarketDuration: 7_776_000,
     },
     mainnetReady: false,
   };
