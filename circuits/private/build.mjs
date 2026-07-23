@@ -279,7 +279,6 @@ async function setupAll() {
       snarkjs,
       "zkey",
       "verify",
-      "r1cs",
       paths.r1cs,
       ptau,
       paths.zkey,
