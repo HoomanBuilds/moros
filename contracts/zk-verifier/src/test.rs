@@ -272,6 +272,7 @@ fn setup() -> (
     let setup_client = ZkVerifierClient::new(&env, &address);
     for key in keys.iter() {
         setup_client.add_key(&controller, &key);
+        assert_eq!(setup_client.circuit_key(&key.circuit), Some(key));
     }
     assert_eq!(setup_client.finalize(&controller), expected_domain);
     let env_static: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env.clone()));

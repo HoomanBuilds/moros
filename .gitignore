@@ -33,6 +33,9 @@ witness.wtns
 build/
 output/
 proofgen/
+/circuits/private-build/
+/circuits/ptau/
+/web/public/zk/private/
 
 # --- Env / secrets / local deploy state ---
 .env

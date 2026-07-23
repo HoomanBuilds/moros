@@ -163,6 +163,15 @@ impl ZkVerifier {
         Self::info(env).domain
     }
 
+    pub fn circuit_key(env: Env, circuit: ProofCircuit) -> Option<CircuitKey> {
+        let key = DataKey::Key(circuit);
+        let value = env.storage().persistent().get(&key);
+        if value.is_some() {
+            Self::bump_key(&env, &key);
+        }
+        value
+    }
+
     pub fn verify(env: Env, statement: ProofStatement, proof: Bytes) -> bool {
         if !Self::is_finalized(&env) {
             return false;
