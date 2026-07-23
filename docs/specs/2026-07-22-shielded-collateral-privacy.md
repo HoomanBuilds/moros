@@ -4,6 +4,8 @@
 
 Design for testnet implementation. This document does not claim that the current deployment provides shielded balances or unlinkable wallet activity.
 
+Permissionless LP funding, variable LP value, active exit limits, creator-free funding, execution fees, and uniform fixed-lot batch pricing are defined by the companion specification `docs/specs/2026-07-23-permissionless-liquidity-and-private-batch-pricing.md`. That companion supersedes creator-subsidy and order-allocation statements in this document for new LP-backed markets.
+
 ## Objective
 
 Moros will let many users deposit Stellar USDC into one shared shielded collateral vault, reuse private balances across markets, place bets without signing from their public wallet, receive refunds and payouts back into shielded balances, and withdraw later through a relayer.
@@ -24,7 +26,7 @@ The current system hides the selected side and exact order amount, but it does n
 - The encrypted cloud backup stores wallet, market, pool, and transaction identifiers as plaintext metadata even though the position payload is encrypted.
 - The committee endpoint is selected by pool, so the service learns which market receives an order.
 - The current pool stores one latest market price, so a later batch can overwrite the price used to calculate an earlier position's entitlement.
-- The current market has no terminal path to return remaining creator subsidy after the sole batcher redeems a resolved market.
+- The current market has creator-only funding, no LP shares, no active exit queue, and no terminal path to distribute remaining reserve after the sole batcher redeems a resolved market.
 
 These are architectural leaks. UI copy cannot fix them.
 
@@ -51,7 +53,7 @@ Primary references:
 
 - The wallet that placed a particular bet.
 - The wallet's current shielded USDC balance.
-- The exact order amount.
+- The actual USDC execution charge and unused private position budget. The first release publishes a fixed lot class shared by every order in a batch.
 - The selected side.
 - The link between a shielded balance note and its change note.
 - The link between a position and a later shielded payout note.
@@ -62,12 +64,14 @@ Primary references:
 
 - The wallet, amount, and time of a deposit from public USDC into the vault.
 - The recipient, amount, and time of a final withdrawal to a public Stellar wallet.
-- A market creator's address, configuration, rules hash, and creator subsidy transfer.
+- A market creator's address, configuration, rules hash, liquidity target, and proposal.
+- Aggregate market liquidity, LP share supply, scenario equity, and exit-queue totals.
 - The shared vault contract, supported asset, commitment roots, output commitments, and spent nullifiers.
 - The markets updated by each aggregate batch.
 - The target market and timing of each first-release relayed order intent, without a public user wallet, side, or amount.
 - The market or batch context and timing of a shielded claim or refund, without the private position commitment, public user wallet, or value.
 - Aggregate YES and NO changes applied to each market.
+- The fixed lot identifier and order count for an executed batch.
 - Market odds, close time, outcome, resolver evidence, and aggregate solvency data.
 - The relayer account that submits an action.
 
@@ -82,7 +86,8 @@ Primary references:
 ### Not promised
 
 - Hiding the existence of a public USDC deposit or withdrawal.
-- Hiding a market creator or the public subsidy used to fund a market.
+- Hiding a market creator or public proposal.
+- Hiding aggregate LP funding and solvency values.
 - Privacy from a compromised browser or wallet.
 - Privacy from traffic analysis by a relayer that records IP addresses.
 - Privacy from a colluding threshold committee if the selected cryptographic mode lets a quorum reconstruct individual data.
@@ -144,7 +149,8 @@ The vault cannot prevent Circle or Stellar network controls from freezing, clawi
 |---|---|---|
 | User wallet | Authorize deposits, derive recovery keys, choose final withdrawals | Plaintext note database outside the user's device |
 | Browser prover | Create notes, proofs, encrypted intents, and recovery records | Long-lived plaintext secrets after the session is locked |
-| MarketFactory | Permissionlessly deploy the approved LMSR template and atomically bind the creator, vault, resolver, USDC, timing, fee policy, rules hash, and subsidy | User note secrets or custody of the shared vault |
+| MarketFactory | Permissionlessly record supported proposals and deploy the approved LMSR template after an isolated liquidity vault reaches its target | User note secrets, shared-vault custody, or authority to allocate LP capital outside the approved rules |
+| MarketLiquidityVault | Accept permissionless USDC funding, issue LP share notes, process exits, and receive terminal LP equity for one market | Bettor collateral or authority to dilute active LP shares at an unreviewed price |
 | ShieldedCollateralVault | Hold USDC, verify spends, register exact markets, apply batches as the sole batcher, hold aggregate shares, and reject nullifier reuse | Any administrator's private accounting decision |
 | Private order coordinator | Persist opaque intents, form fair batches, and collect threshold attestations | Custody of USDC or authority to change vault state without the mandatory proof and required attestation |
 | Relayer | Pay XLM fees and submit proof-bound actions | Ability to change recipient, outputs, market, amount, fee, or expiry |
@@ -168,9 +174,9 @@ Responsibilities:
 - Maintain a TTL-safe spent-nullifier set that cannot become reusable through archival or expiry and does not require every user to prove against one mutable global nullifier root.
 - Maintain a per-market accepted-position root, a sparse included-position set root updated by each batch, per-batch allocation roots, and sealed final roots after batching closes.
 - Append private balance, position, refund, payout, and treasury notes.
-- Accept user-created markets only through the approved noncustodial factory, which proves approved WASM and atomically binds immutable collateral, vault batcher, resolver, close time, fee policy, rules hash, LMSR parameters, and sufficient creator subsidy.
+- Accept user-created markets only through the approved noncustodial factory, which proves approved WASM and atomically binds immutable collateral, vault batcher, liquidity vault, resolver, close time, fee policy, rules hash, LMSR parameters, and a fully funded LP reserve.
 - Act as the configured batcher for every new private LMSR market.
-- Transfer public USDC only for deposits, aggregate market funding, aggregate market redemption, and final withdrawals.
+- Transfer public USDC only for deposits, proof-bound LP funding and exits, aggregate market charges, aggregate market redemption, fee settlement, and final withdrawals.
 - Hold all aggregate YES and NO shares, per-batch allocation roots, and market settlement receipts.
 - Expose permissionless recovery and withdrawal paths that do not require Moros services.
 
@@ -178,11 +184,11 @@ The vault must not store a per-wallet public balance.
 
 ### MarketFactory
 
-Any user can call the factory to create a supported market. The factory deploys an approved LMSR WASM hash, completes all immutable or one-time configuration, transfers the required creator subsidy, and registers the market with the vault in one transaction. A failed nested step reverts the full invocation, so it cannot leave a funded but partially linked market.
+Any user can call the factory to propose a supported market without supplying USDC. Anyone may then fund its isolated market liquidity vault. After the public target is reached, any caller may activate the proposal. Activation deploys an approved LMSR WASM hash, completes all immutable or one-time configuration, transfers the LP reserve, and registers the market with the shared vault in one transaction. A failed nested step reverts the full invocation, so it cannot leave a funded but partially linked market.
 
-The factory is not a public listing service and does not custody user shielded balances. Offchain metadata publication may be retried without redeploying contracts or paying the subsidy again. A Supabase listing failure cannot change whether the onchain market is valid.
+The factory is not a public listing service and does not custody user shielded balances. Offchain metadata publication may be retried without creating another proposal, redeploying contracts, or moving LP funding again. A Supabase listing failure cannot change whether the onchain market is valid.
 
-The vault does not trust a market's self-reported code identity. Registration requires an authenticated factory deployment record plus live cross-contract checks for vault batcher, USDC, resolver, timing, fee, rules hash, subsidy, and supported capability. Governance may change approved capability policy only through the defined timelock. It does not approve individual markets.
+The vault does not trust a market's self-reported code identity. Registration requires an authenticated factory deployment record plus live cross-contract checks for vault batcher, liquidity vault, USDC, resolver, timing, fee, rules hash, funded loss bound, and supported capability. Governance may change approved capability policy only through the defined timelock. It does not approve individual markets.
 
 ### Onchain routing boundary
 
@@ -198,7 +204,7 @@ Responsibilities:
 - Authorize the exact USDC transfer and call each market as that market's configured batcher.
 - Mark position commitments included or refundable.
 - Redeem aggregate winning shares into the same vault exactly once.
-- Return remaining creator subsidy only after aggregate winner redemption and without touching user backing.
+- Return terminal market-maker equity to the linked market liquidity vault only after aggregate winner redemption and without touching user backing.
 
 This boundary matches the current LMSR interface, where the configured batcher funds `apply_batch`, receives both outcome shares, receives the batch-collateral refund on VOID, and redeems the winning shares. Splitting custody into a second deployed router would create an unnecessary USDC and share handoff. If measured contract limits later require a split, implementation stops until an exact, atomic, audited custody interface replaces this design.
 
@@ -298,8 +304,8 @@ The deposit wallet and total amount remain public.
 - Inputs are valid unspent balance notes.
 - Input value equals change value plus the exact private position budget, any future service escrow, and the authorized relayer fee.
 - Side is binary.
-- Order share quantity is positive, within market limits, and no greater than its private USDC budget at maximum price.
-- The first shared-vault testnet permits whole-share quantities only, matching the current market amount rule and producing exact USDC atomic winning credits. Finer share precision stays disabled until aggregate conversion and allocation tests prove no liability gap.
+- The public lot identifier selects a positive whole-share quantity within market limits, and the private USDC budget covers its maximum price, trade-fee cap, and any authorized service fee.
+- Every position inside one first-release batch uses the same fixed lot. Finer share precision and mixed-lot batches stay disabled until aggregate conversion and allocation tests prove no liability or privacy gap.
 - Position commitment binds amount, side, market, close and refund deadlines, fee policy, batch policy, secret, and its future spend-nullifier derivation.
 - The target market is approved and still open at transaction execution. A proof generated before close cannot be accepted after close.
 - The encrypted order encodes the same amount and side as the position commitment.
@@ -313,12 +319,12 @@ The deposit wallet and total amount remain public.
 - Aggregate YES and NO quantities equal the encrypted orders in the batch.
 - Batch size satisfies the minimum anonymity rule and both aggregate YES and NO quantities are nonzero.
 - No order can be included twice.
-- The batch-specific execution allocation assigns every included position a private atomic USDC charge, and all assigned charges sum exactly to the LMSR charge returned by the market.
-- Charge allocation is deterministic from the pre-batch state, aggregate quantities, exact market charge, and a domain-separated ordering of included commitments. A coordinator cannot choose a favorable allocation.
+- The batch-specific execution record publishes order-independent uniform YES and NO prices plus the fixed-lot charge for each hidden side.
+- User side charges plus the explicit bounded protocol rounding contribution sum exactly to the LMSR charge returned by the market.
 - Gross position entitlements equal the batch backing for both possible outcomes at USDC atomic precision.
 - Every included position exists in the accepted-position tree and changes from absent to present under the current sparse included-position root.
 - If nonzero service fees are enabled later, the proof consumes each included service-escrow note and creates only the configured operator compensation notes. Zero-fee testnet batches create no operator value.
-- One batch allocation root binds every included position commitment, assigned charge, winning-share quantity, service-escrow result, market, and epoch. The statement is bound to that root and the vault contract.
+- One batch allocation root binds every included position commitment, uniform side charges, lot, service-escrow result, market, pre-state, post-state, and epoch. The statement is bound to that root and the vault contract.
 
 The vault always verifies the aggregate proof. A threshold committee statement authenticates the DKG epoch, ciphertext set, aggregate decryption, and proof inputs, but it cannot replace the proof or choose quantities, charges, state transitions, or backing. A colluding quorum may still violate the stated order-privacy trust boundary, but it cannot create a valid false accounting transition.
 
@@ -328,14 +334,14 @@ The first shared-vault testnet keeps the current normal batch size of four. Duri
 
 ### Shielded claim proof
 
-- The private position data is a member of the finalized batch allocation root without revealing the position commitment or assigned charge.
+- The private position data is a member of the finalized batch allocation root without revealing the position commitment or side.
 - The position nullifier is derived correctly and unspent.
-- The public market outcome and that position's private assigned charge under the batch allocation root are bound into the proof.
-- Gross entitlement equals private position budget minus assigned charge plus the position's winning-share credit when it wins.
-- Platform fee applies only to positive winning profit, defined as winning-share credit minus assigned charge.
+- The public market outcome and the batch's uniform side charges are bound into the proof.
+- An executed-order change proof returns private position budget minus side charge, escrowed trade fee, and earned service fee before resolution.
+- A resolution claim creates only the winning-share credit, if any, because trade fees were escrowed at execution.
 - Principal and void refunds are not charged.
-- Payout, change, fee, and padding notes conserve the proven entitlement.
-- Output notes return value to the user's shielded key and the treasury's shielded key.
+- Payout, change, and padding notes conserve the proven entitlement.
+- Output notes return user value to the user's shielded key. Vested protocol and LP fee distribution follows the aggregate fee escrow transition.
 
 No USDC is transferred to a public wallet during a shielded claim.
 
@@ -345,7 +351,7 @@ No USDC is transferred to a public wallet during a shielded claim.
 - A pending-order refund is accepted only at or after its onchain deadline and only if the position was never included.
 - A VOID refund returns the full position budget after the market has returned aggregate batch collateral to the vault.
 - An unbatched refund also returns any locked service escrow because no batch service was completed.
-- No platform fee is charged. An optional relayer fee must be separately authorized and a zero-relayer-fee direct submission remains possible.
+- No trade or platform fee is charged. An optional relayer fee must be separately authorized and a zero-relayer-fee direct submission remains possible.
 - The position nullifier is consumed once and the refund output returns to the user's shielded key.
 - A pending refund proves private membership in the sealed accepted-position root and private non-membership in the sealed included-position root. An included VOID refund proves private membership in its batch allocation root. Both consume the unique position nullifier.
 
@@ -381,20 +387,21 @@ The chain nullifier set is authoritative. Local locks prevent accidental double 
 | Pending after deadline | Refund into a shielded note | User recovers funds or a relayer earns the allowed fee |
 | Included | Wait for resolution | No transaction required |
 | Included and resolved | Aggregate redeem, then claim into shielded balance | Any caller restores vault backing; the user recovers entitlement or a relayer earns the allowed fee |
-| Voided | Refund into shielded balance | Market returns batch collateral atomically; the user recovers full principal with no platform fee |
+| Voided | Refund into shielded balance | Market returns batch collateral atomically; the user recovers full principal and refundable trade fee |
 | Claimed or refunded | Terminal | Every replay must fail |
 
 ### Market lifecycle
 
 | Transition | Caller | Incentive | Failure recovery |
 |---|---|---|---|
-| Creation requested to deployed, funded, and registered | Any user through the approved factory | Creator wants the market active | The full atomic call reverts on failure, and the user retries without a partial deployment |
+| Proposal to funding | Any user through the approved factory | Creator wants the market available | The creator retries without moving USDC |
+| Funding to deployed and registered | Any caller after the LP target is reached | LPs and creator want the market active | The full atomic activation reverts on failure without losing proposal funding |
 | Open to final batching | Any coordinator or relayer after close | Submitter compensation or participant recovery | Another submitter uses the same public state |
 | Pending to final roots sealed | Any caller after finalization deadline | User recovery or allowed relayer fee | Another user, relayer, or keeper submits the idempotent finalization call |
 | Awaiting oracle to resolved | Any keeper with valid resolver evidence | Keeper compensation or protocol operation | Another keeper submits the same verifiable evidence |
 | Awaiting oracle to void | Any caller after the resolver timeout under the configured resolver rules | Unlock refundable principal | User or independent keeper calls the timeout path |
 | Resolved to aggregate redeemed | Any caller | Restore claim backing and bounded caller compensation | Another caller retries idempotently |
-| Aggregate redeemed to sponsor surplus released | Any caller after the sole batcher claim is complete | Creator recovers unused subsidy | Creator or independent keeper retries |
+| Aggregate redeemed to LP equity settled | Any caller after the sole batcher claim is complete | LPs recover terminal market-maker value | LP or independent keeper retries |
 | Any live state to TTL maintained | Any caller | Bounded maintenance compensation where configured | Entries remain restorable from archived persistent state |
 
 All time-based transitions must be permissionless and callable by more than one keeper. No state may require the original market creator, Moros frontend, one committee server, or one relayer to return. Keeper and maintenance compensation is zero on the free testnet unless an explicitly funded budget is configured.
@@ -425,7 +432,7 @@ All time-based transitions must be permissionless and callable by more than one 
 - Market resolution adds only the shares and collateral owed by the LMSR market.
 - Claims transform a valid position entitlement into user and treasury notes exactly once.
 - Withdrawals decrease assets and shielded liabilities by exactly the public withdrawal plus allowed relayer fee.
-- Void and never-included refunds return full principal with no platform fee.
+- Void and never-included refunds return full principal with no trade or platform fee.
 - Protocol fees can never be withdrawn from user principal.
 - Integer ranges, decimal conversion, rounding direction, and field bounds are identical across circuits, contracts, committee code, and UI estimates.
 
@@ -433,16 +440,18 @@ For each accepted batch `B`, all amounts are USDC atomic units:
 
 - `S_B` is the sum of private position budgets locked by the included notes.
 - `M_B` is the exact aggregate LMSR charge returned by `apply_batch`.
-- `c_i` is position `i`'s deterministically assigned private atomic charge, with `0 <= c_i <= amount_i` and `sum(c_i) = M_B`.
+- `R_B` is the explicit protocol rounding contribution, with `0 <= R_B < batch_size`.
+- `c_i` is the uniform fixed-lot atomic charge selected by position `i`'s private side, with `0 <= c_i <= amount_i` and `sum(c_i) + R_B = M_B`.
+- `F_B` is refundable trade-fee escrow for the batch.
 - `amount_i` is the position's winning-share credit in USDC atomic units under the enabled exact-conversion quantity rule.
 - `W_B(YES)` and `W_B(NO)` are the aggregate market redemptions owned by the vault for each possible result.
 - `E_B(outcome)` is the sum of gross user entitlements before platform and relayer fee allocation.
 
-For each position, gross entitlement is `budget_i - c_i + winning_credit_i(outcome)`. The batch proof must enforce both `E_B(YES) = S_B - M_B + W_B(YES)` and `E_B(NO) = S_B - M_B + W_B(NO)` at USDC atomic precision. For VOID, the market returns `M_B` and the proof enforces `E_B(VOID) = S_B`. The contract accepts no batch statement that omits either non-void outcome check.
+The executed-order change total is `S_B - (M_B - R_B) - F_B`. For normal resolution, total bettor value is that change plus `W_B(outcome)`. For VOID, the market returns `M_B`, the trade fee remains refundable, the protocol recovers only its rounding contribution, and bettor value returns to `S_B`. The contract accepts no batch statement that omits either non-void outcome check or the VOID equality.
 
-For each claim, user output notes plus platform and authorized relayer fee notes must equal the proved gross entitlement. The platform fee is the configured percentage of positive winning profit only. A void or never-included refund has no platform fee. Market fixed-point conversion occurs before deterministic atomic charge allocation, so no unassigned user charge remains. Any defensive reconciliation residual is explicit, bounded, and non-withdrawable until the accounting proof shows that it is not user backing. It is never silently reclassified as treasury revenue.
+For each user transition, output notes plus explicitly authorized service-fee notes must equal the proved value. A void or never-included refund has no trade fee. Market fixed-point conversion occurs before uniform fixed-lot atomic charge allocation. The explicit rounding contribution is bounded and separately funded. It is never silently reclassified as treasury revenue.
 
-The first shared-vault testnet preserves the current platform policy: 200 basis points on positive winning profit, fixed for the market before its first order, with a hard contract cap of 1,000 basis points. It does not charge principal, losing positions, pending refunds, or VOID refunds. This platform fee is separate from the zero testnet service fees used by relayers and operators.
+New LP-backed markets use the execution fee curve and LP split in `docs/specs/2026-07-23-permissionless-liquidity-and-private-batch-pricing.md`. Existing deployed markets retain their current fee policy for compatibility. Trading, protocol, LP, and service fees remain separate accounting classes.
 
 Each batch stores its own exact batch allocation root and an informative average execution price. The allocation root is authoritative. The latest market spot price cannot determine an older position's entitlement.
 
@@ -516,7 +525,7 @@ The feature is not testnet ready until all gates pass:
 11. Every accepted batch contains nonzero aggregate YES and NO quantities, while one-sided pending demand reaches a shielded full-refund terminal state.
 12. Two positions from different batches settle using their own batch allocation roots, and their aggregate entitlements equal backing for YES, NO, and VOID.
 13. A clean wallet that was offline longer than public RPC event retention restores from persistent or independently archived ledger data.
-14. Remaining creator subsidy cannot be released before the vault's aggregate winning redemption and cannot reduce any user entitlement.
+14. Terminal market-maker equity cannot reach the isolated liquidity vault before aggregate winning redemption and cannot reduce any user entitlement.
 
 ## Mainnet prohibition
 

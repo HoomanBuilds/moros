@@ -4,6 +4,8 @@
 
 Implement the privacy specification in `docs/specs/2026-07-22-shielded-collateral-privacy.md` so Moros can serve many concurrent users with reusable shielded USDC balances, relayed bets, shielded refunds, shielded claims, reliable recovery, and honest privacy guarantees.
 
+Implement creator-free market funding, private LP shares, LP exits, execution fees, and uniform fixed-lot batch pricing through the companion plan `docs/plans/2026-07-23-permissionless-liquidity-and-private-batch-pricing.md`. That plan supersedes creator-subsidy, fee, and order-allocation work below for new LP-backed markets.
+
 This plan covers design validation and testnet implementation. It does not authorize mainnet deployment.
 
 ## Working rules
@@ -30,17 +32,18 @@ Do not extend the current direct-wallet `place_order` flow. It fundamentally exp
 The new flow is:
 
 1. User deposits USDC into the shared vault and receives private balance notes.
-2. User creates a private order and change note locally.
+2. User creates a fixed-lot private order and locks its maximum budget.
 3. A relayer submits the proof-bound order intent.
 4. Offchain coordinators and the committee form a valid mixed batch, and a relayer submits it to the vault.
 5. The vault acts as the market's sole batcher, funds the exact aggregate LMSR charge, and receives aggregate outcome shares.
-6. Resolution returns aggregate winning value to the shared vault.
-7. Each user claims into a new private balance note.
-8. The user may reuse that balance or withdraw publicly later.
+6. After execution, each user recovers unused budget into a private change note.
+7. Resolution returns aggregate winning value to the shared vault.
+8. Each winner claims into a new private balance note, while every position reaches a final spent state.
+9. The user may reuse that balance or withdraw publicly later.
 
 Do not deploy a separate custody router in the first implementation. The current LMSR contract requires its configured batcher to fund each batch, receive both outcome shares, receive VOID batch-collateral refunds, and redeem aggregate winnings. The vault therefore owns the onchain routing module and is the exact batcher address. Offchain coordinators have no custody or contract authority.
 
-Deploy a noncustodial `MarketFactory` for permissionless user-created markets. The factory deploys only approved market WASM and atomically completes vault batcher, USDC, resolver, fee, timing, rules, subsidy, and vault-registration checks. It never holds shared shielded balances.
+Deploy a noncustodial `MarketFactory` for permissionless user-created markets. The factory records supported proposals without requiring creator USDC. After a linked isolated liquidity vault reaches its target, activation deploys only approved market WASM and atomically completes vault batcher, liquidity vault, USDC, resolver, fee, timing, rules, funded loss bound, and vault-registration checks. It never holds shared shielded balances.
 
 ## Work package 0: Freeze the baseline and add privacy regression tests
 
@@ -68,7 +71,7 @@ The baseline test must prove that the current wallet-to-pool stake transfer is o
 - Add a fixture decoder for Soroban transaction envelopes, auth entries, contract events, and SAC transfer events.
 - Add a log scan that fails if test output contains known note secrets, nullifiers, exact private amounts, or committee shares.
 - Add an assertion that the current cloud backup exposes market and transaction metadata even though its payload is encrypted.
-- Add regression fixtures proving that one global stored execution price can overwrite an earlier batch, that post-batch spot price does not allocate exact LMSR cost, and that resolved creator subsidy currently has no terminal recovery path.
+- Add regression fixtures proving that one global stored execution price can overwrite an earlier batch, that post-batch spot price does not allocate exact LMSR cost, and that current creator-only funding has no LP share or terminal distribution path.
 - Resolve the ignored local draft `docs/specs/2026-07-20-economics-and-lifecycle.md`, which currently contradicts the tracked testnet specification and contract on one-sided markets. It is not a release source until the user deliberately approves a corrected tracked copy.
 - Record current proof generation time, verification resources, transaction size, queue throughput, and event volume.
 
@@ -196,8 +199,8 @@ Generate long mixed action sequences across many users and assert:
 - Every accepted output is backed by accepted inputs or a public deposit.
 - Every spent note remains spent.
 - Asset, network, and vault domains never mix.
-- User deposits, creator subsidies, and explicit operations funding equal user, treasury, operator, and creator withdrawals plus vault balance plus collateral still held by registered markets.
-- For every batch, gross entitlements for YES and NO each equal locked position budgets minus the exact allocated market charge plus that outcome's aggregate redemption.
+- User deposits, isolated LP funding, rounding reserves, refundable fee escrow, and explicit operations funding equal user, LP, treasury, and operator withdrawals plus vault balances and collateral still held by registered markets.
+- For every batch, change, fee escrow, rounding contribution, and YES, NO, and VOID position liabilities reconcile to locked budgets and aggregate market redemption.
 - VOID returns the exact aggregate market charge and preserves full position budgets before any optional relayer fee.
 - Platform, relayer, service-escrow, and operator notes are included in liabilities and cannot be withdrawn from another user's backing.
 - Any defensive reconciliation residual has a proved source and bound and cannot be withdrawn by treasury or governance while it may back user liabilities.
@@ -233,12 +236,12 @@ Measure contract resources for deposit, transfer, order spend, batch routing, cl
 ### Contract tests first
 
 - Deploy and register only exact approved market WASM, resolver, collateral, fee, treasury, close time, rules hash, and LMSR configuration through the approved factory.
-- Let any user create and atomically register a qualifying market without a Moros operator transaction.
+- Let any user propose a qualifying market without USDC or a Moros operator transaction, then let any caller activate it after permissionless LP funding reaches the target.
 - Reject direct self-reported WASM identity or registration without an authenticated factory deployment record.
-- Bind deployment salt or nonce to creator, vault, network, rules hash, and market configuration. Reject duplicates without moving subsidy.
-- Revert market deployment, configuration, subsidy transfer, and vault registration together when any nested step fails.
-- Keep onchain activation independent from offchain metadata listing, and retry listing without contract redeployment or another subsidy transfer.
-- Reject registration until the creator subsidy covers the rounded-up LMSR worst-case loss and the market permanently designates the shared vault as batcher.
+- Bind proposal and deployment salt to creator, shared vault, liquidity vault, network, rules hash, and market configuration. Reject duplicates without moving LP funding.
+- Revert market deployment, configuration, LP reserve transfer, and shared-vault registration together when any nested step fails.
+- Keep onchain activation independent from offchain metadata listing, and retry listing without contract redeployment or another LP reserve transfer.
+- Reject registration until the isolated liquidity vault covers the rounded-up LMSR worst-case loss and the market permanently designates the shared vault as batcher.
 - Reject a market that does not designate the vault as its sole batcher.
 - Accept a proof-bound private position without a wallet owner and consume its funding-note nullifiers atomically.
 - Reject orders at and after market close.
@@ -249,23 +252,23 @@ Measure contract resources for deposit, transfer, order spend, batch routing, cl
 - Process normal batches of four while open. During the final window, process a short batch of two or three only when both aggregate YES and NO quantities are nonzero.
 - Never settle a lone order or a one-sided aggregate. Make every affected position shielded-refund eligible after the deadline.
 - Authorize only the exact vault-to-market USDC transfer returned by `quote_batch`, call `apply_batch` as the vault, and assert the returned charge.
-- Deterministically assign the exact atomic LMSR charge across included positions, prove `sum(c_i) = M_B`, and record one immutable batch allocation root.
-- Derive allocation from the pre-batch state, aggregate quantities, exact market charge, and a domain-separated order of commitments so a coordinator cannot favor one position.
-- Record an informative average execution price for UI display, but make the private assigned charge under the allocation root authoritative for claims.
-- Prove before acceptance that gross entitlements equal `locked budget - market charge + market redemption` for both YES and NO outcomes.
+- Use the companion fixed-lot Aumann-Shapley rule to calculate order-independent uniform YES and NO charges.
+- Prove that user side charges plus the explicit bounded protocol rounding contribution equal the exact atomic LMSR charge.
+- Record authoritative uniform side prices, side charges, lot, pre-state, post-state, and one immutable batch allocation root.
+- Prove before acceptance that bettor entitlements, fee escrow, protocol rounding, and market redemption reconcile exactly for YES, NO, and VOID.
 - Make an unbatched order shielded-refund eligible after the deadline.
 - Make the finalization transaction close batching before it seals the accepted and included roots. Test the exact boundary against concurrent final-batch and pending-refund submissions.
 - Pull aggregate winning value once after resolution and record the exact receipt.
 - On VOID, recognize the market's atomic batch-collateral return before enabling included-position refunds.
 - Create claim and refund rights that can only become proof-verified vault notes.
-- Return remaining creator subsidy only after aggregate winning redemption, with no path to consume user or treasury note backing.
+- Settle terminal market-maker equity to the isolated liquidity vault only after aggregate winning redemption, with no path to consume user or treasury note backing.
 - Exercise one relayer, coordinator, committee member, keeper, and RPC outage independently.
 
 ### Contract work
 
 - Keep per-market state in bounded persistent keys under the vault contract.
 - Store policy capabilities, not an operator-curated list of individual markets. Approved factory, WASM hashes, resolver types, USDC, timing bounds, and fee caps are governance parameters; qualifying market creation and registration are permissionless.
-- Preserve the testnet platform fee at 200 basis points of positive winning profit with a 1,000 basis point contract cap. Fix it before the first order and never apply it to principal, losses, pending refunds, or VOID refunds.
+- Use the companion execution-fee curve and LP split for new LP-backed markets. Preserve existing deployed-market fee behavior only for compatibility.
 - Keep order commitments and statuses independent of wallet addresses.
 - Call each LMSR market with aggregate values only.
 - Store per-batch allocation root, informative average execution price, sparse included-set state, aggregate market receipts, and claim-finalization state.
@@ -275,8 +278,8 @@ Measure contract resources for deposit, transfer, order spend, batch routing, cl
 
 ### Existing contract changes
 
-- Use the current `contracts/lmsr-market` batcher flow with the vault as batcher. Change it only for tested terminal accounting, including safe remaining-subsidy recovery after sole-batcher redemption.
-- Prefer atomic constructor or factory initialization for batcher, resolver, creator, collateral, timing, rules, fee, and subsidy so a new market cannot exist in a partially configured state.
+- Use the current `contracts/lmsr-market` batcher flow with the shared vault as batcher. Change it for tested LP reserve separation, uniform batch pricing, fee escrow, and terminal market-maker equity settlement.
+- Prefer atomic constructor or factory initialization for batcher, resolver, creator, liquidity vault, collateral, timing, rules, fee, batch policy, and funded loss bound so a new market cannot exist in a partially configured state.
 - Do not alter already deployed instances.
 - Keep `contracts/shielded-pool` operational for existing markets and add no new users to it after the shared flow is enabled.
 
@@ -314,7 +317,7 @@ For every circuit, include positive and negative witness tests for:
 - Side range.
 - Amount, stake, payout, fee, decimal, and field bounds.
 - Whole-share quantity enforcement and unsupported fractional-share rejection.
-- Outcome and private assigned-charge binding.
+- Outcome, hidden side, uniform side charge, and lot binding.
 - Batch-specific allocation-root binding across two or more batches.
 - Private membership in included and refundable position roots without exposing the position commitment.
 - Private membership in an immutable batch root, or accepted membership plus included non-membership under sealed final roots, with unique position-nullifier replay protection.
@@ -339,7 +342,7 @@ Compute every payout and fee in:
 
 All results must match exactly at atomic-unit precision for a generated corpus of market states and order values.
 
-The differential corpus must include several batches at different market states. For each batch, compute every private `c_i` plus `S_B`, `M_B`, `W_B(YES)`, `W_B(NO)`, `E_B(YES)`, and `E_B(NO)`. Require `sum(c_i) = M_B` and exact entitlement equality for both outcomes. Reject any case where allocation depends on coordinator choice, a later spot price changes an earlier entitlement, or a residual is treated as revenue without a proved accounting source.
+The differential corpus must include several batches at different market states. For each batch, compute `S_B`, `M_B`, `R_B`, uniform `cY` and `cN`, trade-fee escrow, `W_B(YES)`, `W_B(NO)`, `E_B(YES)`, and `E_B(NO)`. Require `sum(user_side_charges) + R_B = M_B` and exact entitlement equality for YES, NO, and VOID. Reject any case where allocation depends on coordinator choice, a later spot price changes an earlier entitlement, or a residual is treated as revenue without a proved accounting source.
 
 ### Trusted setup rule
 
@@ -473,7 +476,7 @@ Add tests for:
 - Default to receiving a new shielded USDC balance note.
 - Show the expected private balance change locally.
 - Keep winning profit, fee, refund, and payout note values out of public calls.
-- Use the immutable private assigned charge from the position's own batch allocation root, not the latest displayed odds.
+- Use the immutable uniform side charge from the position's own batch allocation root and hidden side, not the latest displayed odds.
 - Allow losing positions with recoverable value and voided positions to create shielded balance notes.
 - Clearly show terminal claimed, recovered, refunded, or lost states.
 
@@ -536,16 +539,16 @@ Do not enable a UI statement that market choice is hidden from the relayer until
 - Existing positions are never converted automatically.
 - Existing users finish claims or refunds through the current path.
 - New shared-vault markets are selected by an explicit capability field, not a public release number.
-- User-created qualifying markets deploy and register permissionlessly through the approved factory after atomic subsidy and linkage checks. Unsupported resolver categories remain unavailable before deployment.
+- User-created qualifying markets enter permissionless funding through the approved factory and activate after atomic LP reserve and linkage checks. Unsupported resolver categories remain unavailable before funding or deployment.
 - Market creation cannot select shared shielded collateral until factory, vault, market, committee, coordinators, relayers, indexers, keeper, frontend, and registry all report the same approved deployment identifiers and WASM hashes.
 
 ### Deployment order
 
-1. Upload reviewed factory, vault, and market WASM.
+1. Upload reviewed factory, market-liquidity-vault, shared-vault, and market WASM.
 2. Deploy the factory with the approved market WASM hash and supported resolver policy.
 3. Deploy the shared USDC vault with development verification keys and the approved factory address.
 4. Configure multisig, timelock, immutable treasury shielded key, relayers, committee, and resolver registry.
-5. Create one market through the factory and verify its atomic subsidy, vault batcher, resolver, USDC, rules, fee, timing, deployment record, and vault registration.
+5. Create one proposal without creator USDC, fund it from independent LPs, activate it, and verify its liquidity vault, funded loss bound, shared-vault batcher, resolver, USDC, rules, fee, batch policy, timing, deployment record, and vault registration.
 6. Start two indexers, two relayers, two coordinator instances, committee members, batch workers, and resolution keeper.
 7. Publish frontend configuration only after service health and contract hashes match.
 8. Run multi-user live testnet scenarios.
@@ -553,7 +556,7 @@ Do not enable a UI statement that market choice is hidden from the relayer until
 
 ### No partial activation
 
-If any component reports the wrong factory, deployment record, vault, market batcher, collateral, subsidy, committee, verification key, resolver, rules hash, treasury, network, or WASM hash, market creation and betting fail closed.
+If any component reports the wrong factory, deployment record, shared vault, liquidity vault, market batcher, collateral, funded loss bound, committee, verification key, resolver, rules hash, fee policy, batch policy, treasury, network, or WASM hash, market activation and betting fail closed.
 
 ## Work package 11: Full verification
 
@@ -573,7 +576,7 @@ If any component reports the wrong factory, deployment record, vault, market bat
 Use independently generated test accounts, not one wallet repeated:
 
 - 100 users deposit and restore shielded balances.
-- Multiple users create supported markets through the factory without a Moros operator transaction. A failed metadata listing retries without redeploying or paying subsidy again.
+- Multiple users propose supported markets through the factory without creator USDC or a Moros operator transaction. A failed metadata listing retries without redeploying or moving LP funding again.
 - 100 users place mixed and one-sided demand across multiple markets. Mixed batches settle, while demand that cannot form a privacy-safe two-sided batch becomes privately refundable.
 - 20 clients submit concurrently against recent accepted roots.
 - Full and short final batches settle.
@@ -581,12 +584,12 @@ Use independently generated test accounts, not one wallet repeated:
 - Multiple batches at different market states retain separate exact batch allocation roots and informative average execution prices.
 - YES, NO, VOID, stale-oracle, and delayed-resolution paths complete.
 - Winners claim into shielded balances.
-- Losers recover their exact unused position budget, equal to budget minus assigned market charge.
+- Every executed user recovers exact unused budget after batching, equal to budget minus the uniform hidden-side charge, refundable trade-fee escrow, and earned service fee.
 - Treasury receives exact shielded fee notes.
 - Users reuse payouts in another market without a public wallet transaction.
 - Users withdraw partial and full balances through different relayers.
 - A clean wallet offline beyond public RPC retention restores every unspent note from persistent or independently archived ledger data.
-- Remaining creator subsidy is released only after aggregate winning redemption and does not change vault liability coverage.
+- Terminal market-maker equity reaches the correct LP vault only after aggregate winning redemption and does not change bettor liability coverage.
 - Duplicate nullifier, replay, wrong network, wrong market, stale root, and tampered recipient attacks fail.
 - A relayer, committee member, keeper, indexer, and RPC endpoint each fail during active use.
 
