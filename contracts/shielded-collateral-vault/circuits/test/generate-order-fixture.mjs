@@ -100,7 +100,7 @@ const inputs = [
   inputNote({
     domain,
     purpose: 1n,
-    amount: 12_000_000n,
+    amount: 40_000_000n,
     spendSecret: 11n,
     viewingSecret: 12n,
     noteId: 13n,
@@ -124,7 +124,8 @@ const lot = SCALE;
 const feeBps = 400n;
 const payout = ceilDiv(lot * ATOMIC_SCALE, SCALE);
 const maximumFee = ceilDiv(lot * feeBps * ATOMIC_SCALE, SCALE * 40_000n);
-const positionBudget = payout + maximumFee;
+const quantity = 3n;
+const positionBudget = (payout + maximumFee) * quantity;
 const side = 1n;
 const sequence = 1n;
 const rules = [31n, 32n];
@@ -134,7 +135,7 @@ const outputs = [
     outputIndex: 0,
     noteDomain: domain,
     purpose: 1n,
-    amount: 12_000_000n - positionBudget,
+    amount: 40_000_000n - positionBudget,
     spendSecret: 51n,
     viewingSecret: 52n,
     noteId: 53n,
@@ -151,19 +152,25 @@ const outputs = [
     viewingSecret: 62n,
     noteId: 63n,
     payloadHash: positionPayload,
-    privateData: [side, sequence],
+    privateData: [side, sequence * 1_024n + quantity],
     blinding: 64n,
     ephemeralSecret: 65n,
     nonce: 66n,
   }),
 ];
 const noteAppend = appendSecondPair(inputCommitments, outputs.map((note) => note.commitment), LEVELS);
-const encryptionRandomness = 71n;
+const yesEncryptionRandomness = 71n;
+const noEncryptionRandomness = 72n;
 const committeePublicKey = BASE8;
-const c1 = multiplyPoint(BASE8, encryptionRandomness);
-const shared = multiplyPoint(multiplyPoint(committeePublicKey, 8n), encryptionRandomness);
-const sidePoint = side === 0n ? [0n, 1n] : BASE8;
-const c2 = addPoints(shared, sidePoint);
+const yesC1 = multiplyPoint(BASE8, yesEncryptionRandomness);
+const yesShared = multiplyPoint(multiplyPoint(committeePublicKey, 8n), yesEncryptionRandomness);
+const yesMessage = multiplyPoint(BASE8, side === 1n ? quantity : 0n);
+const yesC2 = addPoints(yesShared, yesMessage);
+const noC1 = multiplyPoint(BASE8, noEncryptionRandomness);
+const noShared = multiplyPoint(multiplyPoint(committeePublicKey, 8n), noEncryptionRandomness);
+const noMessage = multiplyPoint(BASE8, side === 0n ? quantity : 0n);
+const noC2 = addPoints(noShared, noMessage);
+const ciphertext = [...yesC1, ...yesC2, ...noC1, ...noC2];
 const acceptedSiblings = zeroRoots(ACCEPTED_LEVELS).slice(0, ACCEPTED_LEVELS);
 const acceptedLeaf = poseidon2Hash([
   1009n,
@@ -174,8 +181,7 @@ const acceptedLeaf = poseidon2Hash([
   101n,
   102n,
   outputs[1].commitment,
-  ...c1,
-  ...c2,
+  ...ciphertext,
   1n,
 ]);
 const oldAcceptedRoot = zeroRoots(ACCEPTED_LEVELS)[ACCEPTED_LEVELS];
@@ -196,12 +202,14 @@ const binding = [
   41n,
   42n,
   ...committeePublicKey,
-  ...c1,
-  ...c2,
+  poseidon2Hash([1016n, ...ciphertext]),
   oldAcceptedRoot,
   newAcceptedRoot,
   0n,
   sequence,
+  0n,
+  0n,
+  0n,
 ];
 binding.forEach((value, index) => {
   contextFields[22 + index] = value;
@@ -225,7 +233,10 @@ const fixture = {
   publicAmountMagnitude: "0",
   contextFields,
   side,
-  encryptionRandomness,
+  quantity,
+  yesEncryptionRandomness,
+  noEncryptionRandomness,
+  ciphertext,
   acceptedSiblings,
   inPurpose: activeInputs.map((note) => note.purpose),
   inAmount: activeInputs.map((note) => note.amount),

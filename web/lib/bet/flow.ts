@@ -8,7 +8,7 @@ import { savePositionBackup } from "@/lib/positions/backup";
 import type { PrivateArchiveKeys } from "@/lib/private-sync/crypto";
 import type { Position } from "@/lib/positions/book";
 import { NETWORK, type CollateralAsset } from "@/lib/network";
-import { privacyStakeForOrder } from "@/lib/stellar/amount";
+import { parsePrivatePositionQuantity, privacyStakeForOrder } from "@/lib/stellar/amount";
 import { getPrivateConfig } from "@/lib/private/client";
 import { placePrivateOrder } from "@/lib/private/actions";
 
@@ -31,13 +31,14 @@ export async function runBet(
   if (collateral.sac !== NETWORK.collateral.sac) throw new Error("Moros testnet markets require Stellar USDC");
   const privateConfig = await getPrivateConfig();
   if (poolId === privateConfig.contracts.sharedVault) {
-    if (amount !== "1") throw new Error("Private batches currently use one fixed position per order");
+    const quantity = parsePrivatePositionQuantity(amount);
     onStage("hashing");
     onStage("placing");
     const placed = await placePrivateOrder({
       address,
       market: marketId,
       side: side === "1" ? 1 : 0,
+      quantity,
       onStatus: (status) => {
         if (status.includes("Waiting")) onStage("waiting");
         else if (status.includes("Generating")) onStage("proving");
@@ -53,7 +54,7 @@ export async function runBet(
       market: marketId,
       pool: poolId,
       side,
-      amount: "1",
+      amount,
       stakeAmount: stakeUnits,
       stakeAmountAtomic: placed.positionBudget.toString(),
       collateralCode: collateral.code,

@@ -3,7 +3,7 @@ import { Address } from "@stellar/stellar-sdk";
 import { poseidon2Hash } from "@zkpassport/poseidon2";
 import {
   aggregateCiphertexts,
-  decryptSide,
+  decryptAmount,
   mod,
   multiply,
   publicKey,
@@ -174,10 +174,14 @@ export function acceptedLeaf({
     decimal(sequence, "sequence"),
     ...bytes32Limbs(actionId),
     decimal(positionCommitment, "position commitment"),
-    decimal(encryptedOrder.c1_x, "c1_x"),
-    decimal(encryptedOrder.c1_y, "c1_y"),
-    decimal(encryptedOrder.c2_x, "c2_x"),
-    decimal(encryptedOrder.c2_y, "c2_y"),
+    decimal(encryptedOrder.yes_c1_x, "yes_c1_x"),
+    decimal(encryptedOrder.yes_c1_y, "yes_c1_y"),
+    decimal(encryptedOrder.yes_c2_x, "yes_c2_x"),
+    decimal(encryptedOrder.yes_c2_y, "yes_c2_y"),
+    decimal(encryptedOrder.no_c1_x, "no_c1_x"),
+    decimal(encryptedOrder.no_c1_y, "no_c1_y"),
+    decimal(encryptedOrder.no_c2_x, "no_c2_x"),
+    decimal(encryptedOrder.no_c2_y, "no_c2_y"),
     decimal(committeeEpoch, "committee epoch"),
   ]);
 }
@@ -297,8 +301,8 @@ export function encryptAllocationWitness({
 }) {
   const shared = multiply(
     [
-      decimal(order.encrypted_order.c1_x, "c1_x"),
-      decimal(order.encrypted_order.c1_y, "c1_y"),
+      decimal(order.encrypted_order.yes_c1_x, "yes_c1_x"),
+      decimal(order.encrypted_order.yes_c1_y, "yes_c1_y"),
     ],
     8n * decimal(committeeSecret, "committee secret"),
   );
@@ -372,24 +376,42 @@ export function decryptAllocationWitness(envelope, shared) {
 
 function ciphertext(record) {
   return {
-    c1: [
-      decimal(record.encrypted_order.c1_x, "c1_x"),
-      decimal(record.encrypted_order.c1_y, "c1_y"),
-    ],
-    c2: [
-      decimal(record.encrypted_order.c2_x, "c2_x"),
-      decimal(record.encrypted_order.c2_y, "c2_y"),
-    ],
+    yes: {
+      c1: [
+        decimal(record.encrypted_order.yes_c1_x, "yes_c1_x"),
+        decimal(record.encrypted_order.yes_c1_y, "yes_c1_y"),
+      ],
+      c2: [
+        decimal(record.encrypted_order.yes_c2_x, "yes_c2_x"),
+        decimal(record.encrypted_order.yes_c2_y, "yes_c2_y"),
+      ],
+    },
+    no: {
+      c1: [
+        decimal(record.encrypted_order.no_c1_x, "no_c1_x"),
+        decimal(record.encrypted_order.no_c1_y, "no_c1_y"),
+      ],
+      c2: [
+        decimal(record.encrypted_order.no_c2_x, "no_c2_x"),
+        decimal(record.encrypted_order.no_c2_y, "no_c2_y"),
+      ],
+    },
   };
 }
 
-export function decryptBatchSides(orders, committeeSecret) {
+export function decryptBatchQuantities(orders, committeeSecret) {
   if (!Array.isArray(orders) || orders.length !== FIXED_BATCH_SIZE) {
     throw new Error("a private batch must contain exactly eight orders");
   }
-  return orders.map((record) =>
-    decryptSide(committeeSecret, ciphertext(record))
-  );
+  return orders.map((record) => {
+    const encrypted = ciphertext(record);
+    const yes = decryptAmount(committeeSecret, encrypted.yes);
+    const no = decryptAmount(committeeSecret, encrypted.no);
+    if ((yes === 0) === (no === 0)) {
+      throw new Error("private order must contain exactly one positive quantity");
+    }
+    return { yes, no, side: yes > 0 ? 1 : 0, quantity: yes + no };
+  });
 }
 
 function transcriptHash(label, value) {
@@ -447,23 +469,29 @@ export function buildBatchStatement({
     throw new Error("committee secret does not match the registered public key");
   }
   const encrypted = ordered.map(ciphertext);
-  const sides = decryptBatchSides(ordered, committeeSecret);
-  const yesCount = sides.filter((side) => side === 1).length;
-  const noCount = sides.length - yesCount;
+  const quantities = decryptBatchQuantities(ordered, committeeSecret);
+  const sides = quantities.map((value) => value.side);
+  const yesOrderCount = sides.filter((side) => side === 1).length;
+  const noOrderCount = sides.length - yesOrderCount;
+  const yesCount = quantities.reduce((total, value) => total + value.yes, 0);
+  const noCount = quantities.reduce((total, value) => total + value.no, 0);
   if (
-    yesCount < Number(registration.minimum_side_count) ||
-    noCount < Number(registration.minimum_side_count)
+    yesOrderCount < Number(registration.minimum_side_count) ||
+    noOrderCount < Number(registration.minimum_side_count)
   ) {
     throw new Error("private batch does not satisfy minimum side counts");
   }
   if (
     Number(quote.yes_count) !== yesCount ||
     Number(quote.no_count) !== noCount ||
-    Number(quote.batch_size) !== FIXED_BATCH_SIZE
+    Number(quote.batch_size) !== yesCount + noCount
   ) {
     throw new Error("market quote does not match decrypted batch");
   }
-  const aggregate = aggregateCiphertexts(encrypted);
+  const aggregate = {
+    yes: aggregateCiphertexts(encrypted.map((value) => value.yes)),
+    no: aggregateCiphertexts(encrypted.map((value) => value.no)),
+  };
   const payout = positionPayout(registration.lot_size);
   const acceptedLeaves = [];
   const allocationLeaves = [];
@@ -483,17 +511,18 @@ export function buildBatchStatement({
       encryptedOrder: order.encrypted_order,
       committeeEpoch,
     }));
+    const quantity = BigInt(quantities[index].quantity);
     allocationLeaves.push(allocationLeaf({
       market,
       epoch: epoch.epoch,
       sequence,
       positionCommitment: order.position_commitment,
       side: sides[index],
-      charge: sides[index] === 1
+      charge: quantity * BigInt(sides[index] === 1
         ? quote.yes_charge_per_position
-        : quote.no_charge_per_position,
-      fee: quote.fee_per_position,
-      payout,
+        : quote.no_charge_per_position),
+      fee: quantity * BigInt(quote.fee_per_position),
+      payout: quantity * payout,
     }));
     includedLeaves.push(includedLeaf({
       market,
@@ -525,11 +554,11 @@ export function buildBatchStatement({
       sequence: order.sequence,
       positionCommitment: order.position_commitment,
       side,
-      charge: side === 1
+      charge: BigInt(quantities[index].quantity) * BigInt(side === 1
         ? quote.yes_charge_per_position
-        : quote.no_charge_per_position,
-      fee: quote.fee_per_position,
-      payout,
+        : quote.no_charge_per_position),
+      fee: BigInt(quantities[index].quantity) * BigInt(quote.fee_per_position),
+      payout: BigInt(quantities[index].quantity) * payout,
       leafIndex: index,
       siblings: membershipPath(allocationTree, index),
     });
@@ -545,10 +574,11 @@ export function buildBatchStatement({
     yesCount,
     noCount,
     aggregate,
+    quantities,
   };
   const decryptionProofHash = transcriptHash(
     "decryption",
-    { ...publicTranscript, sides },
+    { ...publicTranscript, quantities },
   );
   const committeeStatementHash = transcriptHash(
     "statement",
@@ -569,10 +599,14 @@ export function buildBatchStatement({
     ),
     committeePublicKey: configuredKey,
     aggregateCiphertext: [
-      aggregate.c1[0],
-      aggregate.c1[1],
-      aggregate.c2[0],
-      aggregate.c2[1],
+      aggregate.yes.c1[0],
+      aggregate.yes.c1[1],
+      aggregate.yes.c2[0],
+      aggregate.yes.c2[1],
+      aggregate.no.c1[0],
+      aggregate.no.c1[1],
+      aggregate.no.c2[0],
+      aggregate.no.c2[1],
     ],
     decryptionProofHash: bytes32Limbs(decryptionProofHash),
     committeeStatementHash: bytes32Limbs(committeeStatementHash),
@@ -586,11 +620,17 @@ export function buildBatchStatement({
       decimal(order.position_commitment)
     ),
     ciphertext: encrypted.map((value) => [
-      value.c1[0],
-      value.c1[1],
-      value.c2[0],
-      value.c2[1],
+      value.yes.c1[0],
+      value.yes.c1[1],
+      value.yes.c2[0],
+      value.yes.c2[1],
+      value.no.c1[0],
+      value.no.c1[1],
+      value.no.c2[0],
+      value.no.c2[1],
     ]),
+    yesAmount: quantities.map((value) => value.yes),
+    noAmount: quantities.map((value) => value.no),
   };
   return {
     witness,

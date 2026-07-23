@@ -145,10 +145,14 @@ type PrivateEpoch = {
 };
 
 type EncryptedOrder = {
-  c1_x: bigint;
-  c1_y: bigint;
-  c2_x: bigint;
-  c2_y: bigint;
+  yes_c1_x: bigint;
+  yes_c1_y: bigint;
+  yes_c2_x: bigint;
+  yes_c2_y: bigint;
+  no_c1_x: bigint;
+  no_c1_y: bigint;
+  no_c2_x: bigint;
+  no_c2_y: bigint;
 };
 
 type PrivateOrderRecord = {
@@ -211,6 +215,30 @@ type PrivateOrderBinding = {
   accepted_leaf_index: number;
   sequence: bigint;
 };
+
+export async function getPrivateOrderUnitReserve(
+  address: string,
+  market: string,
+): Promise<bigint> {
+  const config = await getPrivateConfig();
+  const registration = await readPrivateContract<
+    PrivateMarketRegistration | undefined
+  >(
+    config.contracts.sharedVault,
+    address,
+    "registration",
+    { market },
+  );
+  if (!registration || registration.finalized) {
+    throw new Error("Private market registration is unavailable");
+  }
+  const payout = ceilDiv(registration.lot_size * USDC_SCALE, Q32);
+  const maximumFee = ceilDiv(
+    registration.lot_size * BigInt(registration.fee_bps) * USDC_SCALE,
+    Q32 * 40_000n,
+  );
+  return payout + maximumFee;
+}
 
 function actionId(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
@@ -1973,10 +2001,14 @@ async function acceptedLeaf(
     record.sequence,
     ...bytes32Limbs(record.action_id),
     record.position_commitment,
-    record.encrypted_order.c1_x,
-    record.encrypted_order.c1_y,
-    record.encrypted_order.c2_x,
-    record.encrypted_order.c2_y,
+    record.encrypted_order.yes_c1_x,
+    record.encrypted_order.yes_c1_y,
+    record.encrypted_order.yes_c2_x,
+    record.encrypted_order.yes_c2_y,
+    record.encrypted_order.no_c1_x,
+    record.encrypted_order.no_c1_y,
+    record.encrypted_order.no_c2_x,
+    record.encrypted_order.no_c2_y,
     committeeEpoch,
   ]);
 }
@@ -2036,21 +2068,44 @@ async function acceptedAppend(
   return appendOne(tree, leaf);
 }
 
-function encryptedSide(
+function encryptedQuantity(
   committeePublicKey: Point,
   side: 0 | 1,
-  randomness: bigint,
+  quantity: bigint,
+  yesRandomness: bigint,
+  noRandomness: bigint,
 ): EncryptedOrder {
-  const c1 = multiplyPoint(BABYJUB_BASE8, randomness);
-  const shared = multiplyPoint(committeePublicKey, 8n * randomness);
-  const message: Point = side === 1 ? BABYJUB_BASE8 : [0n, 1n];
-  const c2 = addPoints(shared, message);
+  const yesC1 = multiplyPoint(BABYJUB_BASE8, yesRandomness);
+  const noC1 = multiplyPoint(BABYJUB_BASE8, noRandomness);
+  const yesShared = multiplyPoint(committeePublicKey, 8n * yesRandomness);
+  const noShared = multiplyPoint(committeePublicKey, 8n * noRandomness);
+  const yesMessage = multiplyPoint(BABYJUB_BASE8, side === 1 ? quantity : 0n);
+  const noMessage = multiplyPoint(BABYJUB_BASE8, side === 0 ? quantity : 0n);
+  const yesC2 = addPoints(yesShared, yesMessage);
+  const noC2 = addPoints(noShared, noMessage);
   return {
-    c1_x: c1[0],
-    c1_y: c1[1],
-    c2_x: c2[0],
-    c2_y: c2[1],
+    yes_c1_x: yesC1[0],
+    yes_c1_y: yesC1[1],
+    yes_c2_x: yesC2[0],
+    yes_c2_y: yesC2[1],
+    no_c1_x: noC1[0],
+    no_c1_y: noC1[1],
+    no_c2_x: noC2[0],
+    no_c2_y: noC2[1],
   };
+}
+
+function encryptedOrderFields(order: EncryptedOrder): bigint[] {
+  return [
+    order.yes_c1_x,
+    order.yes_c1_y,
+    order.yes_c2_x,
+    order.yes_c2_y,
+    order.no_c1_x,
+    order.no_c1_y,
+    order.no_c2_x,
+    order.no_c2_y,
+  ];
 }
 
 function orderBindingFields(binding: PrivateOrderBinding): bigint[] {
@@ -2069,14 +2124,14 @@ function orderBindingFields(binding: PrivateOrderBinding): bigint[] {
     ...bytes32Limbs(binding.committee_config_hash),
     binding.committee_public_key_x,
     binding.committee_public_key_y,
-    binding.encrypted_order.c1_x,
-    binding.encrypted_order.c1_y,
-    binding.encrypted_order.c2_x,
-    binding.encrypted_order.c2_y,
+    poseidon2Hash([1016n, ...encryptedOrderFields(binding.encrypted_order)]),
     binding.old_accepted_root,
     binding.new_accepted_root,
     BigInt(binding.accepted_leaf_index),
     binding.sequence,
+    0n,
+    0n,
+    0n,
   ];
 }
 
@@ -2084,11 +2139,13 @@ export async function placePrivateOrder({
   address,
   market,
   side,
+  quantity,
   onStatus,
 }: {
   address: string;
   market: string;
   side: 0 | 1;
+  quantity: bigint;
   onStatus?: (status: string) => void;
 }): Promise<{
   hash: string;
@@ -2101,6 +2158,9 @@ export async function placePrivateOrder({
   positionBudget: bigint;
   lotSize: bigint;
 }> {
+  if (quantity <= 0n || quantity > 1_000n) {
+    throw new Error("Private position quantity must be between 1 and 1,000");
+  }
   onStatus?.("Reading the private market epoch");
   let wallet = await openPrivateWallet(address);
   const { registration, epoch } = await waitForPrivateBatch<
@@ -2140,7 +2200,7 @@ export async function placePrivateOrder({
     registration.lot_size * BigInt(registration.fee_bps) * USDC_SCALE,
     Q32 * 40_000n,
   );
-  const positionBudget = payout + maximumFee;
+  const positionBudget = (payout + maximumFee) * quantity;
   assertAmount(positionBudget);
   const spendable = await privateWalletWithSpendableNote(
     address,
@@ -2159,13 +2219,16 @@ export async function placePrivateOrder({
   const id = actionId();
   const idBytes = hexToBytes(id);
   const encryptionRandomness = randomPrivateScalar();
-  const encryptedOrder = encryptedSide(
+  const noEncryptionRandomness = randomPrivateScalar();
+  const encryptedOrder = encryptedQuantity(
     [
       epoch.committee_public_key_x,
       epoch.committee_public_key_y,
     ],
     side,
+    quantity,
     encryptionRandomness,
+    noEncryptionRandomness,
   );
   const marketFields = await addressLimbs(market);
   const positionPayload = poseidon2Hash([
@@ -2208,7 +2271,7 @@ export async function placePrivateOrder({
       spendSecret: wallet.keys.noteSpendSecret,
       viewingSecret: wallet.keys.noteViewingSecret,
       payloadHash: positionPayload,
-      privateData: [BigInt(side), sequence],
+      privateData: [BigInt(side), sequence * 1_024n + quantity],
       ...outputSecrets(),
     }),
   ];
@@ -2282,7 +2345,10 @@ export async function placePrivateOrder({
     publicAmountMagnitude: 0n,
     contextFields,
     side: BigInt(side),
-    encryptionRandomness,
+    quantity,
+    yesEncryptionRandomness: encryptionRandomness,
+    noEncryptionRandomness,
+    ciphertext: encryptedOrderFields(encryptedOrder),
     acceptedSiblings: accepted.siblings,
     ...inputFields([input], wallet.tree),
     ...outputFields(outputs),
@@ -2453,6 +2519,7 @@ async function allocationWitness({
   positionCommitment,
   sequence,
   side,
+  quantity,
   encryptionRandomness,
 }: {
   market: string;
@@ -2461,6 +2528,7 @@ async function allocationWitness({
   positionCommitment: bigint;
   sequence: bigint;
   side: bigint;
+  quantity: bigint;
   encryptionRandomness: bigint;
 }) {
   const encrypted = await getPrivateAllocation(
@@ -2505,12 +2573,12 @@ async function allocationWitness({
   ) {
     throw new Error("Private allocation witness failed local root verification");
   }
-  const expectedCharge = side === 1n
+  const expectedChargePerUnit = side === 1n
     ? batch.quote.yes_charge_per_position
     : batch.quote.no_charge_per_position;
   if (
-    witness.charge !== expectedCharge ||
-    witness.fee !== batch.quote.fee_per_position
+    witness.charge !== expectedChargePerUnit * quantity ||
+    witness.fee !== batch.quote.fee_per_position * quantity
   ) {
     throw new Error("Private allocation witness does not match the batch quote");
   }
@@ -2717,7 +2785,7 @@ export async function runPrivatePositionAction({
   }
   if (
     note.privateData[0] !== BigInt(side) ||
-    note.privateData[1] !== sequence
+    note.privateData[1] / 1_024n !== sequence
   ) {
     throw new Error("The encrypted activity record does not match the position note");
   }
@@ -2753,6 +2821,10 @@ export async function runPrivatePositionAction({
   );
   if (accepted.record.position_commitment !== positionCommitment) {
     throw new Error("Private position commitment does not match its order");
+  }
+  const quantity = note.privateData[1] % 1_024n;
+  if (quantity <= 0n || quantity > 1_000n) {
+    throw new Error("Private position quantity is invalid");
   }
   const epochPhase = enumName(epoch.phase);
   const outcomeName = enumName(accounting.finalized_outcome);
@@ -2794,6 +2866,7 @@ export async function runPrivatePositionAction({
         positionCommitment,
         sequence,
         side: BigInt(side),
+        quantity,
         encryptionRandomness,
       })
     : undefined;
@@ -2905,12 +2978,7 @@ export async function runPrivatePositionAction({
     publicAmountMagnitude: 0n,
     contextFields,
     acceptedActionId: bytes32Limbs(accepted.record.action_id),
-    acceptedCiphertext: [
-      accepted.record.encrypted_order.c1_x,
-      accepted.record.encrypted_order.c1_y,
-      accepted.record.encrypted_order.c2_x,
-      accepted.record.encrypted_order.c2_y,
-    ],
+    acceptedCiphertext: encryptedOrderFields(accepted.record.encrypted_order),
     acceptedCommitteeEpoch: epoch.committee_epoch,
     acceptedLeafIndex: BigInt(accepted.leafIndex),
     acceptedSiblings: accepted.siblings,

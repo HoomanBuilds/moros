@@ -19,7 +19,7 @@ assert.deepEqual(
 );
 assert.equal(ACTION_PUBLIC_SIGNALS.length, 15);
 assert.equal(EXIT_MATCH_PUBLIC_SIGNALS.length, 20);
-assert.equal(BATCH_PUBLIC_SIGNALS.length, 45);
+assert.equal(BATCH_PUBLIC_SIGNALS.length, 49);
 assert.equal(new Set(CIRCUITS.map(schemaHash)).size, CIRCUITS.length);
 
 const g1 = encodeG1(["1", "2", "1"]);

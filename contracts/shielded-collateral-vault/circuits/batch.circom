@@ -14,7 +14,7 @@ template PrivateBatch() {
     signal input committeeEpoch;
     signal input committeeConfigHash[2];
     signal input committeePublicKey[2];
-    signal input aggregateCiphertext[4];
+    signal input aggregateCiphertext[8];
     signal input decryptionProofHash[2];
     signal input committeeStatementHash[2];
     signal input allocationRoot;
@@ -25,12 +25,13 @@ template PrivateBatch() {
     signal input committeeSecret;
     signal input actionId[8][2];
     signal input positionCommitment[8];
-    signal input ciphertext[8][4];
+    signal input ciphertext[8][8];
+    signal input yesAmount[8];
+    signal input noAmount[8];
 
     acceptedCount === 8;
-    quote[1] === 8;
     lastSequence === firstSequence + 7;
-    quote[2] + quote[3] === 8;
+    quote[1] === quote[2] + quote[3];
 
     component epochRange = Num2Bits(64);
     epochRange.in <== epoch;
@@ -45,11 +46,11 @@ template PrivateBatch() {
     component countRanges[4];
     countRanges[0] = Num2Bits(7);
     countRanges[0].in <== acceptedCount;
-    countRanges[1] = Num2Bits(7);
+    countRanges[1] = Num2Bits(14);
     countRanges[1].in <== quote[1];
-    countRanges[2] = Num2Bits(7);
+    countRanges[2] = Num2Bits(14);
     countRanges[2].in <== quote[2];
-    countRanges[3] = Num2Bits(7);
+    countRanges[3] = Num2Bits(14);
     countRanges[3].in <== quote[3];
     component lotRange = Num2Bits(60);
     lotRange.in <== lotSize;
@@ -116,15 +117,33 @@ template PrivateBatch() {
     component acceptedLeaves[8];
     component includedLeaves[8];
     component allocationLeaves[8];
-    component shared[8];
-    component sharedDouble0[8];
-    component sharedDouble1[8];
-    component sharedDouble2[8];
-    component plaintext[8];
-    component sideBits[8];
+    component yesShared[8];
+    component yesSharedDouble0[8];
+    component yesSharedDouble1[8];
+    component yesSharedDouble2[8];
+    component noShared[8];
+    component noSharedDouble0[8];
+    component noSharedDouble1[8];
+    component noSharedDouble2[8];
+    component yesPlaintext[8];
+    component noPlaintext[8];
+    component yesAmountBits[8];
+    component noAmountBits[8];
+    component yesAmountBound[8];
+    component noAmountBound[8];
+    component yesMessage[8];
+    component noMessage[8];
+    component yesAmountZero[8];
+    component noAmountZero[8];
     signal side[8];
+    signal quantity[8];
+    signal chargePerUnit[8];
     signal charge[8];
+    signal fee[8];
+    signal positionPayout[8];
     var yesTotal = 0;
+    var noTotal = 0;
+    var yesOrderTotal = 0;
     component payout = PositionCeilDivConstant(4294967296, 84, 33);
     payout.numerator <== lotSize * 10000000;
 
@@ -137,39 +156,88 @@ template PrivateBatch() {
         acceptedLeaves[index].actionId[0] <== actionId[index][0];
         acceptedLeaves[index].actionId[1] <== actionId[index][1];
         acceptedLeaves[index].positionCommitment <== positionCommitment[index];
-        for (var field = 0; field < 4; field++) {
+        for (var field = 0; field < 8; field++) {
             acceptedLeaves[index].ciphertext[field] <== ciphertext[index][field];
         }
         acceptedLeaves[index].committeeEpoch <== committeeEpoch;
 
-        shared[index] = EscalarMulAny(252);
+        yesShared[index] = EscalarMulAny(252);
+        noShared[index] = EscalarMulAny(252);
         for (var bit = 0; bit < 252; bit++) {
-            shared[index].e[bit] <== secretBits.out[bit];
+            yesShared[index].e[bit] <== secretBits.out[bit];
+            noShared[index].e[bit] <== secretBits.out[bit];
         }
-        shared[index].p[0] <== ciphertext[index][0];
-        shared[index].p[1] <== ciphertext[index][1];
-        sharedDouble0[index] = BabyDbl();
-        sharedDouble0[index].x <== shared[index].out[0];
-        sharedDouble0[index].y <== shared[index].out[1];
-        sharedDouble1[index] = BabyDbl();
-        sharedDouble1[index].x <== sharedDouble0[index].xout;
-        sharedDouble1[index].y <== sharedDouble0[index].yout;
-        sharedDouble2[index] = BabyDbl();
-        sharedDouble2[index].x <== sharedDouble1[index].xout;
-        sharedDouble2[index].y <== sharedDouble1[index].yout;
-        plaintext[index] = BabyAdd();
-        plaintext[index].x1 <== ciphertext[index][2];
-        plaintext[index].y1 <== ciphertext[index][3];
-        plaintext[index].x2 <== -sharedDouble2[index].xout;
-        plaintext[index].y2 <== sharedDouble2[index].yout;
-        side[index] <-- plaintext[index].xout == 0 ? 0 : 1;
-        sideBits[index] = Num2Bits(1);
-        sideBits[index].in <== side[index];
-        plaintext[index].xout === side[index] * BASE8[0];
-        plaintext[index].yout === 1 + side[index] * (BASE8[1] - 1);
-        yesTotal += side[index];
+        yesShared[index].p[0] <== ciphertext[index][0];
+        yesShared[index].p[1] <== ciphertext[index][1];
+        noShared[index].p[0] <== ciphertext[index][4];
+        noShared[index].p[1] <== ciphertext[index][5];
+        yesSharedDouble0[index] = BabyDbl();
+        yesSharedDouble0[index].x <== yesShared[index].out[0];
+        yesSharedDouble0[index].y <== yesShared[index].out[1];
+        yesSharedDouble1[index] = BabyDbl();
+        yesSharedDouble1[index].x <== yesSharedDouble0[index].xout;
+        yesSharedDouble1[index].y <== yesSharedDouble0[index].yout;
+        yesSharedDouble2[index] = BabyDbl();
+        yesSharedDouble2[index].x <== yesSharedDouble1[index].xout;
+        yesSharedDouble2[index].y <== yesSharedDouble1[index].yout;
+        noSharedDouble0[index] = BabyDbl();
+        noSharedDouble0[index].x <== noShared[index].out[0];
+        noSharedDouble0[index].y <== noShared[index].out[1];
+        noSharedDouble1[index] = BabyDbl();
+        noSharedDouble1[index].x <== noSharedDouble0[index].xout;
+        noSharedDouble1[index].y <== noSharedDouble0[index].yout;
+        noSharedDouble2[index] = BabyDbl();
+        noSharedDouble2[index].x <== noSharedDouble1[index].xout;
+        noSharedDouble2[index].y <== noSharedDouble1[index].yout;
+        yesPlaintext[index] = BabyAdd();
+        yesPlaintext[index].x1 <== ciphertext[index][2];
+        yesPlaintext[index].y1 <== ciphertext[index][3];
+        yesPlaintext[index].x2 <== -yesSharedDouble2[index].xout;
+        yesPlaintext[index].y2 <== yesSharedDouble2[index].yout;
+        noPlaintext[index] = BabyAdd();
+        noPlaintext[index].x1 <== ciphertext[index][6];
+        noPlaintext[index].y1 <== ciphertext[index][7];
+        noPlaintext[index].x2 <== -noSharedDouble2[index].xout;
+        noPlaintext[index].y2 <== noSharedDouble2[index].yout;
 
-        charge[index] <== quote[12] + side[index] * (quote[11] - quote[12]);
+        yesAmountBits[index] = Num2Bits(10);
+        noAmountBits[index] = Num2Bits(10);
+        yesAmountBits[index].in <== yesAmount[index];
+        noAmountBits[index].in <== noAmount[index];
+        yesAmountBound[index] = LessThan(10);
+        yesAmountBound[index].in[0] <== yesAmount[index];
+        yesAmountBound[index].in[1] <== 1001;
+        yesAmountBound[index].out === 1;
+        noAmountBound[index] = LessThan(10);
+        noAmountBound[index].in[0] <== noAmount[index];
+        noAmountBound[index].in[1] <== 1001;
+        noAmountBound[index].out === 1;
+        yesMessage[index] = EscalarMulFix(10, BASE8);
+        noMessage[index] = EscalarMulFix(10, BASE8);
+        for (var bit = 0; bit < 10; bit++) {
+            yesMessage[index].e[bit] <== yesAmountBits[index].out[bit];
+            noMessage[index].e[bit] <== noAmountBits[index].out[bit];
+        }
+        yesPlaintext[index].xout === yesMessage[index].out[0];
+        yesPlaintext[index].yout === yesMessage[index].out[1];
+        noPlaintext[index].xout === noMessage[index].out[0];
+        noPlaintext[index].yout === noMessage[index].out[1];
+        yesAmountZero[index] = IsZero();
+        noAmountZero[index] = IsZero();
+        yesAmountZero[index].in <== yesAmount[index];
+        noAmountZero[index].in <== noAmount[index];
+        yesAmountZero[index].out + noAmountZero[index].out === 1;
+        side[index] <== 1 - yesAmountZero[index].out;
+        quantity[index] <== yesAmount[index] + noAmount[index];
+        yesTotal += yesAmount[index];
+        noTotal += noAmount[index];
+        yesOrderTotal += side[index];
+
+        chargePerUnit[index] <== quote[12]
+            + side[index] * (quote[11] - quote[12]);
+        charge[index] <== chargePerUnit[index] * quantity[index];
+        fee[index] <== quote[14] * quantity[index];
+        positionPayout[index] <== payout.result * quantity[index];
         allocationLeaves[index] = AllocationLeaf();
         allocationLeaves[index].market[0] <== market[0];
         allocationLeaves[index].market[1] <== market[1];
@@ -178,8 +246,8 @@ template PrivateBatch() {
         allocationLeaves[index].positionCommitment <== positionCommitment[index];
         allocationLeaves[index].side <== side[index];
         allocationLeaves[index].charge <== charge[index];
-        allocationLeaves[index].fee <== quote[14];
-        allocationLeaves[index].payout <== payout.result;
+        allocationLeaves[index].fee <== fee[index];
+        allocationLeaves[index].payout <== positionPayout[index];
 
         includedLeaves[index] = IncludedPositionLeaf();
         includedLeaves[index].market[0] <== market[0];
@@ -189,7 +257,15 @@ template PrivateBatch() {
         includedLeaves[index].positionCommitment <== positionCommitment[index];
     }
     quote[2] === yesTotal;
-    quote[3] === 8 - yesTotal;
+    quote[3] === noTotal;
+    component minimumYesOrders = LessThan(4);
+    minimumYesOrders.in[0] <== 1;
+    minimumYesOrders.in[1] <== yesOrderTotal;
+    minimumYesOrders.out === 1;
+    component minimumNoOrders = LessThan(4);
+    minimumNoOrders.in[0] <== yesOrderTotal;
+    minimumNoOrders.in[1] <== 7;
+    minimumNoOrders.out === 1;
 
     signal acceptedTreeLeaves[64];
     signal allocationTreeLeaves[64];
@@ -217,35 +293,60 @@ template PrivateBatch() {
     allocationTree.root === allocationRoot;
     includedTree.root === includedRoot;
 
-    component c1Adds[7];
-    component c2Adds[7];
-    signal c1Aggregate[8][2];
-    signal c2Aggregate[8][2];
-    c1Aggregate[0][0] <== ciphertext[0][0];
-    c1Aggregate[0][1] <== ciphertext[0][1];
-    c2Aggregate[0][0] <== ciphertext[0][2];
-    c2Aggregate[0][1] <== ciphertext[0][3];
+    component yesC1Adds[7];
+    component yesC2Adds[7];
+    component noC1Adds[7];
+    component noC2Adds[7];
+    signal yesC1Aggregate[8][2];
+    signal yesC2Aggregate[8][2];
+    signal noC1Aggregate[8][2];
+    signal noC2Aggregate[8][2];
+    yesC1Aggregate[0][0] <== ciphertext[0][0];
+    yesC1Aggregate[0][1] <== ciphertext[0][1];
+    yesC2Aggregate[0][0] <== ciphertext[0][2];
+    yesC2Aggregate[0][1] <== ciphertext[0][3];
+    noC1Aggregate[0][0] <== ciphertext[0][4];
+    noC1Aggregate[0][1] <== ciphertext[0][5];
+    noC2Aggregate[0][0] <== ciphertext[0][6];
+    noC2Aggregate[0][1] <== ciphertext[0][7];
     for (var index = 1; index < 8; index++) {
-        c1Adds[index - 1] = BabyAdd();
-        c1Adds[index - 1].x1 <== c1Aggregate[index - 1][0];
-        c1Adds[index - 1].y1 <== c1Aggregate[index - 1][1];
-        c1Adds[index - 1].x2 <== ciphertext[index][0];
-        c1Adds[index - 1].y2 <== ciphertext[index][1];
-        c1Aggregate[index][0] <== c1Adds[index - 1].xout;
-        c1Aggregate[index][1] <== c1Adds[index - 1].yout;
-
-        c2Adds[index - 1] = BabyAdd();
-        c2Adds[index - 1].x1 <== c2Aggregate[index - 1][0];
-        c2Adds[index - 1].y1 <== c2Aggregate[index - 1][1];
-        c2Adds[index - 1].x2 <== ciphertext[index][2];
-        c2Adds[index - 1].y2 <== ciphertext[index][3];
-        c2Aggregate[index][0] <== c2Adds[index - 1].xout;
-        c2Aggregate[index][1] <== c2Adds[index - 1].yout;
+        yesC1Adds[index - 1] = BabyAdd();
+        yesC1Adds[index - 1].x1 <== yesC1Aggregate[index - 1][0];
+        yesC1Adds[index - 1].y1 <== yesC1Aggregate[index - 1][1];
+        yesC1Adds[index - 1].x2 <== ciphertext[index][0];
+        yesC1Adds[index - 1].y2 <== ciphertext[index][1];
+        yesC1Aggregate[index][0] <== yesC1Adds[index - 1].xout;
+        yesC1Aggregate[index][1] <== yesC1Adds[index - 1].yout;
+        yesC2Adds[index - 1] = BabyAdd();
+        yesC2Adds[index - 1].x1 <== yesC2Aggregate[index - 1][0];
+        yesC2Adds[index - 1].y1 <== yesC2Aggregate[index - 1][1];
+        yesC2Adds[index - 1].x2 <== ciphertext[index][2];
+        yesC2Adds[index - 1].y2 <== ciphertext[index][3];
+        yesC2Aggregate[index][0] <== yesC2Adds[index - 1].xout;
+        yesC2Aggregate[index][1] <== yesC2Adds[index - 1].yout;
+        noC1Adds[index - 1] = BabyAdd();
+        noC1Adds[index - 1].x1 <== noC1Aggregate[index - 1][0];
+        noC1Adds[index - 1].y1 <== noC1Aggregate[index - 1][1];
+        noC1Adds[index - 1].x2 <== ciphertext[index][4];
+        noC1Adds[index - 1].y2 <== ciphertext[index][5];
+        noC1Aggregate[index][0] <== noC1Adds[index - 1].xout;
+        noC1Aggregate[index][1] <== noC1Adds[index - 1].yout;
+        noC2Adds[index - 1] = BabyAdd();
+        noC2Adds[index - 1].x1 <== noC2Aggregate[index - 1][0];
+        noC2Adds[index - 1].y1 <== noC2Aggregate[index - 1][1];
+        noC2Adds[index - 1].x2 <== ciphertext[index][6];
+        noC2Adds[index - 1].y2 <== ciphertext[index][7];
+        noC2Aggregate[index][0] <== noC2Adds[index - 1].xout;
+        noC2Aggregate[index][1] <== noC2Adds[index - 1].yout;
     }
-    aggregateCiphertext[0] === c1Aggregate[7][0];
-    aggregateCiphertext[1] === c1Aggregate[7][1];
-    aggregateCiphertext[2] === c2Aggregate[7][0];
-    aggregateCiphertext[3] === c2Aggregate[7][1];
+    aggregateCiphertext[0] === yesC1Aggregate[7][0];
+    aggregateCiphertext[1] === yesC1Aggregate[7][1];
+    aggregateCiphertext[2] === yesC2Aggregate[7][0];
+    aggregateCiphertext[3] === yesC2Aggregate[7][1];
+    aggregateCiphertext[4] === noC1Aggregate[7][0];
+    aggregateCiphertext[5] === noC1Aggregate[7][1];
+    aggregateCiphertext[6] === noC2Aggregate[7][0];
+    aggregateCiphertext[7] === noC2Aggregate[7][1];
 
     signal yesCollected;
     signal noCollected;
@@ -255,21 +356,21 @@ template PrivateBatch() {
     signal noRemainder;
     yesRemainder <== quote[9] - yesCollected;
     noRemainder <== quote[10] - noCollected;
-    component yesRemainderRange = Num2Bits(4);
+    component yesRemainderRange = Num2Bits(14);
     yesRemainderRange.in <== yesRemainder;
-    component noRemainderRange = Num2Bits(4);
+    component noRemainderRange = Num2Bits(14);
     noRemainderRange.in <== noRemainder;
-    component yesRemainderBound = LessThan(4);
+    component yesRemainderBound = LessThan(14);
     yesRemainderBound.in[0] <== yesRemainder;
     yesRemainderBound.in[1] <== quote[2];
     yesRemainderBound.out === 1;
-    component noRemainderBound = LessThan(4);
+    component noRemainderBound = LessThan(14);
     noRemainderBound.in[0] <== noRemainder;
     noRemainderBound.in[1] <== quote[3];
     noRemainderBound.out === 1;
     quote[8] === quote[9] + quote[10];
     quote[13] === yesRemainder + noRemainder;
-    quote[15] === quote[14] * 8;
+    quote[15] === quote[14] * quote[1];
     quote[16] + quote[17] + quote[13] === quote[15];
 }
 

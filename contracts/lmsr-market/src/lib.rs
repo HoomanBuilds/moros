@@ -9,6 +9,7 @@ use soroban_sdk::{
 };
 
 const MAX_PRIVATE_BATCH_SIZE: u32 = 64;
+const MAX_PRIVATE_ORDER_QUANTITY: u32 = 1_000;
 
 /// Which outcome a trade is on.
 #[contracttype]
@@ -1015,7 +1016,12 @@ impl LmsrMarket {
         let batch_size = yes_count
             .checked_add(no_count)
             .ok_or(Error::InvalidParams)?;
-        if batch_size != config.fixed_batch_size
+        let maximum_batch_quantity = config
+            .fixed_batch_size
+            .checked_mul(MAX_PRIVATE_ORDER_QUANTITY)
+            .ok_or(Error::InvalidParams)?;
+        if batch_size < config.fixed_batch_size
+            || batch_size > maximum_batch_quantity
             || yes_count < config.minimum_side_count
             || no_count < config.minimum_side_count
         {

@@ -8,7 +8,7 @@ use soroban_sdk::{
 
 pub const ACTION_PUBLIC_INPUTS: u32 = 15;
 pub const EXIT_MATCH_PUBLIC_INPUTS: u32 = 20;
-pub const BATCH_PUBLIC_INPUTS: u32 = 45;
+pub const BATCH_PUBLIC_INPUTS: u32 = 49;
 pub const OPERATION_BINDING_FIELDS: u32 = 24;
 pub const OPERATION_CONTEXT_FIELDS: u32 = 46;
 pub const OUTPUT_ENVELOPE_FIELDS: u32 = 15;
@@ -536,7 +536,7 @@ pub fn batch_public_inputs(
     env: &Env,
     statement: &BatchProofStatement,
 ) -> Result<Vec<U256>, SignalError> {
-    if statement.aggregate_ciphertext.len() != 4 {
+    if statement.aggregate_ciphertext.len() != 8 {
         return Err(SignalError::InvalidShape);
     }
     let mut signals = Vec::new(env);
@@ -941,6 +941,10 @@ mod test {
                     U256::from_u32(&env, 9),
                     U256::from_u32(&env, 10),
                     U256::from_u32(&env, 11),
+                    U256::from_u32(&env, 12),
+                    U256::from_u32(&env, 13),
+                    U256::from_u32(&env, 14),
+                    U256::from_u32(&env, 15),
                 ],
             ),
             decryption_proof_hash: id(&env, 7),
@@ -971,8 +975,8 @@ mod test {
         };
         let signals = batch_public_inputs(&env, &statement).unwrap();
         assert_eq!(signals.len(), BATCH_PUBLIC_INPUTS);
-        assert_eq!(signals.get(26), Some(U256::from_u32(&env, 14)));
-        assert_eq!(signals.get(27), Some(U256::from_u32(&env, 1)));
-        assert_eq!(signals.get(44), Some(U256::from_u32(&env, 23)));
+        assert_eq!(signals.get(30), Some(U256::from_u32(&env, 14)));
+        assert_eq!(signals.get(31), Some(U256::from_u32(&env, 1)));
+        assert_eq!(signals.get(48), Some(U256::from_u32(&env, 23)));
     }
 }

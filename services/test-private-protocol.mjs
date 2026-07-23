@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { Address, StrKey } from "@stellar/stellar-sdk";
 import {
-  encryptSide,
+  encryptAmount,
   multiply,
   publicKey,
 } from "./committee/bn254-babyjub.mjs";
@@ -133,15 +133,15 @@ assert.deepEqual(
     committeeEpoch: 12n,
     committeeConfigHash: [13n, 14n],
     committeePublicKey: [15n, 16n],
-    aggregateCiphertext: [17n, 18n, 19n, 20n],
-    decryptionProofHash: [21n, 22n],
-    committeeStatementHash: [23n, 24n],
-    allocationRoot: 25n,
-    includedRoot: 26n,
-    lotSize: 27n,
-    quote: Array.from({ length: 18 }, (_, index) => BigInt(index + 28)),
+    aggregateCiphertext: [17n, 18n, 19n, 20n, 21n, 22n, 23n, 24n],
+    decryptionProofHash: [25n, 26n],
+    committeeStatementHash: [27n, 28n],
+    allocationRoot: 29n,
+    includedRoot: 30n,
+    lotSize: 31n,
+    quote: Array.from({ length: 18 }, (_, index) => BigInt(index + 32)),
   }),
-  Array.from({ length: 45 }, (_, index) => BigInt(index + 1)),
+  Array.from({ length: 49 }, (_, index) => BigInt(index + 1)),
 );
 
 assert.throws(() => merkleTree([1n, 2n, 3n], 1), /capacity/);
@@ -156,21 +156,31 @@ const vault = StrKey.encodeContract(Buffer.alloc(32, 3));
 const committeeSecret = 19n;
 const committeeKey = publicKey(committeeSecret);
 const sides = [1, 0, 1, 0, 1, 0, 1, 0];
+const quantities = [3, 4, 2, 1, 5, 2, 4, 3];
 const orders = sides.map((side, index) => {
-  const encrypted = encryptSide(
+  const yes = encryptAmount(
     committeeKey,
-    side,
+    side === 1 ? quantities[index] : 0,
     100n + BigInt(index),
+  );
+  const no = encryptAmount(
+    committeeKey,
+    side === 0 ? quantities[index] : 0,
+    200n + BigInt(index),
   );
   return {
     sequence: 20n + BigInt(index),
     action_id: Buffer.alloc(32, index + 1),
     position_commitment: 1_000n + BigInt(index),
     encrypted_order: {
-      c1_x: encrypted.c1[0],
-      c1_y: encrypted.c1[1],
-      c2_x: encrypted.c2[0],
-      c2_y: encrypted.c2[1],
+      yes_c1_x: yes.c1[0],
+      yes_c1_y: yes.c1[1],
+      yes_c2_x: yes.c2[0],
+      yes_c2_y: yes.c2[1],
+      no_c1_x: no.c1[0],
+      no_c1_y: no.c1[1],
+      no_c2_x: no.c2[0],
+      no_c2_y: no.c2[1],
     },
   };
 });
@@ -194,23 +204,23 @@ const registration = {
 };
 const batchQuote = {
   state_version: 3n,
-  batch_size: 8,
-  yes_count: 4,
-  no_count: 4,
+  batch_size: 24,
+  yes_count: 14,
+  no_count: 10,
   pre_yes_price: 1n << 31n,
   post_yes_price: 1n << 31n,
   yes_price: 1n << 31n,
   no_price: 1n << 31n,
-  aggregate_market_charge: 40_000_000n,
-  yes_market_cost: 20_000_000n,
-  no_market_cost: 20_000_000n,
+  aggregate_market_charge: 120_000_000n,
+  yes_market_cost: 70_000_000n,
+  no_market_cost: 50_000_000n,
   yes_charge_per_position: 5_000_000n,
   no_charge_per_position: 5_000_000n,
   rounding_contribution: 0n,
   fee_per_position: 100_000n,
-  fee_escrow: 800_000n,
-  conditional_lp_fee: 640_000n,
-  conditional_protocol_fee: 160_000n,
+  fee_escrow: 2_400_000n,
+  conditional_lp_fee: 1_920_000n,
+  conditional_protocol_fee: 480_000n,
 };
 const statement = buildBatchStatement({
   networkDomain: Buffer.alloc(32, 7),
@@ -229,7 +239,7 @@ const statement = buildBatchStatement({
   committeeSecret,
 });
 assert.deepEqual(statement.sides, sides);
-assert.equal(batchPublicSignals(statement.witness).length, 45);
+assert.equal(batchPublicSignals(statement.witness).length, 49);
 assert.equal(statement.witness.acceptedRoot, acceptedRoot);
 assert.notEqual(statement.allocationRoot, 0n);
 assert.notEqual(statement.includedRoot, 0n);
@@ -243,9 +253,9 @@ assert.equal(firstAllocation.epoch, 4n);
 assert.equal(firstAllocation.sequence, 20n);
 assert.equal(firstAllocation.positionCommitment, 1_000n);
 assert.equal(firstAllocation.side, 1n);
-assert.equal(firstAllocation.charge, batchQuote.yes_charge_per_position);
-assert.equal(firstAllocation.fee, batchQuote.fee_per_position);
-assert.equal(firstAllocation.payout, 10_000_000n);
+assert.equal(firstAllocation.charge, batchQuote.yes_charge_per_position * 3n);
+assert.equal(firstAllocation.fee, batchQuote.fee_per_position * 3n);
+assert.equal(firstAllocation.payout, 30_000_000n);
 assert.equal(firstAllocation.leafIndex, 0n);
 assert.equal(firstAllocation.siblings.length, 6);
 assert.throws(

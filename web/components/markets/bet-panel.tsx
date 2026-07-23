@@ -16,12 +16,17 @@ import {
   getCollateralAccountState,
   type CollateralAccountState,
 } from "@/lib/stellar/collateral-account";
-import { formatTokenAmount, privacyStakeForOrder } from "@/lib/stellar/amount";
+import {
+  formatTokenAmount,
+  parsePrivatePositionQuantity,
+  privacyStakeForOrder,
+} from "@/lib/stellar/amount";
 import { NETWORK } from "@/lib/network";
 import { unlockPositionBackup } from "@/lib/positions/backup";
 import { PLATFORM_FEE_BPS } from "@/lib/markets/deploy-constants";
 import { getPrivateConfig } from "@/lib/private/client";
 import { openPrivateWallet } from "@/lib/private/wallet";
+import { getPrivateOrderUnitReserve } from "@/lib/private/actions";
 
 const STAGES: { key: BetStage; label: string }[] = [
   { key: "securing", label: "Unlocking private recovery" },
@@ -35,8 +40,6 @@ const STAGES: { key: BetStage; label: string }[] = [
 
 const YES = "#16c784";
 const NO = "#f0564a";
-const PRIVATE_ORDER_RESERVE = 10_250_000n;
-
 function SideButton({
   active,
   disabled,
@@ -80,13 +83,14 @@ export function BetPanel() {
   const [trustlineLoading, setTrustlineLoading] = useState(false);
   const [privateStack, setPrivateStack] = useState(false);
   const [privateBalance, setPrivateBalance] = useState<bigint | null>(null);
+  const [privateUnitReserve, setPrivateUnitReserve] = useState<bigint | null>(null);
   const [privateUnlocking, setPrivateUnlocking] = useState(false);
   const busy = stage !== null && stage !== "done";
   const rulesInvalid = data?.resolverType === "event" && !data.rulesVerified;
   const closed = data ? !data.acceptingOrders || rulesInvalid : false;
 
   const prob = side === "1" ? data?.probYes ?? null : data ? 1 - data.probYes : null;
-  const positionSize = privateStack ? 1 : Number(amount);
+  const positionSize = Number(amount);
   const feeBps = data?.feeBps ?? PLATFORM_FEE_BPS;
   const feeRate = feeBps / 10_000;
   const feeLabel = `${feeBps / 100}%`;
@@ -103,6 +107,16 @@ export function BetPanel() {
     stakeAtomic = null;
   }
   const insufficient = !!accountState && stakeAtomic !== null && accountState.balanceAtomic < stakeAtomic;
+  let privateQuantity: bigint | null = null;
+  try {
+    privateQuantity = parsePrivatePositionQuantity(amount);
+  } catch {
+    privateQuantity = null;
+  }
+  const privateQuantityValid = privateQuantity !== null;
+  const privateRequiredBalance = privateQuantity !== null && privateUnitReserve !== null
+    ? privateUnitReserve * privateQuantity
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +131,24 @@ export function BetPanel() {
       cancelled = true;
     };
   }, [poolId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPrivateUnitReserve(null);
+    if (!address || !privateStack) return;
+    getPrivateOrderUnitReserve(address, marketId)
+      .then((reserve) => {
+        if (!cancelled) setPrivateUnitReserve(reserve);
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : "Private order reserve is unavailable");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address, marketId, privateStack]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,7 +191,7 @@ export function BetPanel() {
       setStage("placing");
       const result = await runBet({
         side,
-        amount: privateStack ? "1" : amount,
+        amount,
         address,
         collateral,
         marketId,
@@ -243,24 +275,18 @@ export function BetPanel() {
 
       <div className="space-y-2">
         <span className="block text-xs font-mono text-muted-foreground uppercase tracking-wider">
-          {privateStack ? "Fixed batch position" : `Amount (${collateral.code})`}
+          {privateStack ? "Private position quantity" : `Amount (${collateral.code})`}
         </span>
-        {privateStack ? (
-          <div className="rounded-md border border-white/15 bg-white/[0.04] px-3 py-3 font-mono text-sm">
-            1 {side === "1" ? "YES" : "NO"} position
-          </div>
-        ) : (
-          <Input
-            type="number"
-            min="1"
-            max="1000"
-            step="1"
-            value={amount}
-            disabled={busy || closed}
-            onChange={(e) => setAmount(e.target.value)}
-            className="h-11 border-white/15 bg-white/[0.04] text-base focus-visible:border-white/30"
-          />
-        )}
+        <Input
+          type="number"
+          min="1"
+          max="1000"
+          step="1"
+          value={amount}
+          disabled={busy || closed}
+          onChange={(e) => setAmount(e.target.value)}
+          className="h-11 border-white/15 bg-white/[0.04] text-base focus-visible:border-white/30"
+        />
         <div className="space-y-1.5 pt-1 font-mono text-xs text-muted-foreground">
           <div className="flex items-center justify-between">
             <span>Position size</span>
@@ -279,7 +305,7 @@ export function BetPanel() {
                 <span className="text-foreground">Same clearing price</span>
               </div>
               <p className="text-[10px] leading-snug text-muted-foreground/70">
-                Eight orders clear together, with at least two orders on each side. Your side stays encrypted until aggregate batch settlement. The fee depends on the batch clearing probability and never exceeds the market cap.
+                Eight orders clear together, with at least two orders on each side. Your side and quantity stay encrypted. Every unit on the same side receives the same batch price.
               </p>
             </>
           ) : (
@@ -335,13 +361,24 @@ export function BetPanel() {
           {privateUnlocking && <Spinner />}
           {privateUnlocking ? "Unlocking private balance" : "Unlock private balance"}
         </Button>
-      ) : privateStack && privateBalance !== null && privateBalance < PRIVATE_ORDER_RESERVE ? (
+      ) : privateStack && !privateQuantityValid ? (
+        <Button className="w-full" disabled>
+          Enter 1 to 1,000 positions
+        </Button>
+      ) : privateStack && privateUnitReserve === null ? (
+        <Button className="w-full" disabled>
+          <Spinner />
+          Reading private collateral requirement
+        </Button>
+      ) : privateStack && privateBalance !== null &&
+        privateRequiredBalance !== null &&
+        privateBalance < privateRequiredBalance ? (
         <div className="space-y-3">
           <Button className="w-full" asChild>
             <Link href="/app/portfolio">Add private USDC in Portfolio</Link>
           </Button>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            This position needs at least {formatTokenAmount(PRIVATE_ORDER_RESERVE, collateral.decimals, 4)} private USDC. Add funds once and reuse the balance across bets and liquidity.
+            This quantity needs up to {formatTokenAmount(privateRequiredBalance, collateral.decimals, 4)} private USDC. Add funds once and reuse the balance across bets and liquidity.
           </p>
         </div>
       ) : accountLoading ? (
@@ -365,7 +402,15 @@ export function BetPanel() {
           )}
         </div>
       ) : (
-        <Button className="w-full" disabled={busy || (!privateStack && (insufficient || !stakeAtomic))} onClick={submit}>
+        <Button
+          className="w-full"
+          disabled={busy || (
+            privateStack
+              ? !privateQuantityValid || privateRequiredBalance === null
+              : insufficient || !stakeAtomic
+          )}
+          onClick={submit}
+        >
           {busy && <Spinner />}
           {busy ? "Placing private bet" : insufficient ? `Insufficient ${collateral.code}` : "Place private bet"}
         </Button>

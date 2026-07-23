@@ -88,12 +88,39 @@ export function encryptSide(key, side, randomness = randomScalar()) {
   return { c1, c2: add(shared, message), randomness: BigInt(randomness) };
 }
 
+export function encryptAmount(key, amount, randomness = randomScalar()) {
+  const value = BigInt(amount);
+  if (value < 0n || value > 1_000n) {
+    throw new Error("amount must be between zero and 1,000");
+  }
+  const c1 = multiply(BASE8, randomness);
+  const shared = multiply(key, 8n * BigInt(randomness));
+  return {
+    c1,
+    c2: add(shared, multiply(BASE8, value)),
+    randomness: BigInt(randomness),
+  };
+}
+
 export function decryptSide(secret, ciphertext) {
   const shared = multiply(ciphertext.c1, 8n * BigInt(secret));
   const message = add(ciphertext.c2, negate(shared));
   if (message[0] === 0n && message[1] === 1n) return 0;
   if (message[0] === BASE8[0] && message[1] === BASE8[1]) return 1;
   throw new Error("ciphertext does not encode a Boolean side");
+}
+
+export function decryptAmount(secret, ciphertext, bound = 1_000) {
+  const shared = multiply(ciphertext.c1, 8n * BigInt(secret));
+  const message = add(ciphertext.c2, negate(shared));
+  let candidate = IDENTITY;
+  for (let amount = 0; amount <= bound; amount++) {
+    if (candidate[0] === message[0] && candidate[1] === message[1]) {
+      return amount;
+    }
+    candidate = add(candidate, BASE8);
+  }
+  throw new Error("ciphertext amount exceeds the supported bound");
 }
 
 export function aggregateCiphertexts(ciphertexts) {

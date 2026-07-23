@@ -134,10 +134,14 @@ fn envelope(env: &Env, byte: u8) -> Bytes {
 fn order_ciphertext(env: &Env, _byte: u8) -> EncryptedOrder {
     let (x, y) = babyjub_base(env);
     EncryptedOrder {
-        c1_x: x.clone(),
-        c1_y: y.clone(),
-        c2_x: x,
-        c2_y: y,
+        yes_c1_x: x.clone(),
+        yes_c1_y: y.clone(),
+        yes_c2_x: x.clone(),
+        yes_c2_y: y.clone(),
+        no_c1_x: x.clone(),
+        no_c1_y: y.clone(),
+        no_c2_x: x,
+        no_c2_y: y,
     }
 }
 
@@ -1188,10 +1192,14 @@ fn batch_statement(
         aggregate_ciphertext: Vec::from_array(
             &setup.env,
             [
-                submission.aggregate_ciphertext.c1_x.clone(),
-                submission.aggregate_ciphertext.c1_y.clone(),
-                submission.aggregate_ciphertext.c2_x.clone(),
-                submission.aggregate_ciphertext.c2_y.clone(),
+                submission.aggregate_ciphertext.yes_c1_x.clone(),
+                submission.aggregate_ciphertext.yes_c1_y.clone(),
+                submission.aggregate_ciphertext.yes_c2_x.clone(),
+                submission.aggregate_ciphertext.yes_c2_y.clone(),
+                submission.aggregate_ciphertext.no_c1_x.clone(),
+                submission.aggregate_ciphertext.no_c1_y.clone(),
+                submission.aggregate_ciphertext.no_c2_x.clone(),
+                submission.aggregate_ciphertext.no_c2_y.clone(),
             ],
         ),
         decryption_proof_hash: submission.decryption_proof_hash.clone(),
@@ -1467,10 +1475,14 @@ fn invalid_order_points_fail_before_note_consumption() {
     deposit(&setup, 10, 2, [11, 12], 25_000_000);
     let nullifier = field(&setup.env, 100);
     let invalid = EncryptedOrder {
-        c1_x: field(&setup.env, 5),
-        c1_y: field(&setup.env, 6),
-        c2_x: field(&setup.env, 7),
-        c2_y: field(&setup.env, 8),
+        yes_c1_x: field(&setup.env, 5),
+        yes_c1_y: field(&setup.env, 6),
+        yes_c2_x: field(&setup.env, 7),
+        yes_c2_y: field(&setup.env, 8),
+        no_c1_x: field(&setup.env, 9),
+        no_c1_y: field(&setup.env, 10),
+        no_c2_x: field(&setup.env, 11),
+        no_c2_y: field(&setup.env, 12),
     };
     assert!(setup
         .vault

@@ -4,7 +4,7 @@ import { proofBytes } from "../circuits/private/artifacts.mjs";
 import {
   batchPublicSignals,
   buildBatchStatement,
-  decryptBatchSides,
+  decryptBatchQuantities,
   invocationResultValue,
 } from "./private-protocol.mjs";
 
@@ -174,12 +174,14 @@ export class PrivateBatchCoordinator {
         if (!order) throw new Error(`private order ${sequence} is unavailable`);
         orders.push(order);
       }
-      const sides = decryptBatchSides(orders, this.committeeSecret);
-      const yesCount = sides.filter((side) => side === 1).length;
-      const noCount = sides.length - yesCount;
+      const quantities = decryptBatchQuantities(orders, this.committeeSecret);
+      const yesOrderCount = quantities.filter((value) => value.side === 1).length;
+      const noOrderCount = quantities.length - yesOrderCount;
+      const yesCount = quantities.reduce((total, value) => total + value.yes, 0);
+      const noCount = quantities.reduce((total, value) => total + value.no, 0);
       if (
-        yesCount < Number(registration.minimum_side_count) ||
-        noCount < Number(registration.minimum_side_count)
+        yesOrderCount < Number(registration.minimum_side_count) ||
+        noOrderCount < Number(registration.minimum_side_count)
       ) {
         return {
           status: "sealed-one-sided",
@@ -214,10 +216,14 @@ export class PrivateBatchCoordinator {
           no_count: noCount,
           committee_epoch: BigInt(registration.committee_epoch),
           aggregate_ciphertext: {
-            c1_x: statement.aggregate.c1[0],
-            c1_y: statement.aggregate.c1[1],
-            c2_x: statement.aggregate.c2[0],
-            c2_y: statement.aggregate.c2[1],
+            yes_c1_x: statement.aggregate.yes.c1[0],
+            yes_c1_y: statement.aggregate.yes.c1[1],
+            yes_c2_x: statement.aggregate.yes.c2[0],
+            yes_c2_y: statement.aggregate.yes.c2[1],
+            no_c1_x: statement.aggregate.no.c1[0],
+            no_c1_y: statement.aggregate.no.c1[1],
+            no_c2_x: statement.aggregate.no.c2[0],
+            no_c2_y: statement.aggregate.no.c2[1],
           },
           decryption_proof_hash: statement.decryptionProofHash,
           committee_statement_hash: statement.committeeStatementHash,

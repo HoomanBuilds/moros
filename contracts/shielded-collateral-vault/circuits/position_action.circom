@@ -48,7 +48,7 @@ template PrivatePositionAction(noteLevels, rootLevels, actionCode) {
 
     signal input contextFields[46];
     signal input acceptedActionId[2];
-    signal input acceptedCiphertext[4];
+    signal input acceptedCiphertext[8];
     signal input acceptedCommitteeEpoch;
     signal input acceptedLeafIndex;
     signal input acceptedSiblings[rootLevels];
@@ -179,18 +179,32 @@ template PrivatePositionAction(noteLevels, rootLevels, actionCode) {
     inputSecretZero.out === 0;
     component sideBits = Num2Bits(1);
     sideBits.in <== inPrivateData[0];
+    signal sequence;
+    signal quantity;
+    sequence <-- inPrivateData[1] \ 1024;
+    quantity <-- inPrivateData[1] % 1024;
+    inPrivateData[1] === sequence * 1024 + quantity;
     component sequenceRange = Num2Bits(64);
-    sequenceRange.in <== inPrivateData[1];
+    sequenceRange.in <== sequence;
+    component quantityRange = Num2Bits(10);
+    quantityRange.in <== quantity;
+    component quantityBound = LessThan(10);
+    quantityBound.in[0] <== quantity;
+    quantityBound.in[1] <== 1001;
+    quantityBound.out === 1;
+    component quantityZero = IsZero();
+    quantityZero.in <== quantity;
+    quantityZero.out === 0;
 
     component acceptedLeaf = AcceptedOrderLeaf();
     acceptedLeaf.market[0] <== contextFields[18];
     acceptedLeaf.market[1] <== contextFields[19];
     acceptedLeaf.epoch <== contextFields[22];
-    acceptedLeaf.sequence <== inPrivateData[1];
+    acceptedLeaf.sequence <== sequence;
     acceptedLeaf.actionId[0] <== acceptedActionId[0];
     acceptedLeaf.actionId[1] <== acceptedActionId[1];
     acceptedLeaf.positionCommitment <== positionInput.commitment;
-    for (var field = 0; field < 4; field++) {
+    for (var field = 0; field < 8; field++) {
         acceptedLeaf.ciphertext[field] <== acceptedCiphertext[field];
     }
     acceptedLeaf.committeeEpoch <== acceptedCommitteeEpoch;
@@ -212,20 +226,26 @@ template PrivatePositionAction(noteLevels, rootLevels, actionCode) {
     noChargeRange.in <== contextFields[37];
     component feeRange = Num2Bits(60);
     feeRange.in <== contextFields[39];
+    signal chargePerUnit;
     signal charge;
-    charge <== contextFields[37]
+    chargePerUnit <== contextFields[37]
         + inPrivateData[0] * (contextFields[36] - contextFields[37]);
+    charge <== chargePerUnit * quantity;
+    signal fee;
+    signal positionPayout;
+    fee <== contextFields[39] * quantity;
+    positionPayout <== payout.result * quantity;
 
     component allocationLeaf = AllocationLeaf();
     allocationLeaf.market[0] <== contextFields[18];
     allocationLeaf.market[1] <== contextFields[19];
     allocationLeaf.epoch <== contextFields[22];
-    allocationLeaf.sequence <== inPrivateData[1];
+    allocationLeaf.sequence <== sequence;
     allocationLeaf.positionCommitment <== positionInput.commitment;
     allocationLeaf.side <== inPrivateData[0];
     allocationLeaf.charge <== charge;
-    allocationLeaf.fee <== contextFields[39];
-    allocationLeaf.payout <== payout.result;
+    allocationLeaf.fee <== fee;
+    allocationLeaf.payout <== positionPayout;
     component allocationPath = MerkleProof(rootLevels);
     allocationPath.leaf <== allocationLeaf.out;
     allocationPath.leafIndex <== allocationLeafIndex;
@@ -279,7 +299,7 @@ template PrivatePositionAction(noteLevels, rootLevels, actionCode) {
         component changeZero = IsZero();
         changeZero.in <== outAmount[0];
         outPurpose[0] === 1 - changeZero.out;
-        inAmount === charge + contextFields[39] + outAmount[0];
+        inAmount === charge + fee + outAmount[0];
     }
     if (actionCode == 4) {
         signal winner;
@@ -287,12 +307,12 @@ template PrivatePositionAction(noteLevels, rootLevels, actionCode) {
             + (contextFields[24] - 1) * (1 - 2 * inPrivateData[0]);
         winner * (winner - 1) === 0;
         outPurpose[0] === 7 * winner;
-        outAmount[0] === payout.result * winner;
+        outAmount[0] === positionPayout * winner;
     }
     if (actionCode == 5) {
         outPurpose[0] === 6;
-        outAmount[0] === charge + contextFields[39]
-            + acceptedMode * (inAmount - charge - contextFields[39]);
+        outAmount[0] === charge + fee
+            + acceptedMode * (inAmount - charge - fee);
     }
 
     outputs[0].commitment === outputCommitment0;

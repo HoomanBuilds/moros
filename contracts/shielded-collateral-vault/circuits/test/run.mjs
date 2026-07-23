@@ -219,9 +219,12 @@ expectInvalid("order", "position-budget", (fixture) => {
   fixture.outAmount[1] = (BigInt(fixture.outAmount[1]) + 1n).toString();
 });
 expectInvalid("order", "encryption-randomness", (fixture) => {
-  fixture.encryptionRandomness = (
-    BigInt(fixture.encryptionRandomness) + 1n
+  fixture.yesEncryptionRandomness = (
+    BigInt(fixture.yesEncryptionRandomness) + 1n
   ).toString();
+});
+expectInvalid("order", "quantity", (fixture) => {
+  fixture.quantity = (BigInt(fixture.quantity) + 1n).toString();
 });
 expectInvalid("liquidity_fund", "share-amount", (fixture) => {
   fixture.outAmount[1] = (BigInt(fixture.outAmount[1]) + 1n).toString();

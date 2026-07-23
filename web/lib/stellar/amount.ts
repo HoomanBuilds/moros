@@ -28,6 +28,18 @@ export function parseWholeOrderAmount(value: string, decimals: number): { orderA
   return { orderAmount: BigInt(input).toString(), atomic };
 }
 
+export function parsePrivatePositionQuantity(value: string): bigint {
+  const input = value.trim();
+  if (!/^\d+$/.test(input)) {
+    throw new Error("Private position quantity must be a whole number");
+  }
+  const quantity = BigInt(input);
+  if (quantity < 1n || quantity > 1_000n) {
+    throw new Error("Private position quantity must be between 1 and 1,000");
+  }
+  return quantity;
+}
+
 const ORDER_STAKE_BUCKETS = [1n, 5n, 10n, 25n, 50n, 100n, 250n, 500n, 1_000n];
 
 export function privacyStakeForOrder(

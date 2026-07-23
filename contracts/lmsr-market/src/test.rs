@@ -544,6 +544,30 @@ fn private_batch_quote_matches_the_shared_integer_fixture_and_rejects_stale_stat
 }
 
 #[test]
+fn private_batch_quote_prices_variable_hidden_quantities() {
+    let env = Env::default();
+    let (market, _liquidity, _token, shared_vault, _resolver) = setup_private(&env);
+    assert!(market.try_quote_private_batch(&0, &2, &5).is_err());
+    assert!(market.try_quote_private_batch(&0, &2, &7_999).is_err());
+    let quote = market.quote_private_batch(&0, &5, &7);
+    assert_eq!(quote.batch_size, 12);
+    assert_eq!(quote.yes_count, 5);
+    assert_eq!(quote.no_count, 7);
+    assert_eq!(
+        quote.fee_escrow,
+        quote.fee_per_position * i128::from(quote.batch_size),
+    );
+
+    assert_eq!(
+        market.apply_private_batch(&shared_vault, &0, &5, &7),
+        quote,
+    );
+    let state = market.scenario_state();
+    assert_eq!(state.payout_if_yes, 50_000_000);
+    assert_eq!(state.payout_if_no, 70_000_000);
+}
+
+#[test]
 fn direct_donations_never_become_private_market_lp_equity() {
     let env = Env::default();
     let (market, liquidity, token, shared_vault, resolver) = setup_private(&env);

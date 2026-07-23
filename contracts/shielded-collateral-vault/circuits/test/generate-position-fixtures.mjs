@@ -22,13 +22,14 @@ const MARKET = [20n, 21n];
 const EPOCH = 0n;
 const SEQUENCE = 5n;
 const SIDE = 1n;
+const QUANTITY = 3n;
 const PAYOUT = 10_000_000n;
 const YES_CHARGE = 4_000_000n;
 const NO_CHARGE = 5_000_000n;
 const FEE = 200_000n;
-const POSITION_BUDGET = 10_500_000n;
+const POSITION_BUDGET = 31_500_000n;
 const ACCEPTED_ACTION = [111n, 112n];
-const ACCEPTED_CIPHERTEXT = [121n, 122n, 123n, 124n];
+const ACCEPTED_CIPHERTEXT = [121n, 122n, 123n, 124n, 125n, 126n, 127n, 128n];
 const COMMITTEE_EPOCH = 1n;
 
 function inputNote({
@@ -79,7 +80,7 @@ const position = inputNote({
   viewingSecret: 12n,
   noteId: 13n,
   payloadHash: 999n,
-  privateData: [SIDE, SEQUENCE],
+  privateData: [SIDE, SEQUENCE * 1_024n + QUANTITY],
   blinding: 14n,
 });
 const padding = inputNote({
@@ -115,9 +116,9 @@ const allocationLeaf = poseidon2Hash([
   SEQUENCE,
   position.commitment,
   SIDE,
-  YES_CHARGE,
-  FEE,
-  PAYOUT,
+  YES_CHARGE * QUANTITY,
+  FEE * QUANTITY,
+  PAYOUT * QUANTITY,
 ]);
 const allocation = rootAtZero(allocationLeaf);
 
@@ -269,7 +270,7 @@ createFixture({
   action: 9n,
   binding: allocationBinding(0n),
   outputPurpose: 1n,
-  outputAmount: POSITION_BUDGET - YES_CHARGE - FEE,
+  outputAmount: POSITION_BUDGET - (YES_CHARGE + FEE) * QUANTITY,
   nullifierDomain: 3n,
   acceptedMode: false,
 });
@@ -278,7 +279,7 @@ createFixture({
   action: 4n,
   binding: allocationBinding(1n),
   outputPurpose: 7n,
-  outputAmount: PAYOUT,
+  outputAmount: PAYOUT * QUANTITY,
   nullifierDomain: 4n,
   acceptedMode: false,
 });
@@ -296,7 +297,7 @@ createFixture({
   action: 5n,
   binding: allocationBinding(3n),
   outputPurpose: 6n,
-  outputAmount: YES_CHARGE + FEE,
+  outputAmount: (YES_CHARGE + FEE) * QUANTITY,
   nullifierDomain: 4n,
   acceptedMode: false,
 });

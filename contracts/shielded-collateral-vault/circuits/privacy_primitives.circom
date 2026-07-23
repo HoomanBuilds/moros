@@ -196,11 +196,11 @@ template AcceptedOrderLeaf() {
     signal input sequence;
     signal input actionId[2];
     signal input positionCommitment;
-    signal input ciphertext[4];
+    signal input ciphertext[8];
     signal input committeeEpoch;
     signal output out;
 
-    component hash = Poseidon2Sponge(13);
+    component hash = Poseidon2Sponge(17);
     hash.inputs[0] <== 1009;
     hash.inputs[1] <== market[0];
     hash.inputs[2] <== market[1];
@@ -213,7 +213,11 @@ template AcceptedOrderLeaf() {
     hash.inputs[9] <== ciphertext[1];
     hash.inputs[10] <== ciphertext[2];
     hash.inputs[11] <== ciphertext[3];
-    hash.inputs[12] <== committeeEpoch;
+    hash.inputs[12] <== ciphertext[4];
+    hash.inputs[13] <== ciphertext[5];
+    hash.inputs[14] <== ciphertext[6];
+    hash.inputs[15] <== ciphertext[7];
+    hash.inputs[16] <== committeeEpoch;
     out <== hash.out;
 }
 

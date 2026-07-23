@@ -23,11 +23,13 @@ const MIN_TREE_LEVELS: u32 = 8;
 const MAX_TREE_LEVELS: u32 = 31;
 const MIN_ROOT_HISTORY: u32 = 8;
 const MAX_ROOT_HISTORY: u32 = 128;
-const ORDER_CIPHERTEXT_FIELDS: u32 = 4;
+const ORDER_CIPHERTEXT_FIELDS: u32 = 8;
+const MAX_PRIVATE_ORDER_QUANTITY: u32 = 1_000;
 const ACCEPTED_TREE_LEVELS: u32 = 6;
 const ACCEPTED_LEAF_HASH_TAG: u32 = 1009;
 const MAX_PROOF_LENGTH: u32 = 512;
 const MAX_PRIVATE_BATCH_SIZE: u32 = 8;
+const PRIVATE_MINIMUM_SIDE_COUNT: u32 = 2;
 const MAX_ACTION_LIFETIME: u64 = 86_400;
 const MAX_AMOUNT: i128 = 1_000_000_000_000_000_000;
 const MAX_KEEP_ALIVE_ITEMS: u32 = 16;
@@ -225,10 +227,14 @@ pub struct EpochState {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EncryptedOrder {
-    pub c1_x: U256,
-    pub c1_y: U256,
-    pub c2_x: U256,
-    pub c2_y: U256,
+    pub yes_c1_x: U256,
+    pub yes_c1_y: U256,
+    pub yes_c2_x: U256,
+    pub yes_c2_y: U256,
+    pub no_c1_x: U256,
+    pub no_c1_y: U256,
+    pub no_c2_x: U256,
+    pub no_c2_y: U256,
 }
 
 #[contracttype]
@@ -888,11 +894,7 @@ impl ShieldedCollateralVault {
         if private.batcher != env.current_contract_address()
             || private.fixed_batch_size < 8
             || private.fixed_batch_size > MAX_PRIVATE_BATCH_SIZE
-            || private.minimum_side_count < 2
-            || private
-                .minimum_side_count
-                .checked_mul(2)
-                .is_none_or(|count| count > private.fixed_batch_size)
+            || private.minimum_side_count != PRIVATE_MINIMUM_SIDE_COUNT
             || env.ledger().timestamp() >= info.expiry
             || info
                 .expiry
@@ -1675,13 +1677,19 @@ impl ShieldedCollateralVault {
             .checked_sub(epoch.first_sequence)
             .and_then(|distance| distance.checked_add(1))
             .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidBatch));
+        let maximum_batch_quantity = registration
+            .fixed_batch_size
+            .checked_mul(MAX_PRIVATE_ORDER_QUANTITY)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+        let aggregate_quantity = submission
+            .yes_count
+            .checked_add(submission.no_count)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidBatch));
         if env.ledger().timestamp() >= epoch.refund_at
             || epoch.accepted_count != registration.fixed_batch_size
             || sequence_count != u64::from(epoch.accepted_count)
-            || submission
-                .yes_count
-                .checked_add(submission.no_count)
-                .is_none_or(|count| count != epoch.accepted_count)
+            || aggregate_quantity == 0
+            || aggregate_quantity > maximum_batch_quantity
             || submission.yes_count < registration.minimum_side_count
             || submission.no_count < registration.minimum_side_count
         {
@@ -1716,10 +1724,14 @@ impl ShieldedCollateralVault {
             aggregate_ciphertext: Vec::from_array(
                 &env,
                 [
-                    submission.aggregate_ciphertext.c1_x,
-                    submission.aggregate_ciphertext.c1_y,
-                    submission.aggregate_ciphertext.c2_x,
-                    submission.aggregate_ciphertext.c2_y,
+                    submission.aggregate_ciphertext.yes_c1_x,
+                    submission.aggregate_ciphertext.yes_c1_y,
+                    submission.aggregate_ciphertext.yes_c2_x,
+                    submission.aggregate_ciphertext.yes_c2_y,
+                    submission.aggregate_ciphertext.no_c1_x,
+                    submission.aggregate_ciphertext.no_c1_y,
+                    submission.aggregate_ciphertext.no_c2_x,
+                    submission.aggregate_ciphertext.no_c2_y,
                 ],
             ),
             decryption_proof_hash: submission.decryption_proof_hash,
@@ -2570,10 +2582,14 @@ impl ShieldedCollateralVault {
                 action_high,
                 action_low,
                 leaf.position_commitment.clone(),
-                leaf.encrypted_order.c1_x.clone(),
-                leaf.encrypted_order.c1_y.clone(),
-                leaf.encrypted_order.c2_x.clone(),
-                leaf.encrypted_order.c2_y.clone(),
+                leaf.encrypted_order.yes_c1_x.clone(),
+                leaf.encrypted_order.yes_c1_y.clone(),
+                leaf.encrypted_order.yes_c2_x.clone(),
+                leaf.encrypted_order.yes_c2_y.clone(),
+                leaf.encrypted_order.no_c1_x.clone(),
+                leaf.encrypted_order.no_c1_y.clone(),
+                leaf.encrypted_order.no_c2_x.clone(),
+                leaf.encrypted_order.no_c2_y.clone(),
                 U256::from_u128(env, leaf.committee_epoch as u128),
             ],
         );
@@ -2837,8 +2853,10 @@ impl ShieldedCollateralVault {
     }
 
     fn valid_encrypted_order(env: &Env, order: &EncryptedOrder) -> bool {
-        is_valid_babyjub_encryption_point(env, &order.c1_x, &order.c1_y)
-            && is_valid_babyjub_encryption_point(env, &order.c2_x, &order.c2_y)
+        is_valid_babyjub_encryption_point(env, &order.yes_c1_x, &order.yes_c1_y)
+            && is_valid_babyjub_encryption_point(env, &order.yes_c2_x, &order.yes_c2_y)
+            && is_valid_babyjub_encryption_point(env, &order.no_c1_x, &order.no_c1_y)
+            && is_valid_babyjub_encryption_point(env, &order.no_c2_x, &order.no_c2_y)
     }
 
     fn valid_payment_destination(env: &Env, destination: &PaymentDestination) -> bool {
@@ -3179,28 +3197,51 @@ impl ShieldedCollateralVault {
         Self::set_operation_field(env, &mut fields, 13, committee_low);
         Self::set_operation_field(env, &mut fields, 14, binding.committee_public_key_x.clone());
         Self::set_operation_field(env, &mut fields, 15, binding.committee_public_key_y.clone());
-        Self::set_operation_field(env, &mut fields, 16, binding.encrypted_order.c1_x.clone());
-        Self::set_operation_field(env, &mut fields, 17, binding.encrypted_order.c1_y.clone());
-        Self::set_operation_field(env, &mut fields, 18, binding.encrypted_order.c2_x.clone());
-        Self::set_operation_field(env, &mut fields, 19, binding.encrypted_order.c2_y.clone());
-        Self::set_operation_field(env, &mut fields, 20, binding.old_accepted_root.clone());
-        Self::set_operation_field(env, &mut fields, 21, binding.new_accepted_root.clone());
         Self::set_operation_field(
             env,
             &mut fields,
-            22,
+            16,
+            Self::encrypted_order_hash(env, &binding.encrypted_order),
+        );
+        Self::set_operation_field(env, &mut fields, 17, binding.old_accepted_root.clone());
+        Self::set_operation_field(env, &mut fields, 18, binding.new_accepted_root.clone());
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            19,
             U256::from_u32(env, binding.accepted_leaf_index),
         );
         Self::set_operation_field(
             env,
             &mut fields,
-            23,
+            20,
             U256::from_u128(env, binding.sequence as u128),
         );
         OperationBinding {
             kind: BindingKind::Order,
             fields,
         }
+    }
+
+    fn encrypted_order_hash(env: &Env, order: &EncryptedOrder) -> U256 {
+        tagged_poseidon2_hash(
+            env,
+            1016,
+            &Vec::from_array(
+                env,
+                [
+                    order.yes_c1_x.clone(),
+                    order.yes_c1_y.clone(),
+                    order.yes_c2_x.clone(),
+                    order.yes_c2_y.clone(),
+                    order.no_c1_x.clone(),
+                    order.no_c1_y.clone(),
+                    order.no_c2_x.clone(),
+                    order.no_c2_y.clone(),
+                ],
+            ),
+        )
+        .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidOrder))
     }
 
     fn refund_operation_binding(env: &Env, binding: &RefundBinding) -> OperationBinding {

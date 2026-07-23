@@ -5,8 +5,10 @@ import {
   SUBORDER,
   add,
   aggregateCiphertexts,
+  decryptAmount,
   decryptSide,
   encryptSide,
+  encryptAmount,
   isPoint,
   multiply,
   negate,
@@ -25,6 +27,9 @@ const encrypted = [
   encryptSide(key, 1, 103n),
 ];
 assert.deepEqual(encrypted.map((ciphertext) => decryptSide(secret, ciphertext)), [1, 0, 1]);
+const amountCiphertext = encryptAmount(key, 37, 104n);
+assert.equal(decryptAmount(secret, amountCiphertext), 37);
+assert.throws(() => encryptAmount(key, 1_001), /between zero and 1,000/);
 
 const aggregate = aggregateCiphertexts(encrypted);
 assert.deepEqual(

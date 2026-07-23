@@ -46,7 +46,10 @@ template PrivateOrder(noteLevels, acceptedLevels) {
 
     signal input contextFields[46];
     signal input side;
-    signal input encryptionRandomness;
+    signal input quantity;
+    signal input yesEncryptionRandomness;
+    signal input noEncryptionRandomness;
+    signal input ciphertext[8];
     signal input acceptedSiblings[acceptedLevels];
 
     signal input inPurpose[1];
@@ -116,14 +119,23 @@ template PrivateOrder(noteLevels, acceptedLevels) {
     component feeRateRange = Num2Bits(10);
     feeRateRange.in <== contextFields[26];
     component acceptedIndexRange = Num2Bits(acceptedLevels);
-    acceptedIndexRange.in <== contextFields[44];
+    acceptedIndexRange.in <== contextFields[41];
+    component quantityRange = Num2Bits(10);
+    quantityRange.in <== quantity;
+    component quantityBound = LessThan(10);
+    quantityBound.in[0] <== quantity;
+    quantityBound.in[1] <== 1001;
+    quantityBound.out === 1;
+    component quantityZero = IsZero();
+    quantityZero.in <== quantity;
+    quantityZero.out === 0;
 
     component payout = CeilDivConstant(4294967296, 84, 33);
     payout.numerator <== contextFields[25] * 10000000;
     component maximumFee = CeilDivConstant(171798691840000, 96, 49);
     maximumFee.numerator <== contextFields[25] * contextFields[26] * 10000000;
     signal positionBudget;
-    positionBudget <== payout.result + maximumFee.result;
+    positionBudget <== (payout.result + maximumFee.result) * quantity;
     component positionBudgetRange = Num2Bits(60);
     positionBudgetRange.in <== positionBudget;
 
@@ -229,7 +241,7 @@ template PrivateOrder(noteLevels, acceptedLevels) {
     marketPositionDomain.inputs[6] <== contextFields[25];
     outPayloadHash[1] === marketPositionDomain.out;
     outPrivateData[1][0] === side;
-    outPrivateData[1][1] === contextFields[45];
+    outPrivateData[1][1] === contextFields[42] * 1024 + quantity;
     totalInput === outAmount[0] + positionBudget;
 
     outputs[0].commitment === outputCommitment0;
@@ -267,65 +279,108 @@ template PrivateOrder(noteLevels, acceptedLevels) {
     committeeIdentity.in <== committeeDouble2.xout;
     committeeIdentity.out === 0;
 
-    component encryptionBits = Num2Bits(253);
-    encryptionBits.in <== encryptionRandomness;
+    component yesEncryptionBits = Num2Bits(253);
+    component noEncryptionBits = Num2Bits(253);
+    yesEncryptionBits.in <== yesEncryptionRandomness;
+    noEncryptionBits.in <== noEncryptionRandomness;
     for (var bit = 248; bit < 253; bit++) {
-        encryptionBits.out[bit] === 0;
+        yesEncryptionBits.out[bit] === 0;
+        noEncryptionBits.out[bit] === 0;
     }
-    component encryptionZero = IsZero();
-    encryptionZero.in <== encryptionRandomness;
-    encryptionZero.out === 0;
+    component yesEncryptionZero = IsZero();
+    component noEncryptionZero = IsZero();
+    yesEncryptionZero.in <== yesEncryptionRandomness;
+    noEncryptionZero.in <== noEncryptionRandomness;
+    yesEncryptionZero.out === 0;
+    noEncryptionZero.out === 0;
 
     var BASE8[2] = [
         5299619240641551281634865583518297030282874472190772894086521144482721001553,
         16950150798460657717958625567821834550301663161624707787222815936182638968203
     ];
-    component c1 = EscalarMulFix(253, BASE8);
-    component shared = EscalarMulAny(248);
+    component yesC1 = EscalarMulFix(253, BASE8);
+    component noC1 = EscalarMulFix(253, BASE8);
+    component yesShared = EscalarMulAny(248);
+    component noShared = EscalarMulAny(248);
     for (var bit = 0; bit < 253; bit++) {
-        c1.e[bit] <== encryptionBits.out[bit];
+        yesC1.e[bit] <== yesEncryptionBits.out[bit];
+        noC1.e[bit] <== noEncryptionBits.out[bit];
         if (bit < 248) {
-            shared.e[bit] <== encryptionBits.out[bit];
+            yesShared.e[bit] <== yesEncryptionBits.out[bit];
+            noShared.e[bit] <== noEncryptionBits.out[bit];
         }
     }
-    shared.p[0] <== committeeDouble2.xout;
-    shared.p[1] <== committeeDouble2.yout;
+    yesShared.p[0] <== committeeDouble2.xout;
+    yesShared.p[1] <== committeeDouble2.yout;
+    noShared.p[0] <== committeeDouble2.xout;
+    noShared.p[1] <== committeeDouble2.yout;
 
-    signal sidePoint[2];
-    sidePoint[0] <== side * BASE8[0];
-    sidePoint[1] <== 1 + side * (BASE8[1] - 1);
-    component c2 = BabyAdd();
-    c2.x1 <== shared.out[0];
-    c2.y1 <== shared.out[1];
-    c2.x2 <== sidePoint[0];
-    c2.y2 <== sidePoint[1];
-    component c2Identity = IsZero();
-    c2Identity.in <== c2.xout;
-    c2Identity.out === 0;
+    signal yesAmount;
+    signal noAmount;
+    yesAmount <== side * quantity;
+    noAmount <== (1 - side) * quantity;
+    component yesAmountBits = Num2Bits(10);
+    component noAmountBits = Num2Bits(10);
+    yesAmountBits.in <== yesAmount;
+    noAmountBits.in <== noAmount;
+    component yesMessage = EscalarMulFix(10, BASE8);
+    component noMessage = EscalarMulFix(10, BASE8);
+    for (var bit = 0; bit < 10; bit++) {
+        yesMessage.e[bit] <== yesAmountBits.out[bit];
+        noMessage.e[bit] <== noAmountBits.out[bit];
+    }
+    component yesC2 = BabyAdd();
+    yesC2.x1 <== yesShared.out[0];
+    yesC2.y1 <== yesShared.out[1];
+    yesC2.x2 <== yesMessage.out[0];
+    yesC2.y2 <== yesMessage.out[1];
+    component noC2 = BabyAdd();
+    noC2.x1 <== noShared.out[0];
+    noC2.y1 <== noShared.out[1];
+    noC2.x2 <== noMessage.out[0];
+    noC2.y2 <== noMessage.out[1];
+    component yesC2Identity = IsZero();
+    component noC2Identity = IsZero();
+    yesC2Identity.in <== yesC2.xout;
+    noC2Identity.in <== noC2.xout;
+    yesC2Identity.out === 0;
+    noC2Identity.out === 0;
 
-    contextFields[38] === c1.out[0];
-    contextFields[39] === c1.out[1];
-    contextFields[40] === c2.xout;
-    contextFields[41] === c2.yout;
+    ciphertext[0] === yesC1.out[0];
+    ciphertext[1] === yesC1.out[1];
+    ciphertext[2] === yesC2.xout;
+    ciphertext[3] === yesC2.yout;
+    ciphertext[4] === noC1.out[0];
+    ciphertext[5] === noC1.out[1];
+    ciphertext[6] === noC2.xout;
+    ciphertext[7] === noC2.yout;
+    component ciphertextHash = Poseidon2Sponge(9);
+    ciphertextHash.inputs[0] <== 1016;
+    for (var field = 0; field < 8; field++) {
+        ciphertextHash.inputs[field + 1] <== ciphertext[field];
+    }
+    ciphertextHash.out === contextFields[38];
+    contextFields[43] === 0;
+    contextFields[44] === 0;
+    contextFields[45] === 0;
 
     component acceptedLeaf = AcceptedOrderLeaf();
     acceptedLeaf.market[0] <== contextFields[18];
     acceptedLeaf.market[1] <== contextFields[19];
     acceptedLeaf.epoch <== contextFields[22];
-    acceptedLeaf.sequence <== contextFields[45];
+    acceptedLeaf.sequence <== contextFields[42];
     acceptedLeaf.actionId[0] <== contextFields[10];
     acceptedLeaf.actionId[1] <== contextFields[11];
     acceptedLeaf.positionCommitment <== outputCommitment1;
-    acceptedLeaf.ciphertext[0] <== contextFields[38];
-    acceptedLeaf.ciphertext[1] <== contextFields[39];
-    acceptedLeaf.ciphertext[2] <== contextFields[40];
-    acceptedLeaf.ciphertext[3] <== contextFields[41];
+    for (var field = 0; field < 8; field++) {
+        acceptedLeaf.ciphertext[field] <== ciphertext[field];
+    }
     acceptedLeaf.committeeEpoch <== contextFields[33];
 
     component acceptedAppend = AppendOne(acceptedLevels);
-    acceptedAppend.appendRoot <== contextFields[42];
-    acceptedAppend.newRoot <== contextFields[43];
-    acceptedAppend.leafIndex <== contextFields[44];
+    acceptedAppend.appendRoot <== contextFields[39];
+    acceptedAppend.newRoot <== contextFields[40];
+    acceptedAppend.leafIndex <== contextFields[41];
     acceptedAppend.commitment <== acceptedLeaf.out;
     for (var level = 0; level < acceptedLevels; level++) {
         acceptedAppend.siblings[level] <== acceptedSiblings[level];
