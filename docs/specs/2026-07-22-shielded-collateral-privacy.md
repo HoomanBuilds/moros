@@ -59,6 +59,7 @@ Primary references:
 - The link between a position and a later shielded payout note.
 - Individual fee amount when the fee remains a shielded treasury note.
 - The link between a refund and the original wallet.
+- The decrypted contents of the user's backed-up activity archive, including private bets, LP notes, claims, refunds, and local status history.
 
 ### Public by design
 
@@ -66,6 +67,7 @@ Primary references:
 - The recipient, amount, and time of a final withdrawal to a public Stellar wallet.
 - A market creator's address, configuration, rules hash, liquidity target, and proposal.
 - Aggregate market liquidity, LP share supply, scenario equity, and exit-queue totals.
+- Each first-release LP funding transaction's target market, time, and aggregate funded delta.
 - The shared vault contract, supported asset, commitment roots, output commitments, and spent nullifiers.
 - The markets updated by each aggregate batch.
 - The target market and timing of each first-release relayed order intent, without a public user wallet, side, or amount.
@@ -74,6 +76,7 @@ Primary references:
 - The fixed lot identifier and order count for an executed batch.
 - Market odds, close time, outcome, resolver evidence, and aggregate solvency data.
 - The relayer account that submits an action.
+- A user's created market and creator address, because market proposals are public on Stellar.
 
 ### Privacy that depends on usage
 
@@ -81,6 +84,7 @@ Primary references:
 - A user who deposits and immediately performs a unique action has a weak anonymity set.
 - A user who withdraws an exact unique amount immediately after a payout can create a timing and amount correlation.
 - The first testnet release hides the wallet-to-market link from the public ledger. It does not hide the selected market from the relayer service or hide that a relayed intent targeted that market.
+- Client-side encryption prevents Supabase operators from reading archive contents, but it does not hide the existence, IP address, timing, opaque bucket grouping, or padded size class of synchronization requests.
 - Full market-choice privacy requires cross-market encrypted batching and is a separate release gate.
 
 ### Not promised
@@ -90,7 +94,9 @@ Primary references:
 - Hiding aggregate LP funding and solvency values.
 - Privacy from a compromised browser or wallet.
 - Privacy from traffic analysis by a relayer that records IP addresses.
+- Privacy from traffic analysis by the hosting provider, Supabase, RPC provider, or a party correlating synchronization time with public transactions.
 - Privacy from a colluding threshold committee if the selected cryptographic mode lets a quorum reconstruct individual data.
+- Hiding the creator of an onchain market proposal.
 - A meaningful anonymity set when only one user is active.
 - Mainnet safety before an independent circuit and contract audit.
 
@@ -112,6 +118,8 @@ Relayer compensation should be created as a shielded fee note. Relayers withdraw
 
 An indexer may omit notes, return a false path, serve a stale root, or lose history. Clients recompute every path and root locally. Two independent services and durable checkpoints provide availability. A false path cannot pass the circuit.
 
+A note-specific witness request can still link an IP address to a commitment or leaf. The default wallet scans fixed public ranges or requests padded cover sets instead of querying one private leaf from a known wallet session. A user may run the public rebuild CLI or a local indexer. Private information retrieval is not claimed until a separately reviewed construction exists.
+
 ### Malicious committee member
 
 One member may refuse, return a bad partial decryption, sign a false statement, or leak requests. Every member verifies orders and aggregate statements independently. Invalid partials and signatures are rejected. Threshold and fallback rules prevent one member from halting the system.
@@ -125,6 +133,8 @@ A user may attempt value creation, negative or overflowing values, stale-root sp
 ### Compromised frontend or backup service
 
 A compromised frontend can steal secrets before proving. Reproducible builds, published artifact hashes, content security policy, dependency review, and hardware-wallet-visible deposit and withdrawal summaries reduce this risk. A backup service receives only opaque ciphertext and cannot become the source of truth.
+
+A Supabase administrator may read, replace, roll back, correlate, or delete every stored row. Client-side authenticated encryption prevents plaintext disclosure and undetected field modification. Chain reconciliation prevents a forged archive status from authorizing value movement. Supabase deletion or rollback must not make funds unrecoverable because note discovery and spent state remain reconstructable from the wallet-derived viewing key and durable ledger data.
 
 ### Governance compromise
 
@@ -156,6 +166,8 @@ The vault cannot prevent Circle or Stellar network controls from freezing, clawi
 | Relayer | Pay XLM fees and submit proof-bound actions | Ability to change recipient, outputs, market, amount, fee, or expiry |
 | Committee member | Validate encrypted orders and batch statements | Enough information alone to decrypt individual orders |
 | Witness indexer | Reconstruct commitment paths and serve checkpoints | Note secrets, spending keys, sides, or amounts |
+| Private sync gateway | Verify opaque capability signatures, strip browser network metadata from Supabase requests, and enforce fixed request shapes | Wallet identity, archive plaintext, recovery signature, derived keys, or authority to forge an archive page |
+| Encrypted sync service | Store opaque fixed-size activity pages and compare-and-swap generations | Wallet identity, market, pool, transaction, commitment, side, value, note secret, or decrypted status |
 | Resolution keeper | Submit oracle-backed resolution and TTL maintenance | Ability to choose an outcome outside resolver rules |
 | Treasury | Own protocol fee notes and withdraw aggregated revenue | Ability to seize user notes or redirect principal |
 | Governance | Control emergency and allowlist parameters through multisig and timelock | Ability to block withdrawals or refunds permanently |
@@ -214,6 +226,14 @@ New markets use the shared vault as their batcher. Existing deployed markets rem
 
 At least two interchangeable offchain coordinator instances accept the same opaque intent format, persist idempotent jobs, form fair per-market batches, and collect committee attestations. A coordinator never holds USDC or LMSR shares. Any relayer can submit the mandatory proof and required threshold statement to the vault, and an unavailable coordinator cannot block a deadline refund.
 
+### Committee key lifecycle
+
+The threshold key uses a reviewed distributed key-generation protocol with no single dealer learning the combined secret. The published epoch record binds network, vault, encryption suite, threshold, member set, member verification shares, transcript hash, proof-of-possession results, activation ledger, and retirement policy.
+
+Invalid shares, missing proofs, transcript disagreement, duplicate members, identity points, wrong-subgroup points, and unresolved DKG complaints block epoch activation. Secret shares never enter application logs, Supabase, browser storage, general service backups, container images, or source control.
+
+Every order binds the active committee key epoch. A new epoch accepts new orders only after its full transcript is registered. An old epoch remains available to process or refund its already accepted orders. Rotation cannot reinterpret ciphertexts, silently reduce the threshold, or delete the old refund path. Emergency member loss may stop execution, but it cannot stop permissionless deadline refunds.
+
 ### Relayer network
 
 At least two interchangeable relayers submit the same signed intent format.
@@ -248,6 +268,57 @@ The contract is the source of truth. Indexers are replaceable accelerators.
 - The default design stores the fixed-length encrypted output envelope in persistent contract storage by leaf index so archived entries can be restored.
 - If measured cost makes per-output contract storage infeasible, the replacement must use at least two independently operated raw-ledger archives, hash-addressed checkpoints verified back to onchain roots, and a public rebuild CLI. A Moros-signed checkpoint alone is not an acceptable source of truth.
 - Recovery testing includes a wallet that was offline longer than the public RPC retention window.
+
+### Encrypted activity archive and Supabase boundary
+
+Supabase is an encrypted synchronization and recovery cache. It is not the source of truth for note ownership, market state, claims, refunds, or LP value.
+
+The current `private_positions` format is not acceptable for the target privacy model because it stores wallet, commitment, market ID, pool ID, transaction hash, and exact placement time as plaintext columns. Row-level security protects users from other application users, but it does not hide those fields from Supabase administrators or a compromised service role.
+
+The replacement uses two logically isolated stores:
+
+1. The public social and market catalog keeps profiles, comments, images, watchlists, and public market metadata. It may be linked to a wallet because those features are intentionally public.
+2. The private activity archive uses a separate client, separate session or capability, separate tables, and no foreign key to a social user, wallet, profile, comment, or public market row.
+
+The browser does not access private archive tables through the wallet-linked Supabase client. It sends fixed-shape encrypted requests to a private sync gateway. The gateway verifies the opaque signed capability, strips browser cookies and identity headers, disables body logging, and writes through a server-only Supabase role. Supabase therefore sees the gateway and opaque archive identifiers rather than the user's browser address. The gateway can still observe request IP and timing, so it is a metadata trust boundary and not an anonymity network.
+
+The private archive stores only:
+
+- A random opaque bucket identifier derived from a private sync key.
+- A public sync-verification key or equivalent one-way capability verifier.
+- A random page identifier.
+- A schema and cipher-suite version.
+- A compare-and-swap generation.
+- A fixed-size padded authenticated ciphertext, nonce, and ciphertext hash.
+- Minimal server timestamps and retention fields required to operate the free Supabase deployment.
+
+It must not store wallet, market, pool, transaction hash, commitment, nullifier, note purpose, side, amount, payout, claim state, LP share, exit terms, or exact action time in plaintext. It must not use the wallet address as a row key, auth email, storage path, query filter, log tag, or analytics identity.
+
+The wallet derives one recovery root from a dedicated deterministic signature whose message is separated from social sign-in and transaction authorization. The signature never leaves the browser. HKDF or an equivalently reviewed KDF derives separate encryption, bucket, request-signing, and export keys bound to the Stellar network, vault, schema, and wallet. Every supported wallet must reproduce the exact signature before private sync is enabled. Wallets that cannot do so need an explicit encrypted recovery-secret flow and cannot be presented as automatically recoverable.
+
+Sync requests prove possession of the opaque sync key and bind method, bucket, generation, body hash, nonce, and expiry. The gateway consumes each nonce once under a bounded retention window. Requests do not reuse the social wallet JWT or send a reusable raw capability in request bodies or URLs. Replay, stale generation, wrong bucket, and modified ciphertext fail. The Supabase service role stays server-only and is never embedded in the app.
+
+Archive pages use a reviewed AEAD with unique nonces, authenticated schema and domain data, fixed-size padding, and an encrypted manifest. Pages pack multiple activity records and dummy slots so one row does not equal one bet. Immediate encrypted intent-journal backup may still expose that some private activity occurred at that time. Periodic batching and random user-controlled delay reduce correlation only when they do not risk losing a newly created secret.
+
+The decrypted archive may contain:
+
+- Markets the wallet created, while clearly marking that creation itself is public onchain.
+- Shielded deposits and withdrawals.
+- Private pending and executed positions.
+- Execution-change notes.
+- Claims, losses, refunds, and VOID recovery.
+- LP funding notes, queued exits, replacement matches, fees, and terminal redemptions.
+- Chain receipts, local intent state, and recovery checkpoints.
+
+Archive status is advisory until reconciled with contract roots, nullifiers, batch records, and market state. A clean device downloads opaque pages, decrypts locally, validates every record, scans durable ledger outputs, reconciles terminal status from chain, and then renders history. Supabase never receives the decrypted filter for a market, status, side, or amount.
+
+Multi-device writes use optimistic compare-and-swap. On a generation conflict, the client downloads, decrypts, validates, merges by cryptographic action ID and chain finality, creates a new encrypted manifest, and retries. A client timestamp alone never overrides a chain-confirmed terminal state.
+
+There is no legacy private-history migration. Before the fresh shared-vault testnet deployment, Moros disables writes to `private_positions`, removes its browser code and live table, deploys the opaque archive schema, and starts new history under the new vault domain. Existing testnet positions remain claimable through their existing contracts and local recovery files, but they are not imported into the new archive. The cutover notice must tell test users to finish or export old testnet positions before the deadline.
+
+Plaintext metadata already handled by the provider may remain in provider backups or logs until their retention expires. Deleting the live testnet table does not undo that historical exposure, so Moros cannot retroactively describe the old backup format as private from Supabase operators.
+
+This design uses ordinary encrypted Postgres rows or objects, row-level security, and bounded API functions available on the free Supabase plan. It does not depend on paid analytics, point-in-time recovery, or private infrastructure. Because a free project may pause or lose availability, durable ledger recovery and encrypted user export remain mandatory.
 
 ## Note model
 
@@ -313,11 +384,13 @@ The deposit wallet and total amount remain public.
 
 ### Batch proof and committee statement
 
-- Every included order proof is valid.
+- Every included order proof was verified at onchain acceptance.
 - Every included commitment is pending and unique.
 - Every input-note nullifier was consumed when its order became pending, and no position commitment or action ID is included twice.
 - Aggregate YES and NO quantities equal the encrypted orders in the batch.
 - Batch size satisfies the minimum anonymity rule and both aggregate YES and NO quantities are nonzero.
+- Batch size is at least eight and each side contains at least two positions.
+- The included set contains every eligible commitment accepted for the bounded market epoch, with no coordinator-selected omission.
 - No order can be included twice.
 - The batch-specific execution record publishes order-independent uniform YES and NO prices plus the fixed-lot charge for each hidden side.
 - User side charges plus the explicit bounded protocol rounding contribution sum exactly to the LMSR charge returned by the market.
@@ -325,12 +398,13 @@ The deposit wallet and total amount remain public.
 - Every included position exists in the accepted-position tree and changes from absent to present under the current sparse included-position root.
 - If nonzero service fees are enabled later, the proof consumes each included service-escrow note and creates only the configured operator compensation notes. Zero-fee testnet batches create no operator value.
 - One batch allocation root binds every included position commitment, uniform side charges, lot, service-escrow result, market, pre-state, post-state, and epoch. The statement is bound to that root and the vault contract.
+- The proof links the exact accepted ciphertext set to its homomorphic sum and verifies correct aggregate threshold decryption against the public DKG transcript and member verification shares.
 
-The vault always verifies the aggregate proof. A threshold committee statement authenticates the DKG epoch, ciphertext set, aggregate decryption, and proof inputs, but it cannot replace the proof or choose quantities, charges, state transitions, or backing. A colluding quorum may still violate the stated order-privacy trust boundary, but it cannot create a valid false accounting transition.
+The vault always verifies the aggregate proof. A threshold committee statement authenticates participation and liveness, but signatures alone cannot establish aggregate correctness. The selected encryption construction must provide verifiable homomorphic aggregation and verifiable threshold decryption. A colluding quorum may still violate the stated order-privacy trust boundary by decrypting individual ciphertexts, but it cannot create a valid false aggregate accounting transition.
 
 A set containing orders for only one outcome is not a private batch because its public aggregate reveals every side. Those orders stay pending and become privately refundable after the deadline.
 
-The first shared-vault testnet keeps the current normal batch size of four. During the final batch window it permits a short batch of two or three only when both outcomes are represented. These are minimum mechanics, not a promise of a strong anonymity set, and the UI must warn when activity is sparse.
+The first shared-vault testnet requires at least eight positions and at least two positions on each side. Resource benchmarks may increase that floor but cannot reduce it. There is no short final batch. A participant coalition that knows all other orders can still infer the remaining side, so this is a public-observer privacy floor rather than an absolute anonymity promise.
 
 ### Shielded claim proof
 
@@ -447,7 +521,7 @@ For each accepted batch `B`, all amounts are USDC atomic units:
 - `W_B(YES)` and `W_B(NO)` are the aggregate market redemptions owned by the vault for each possible result.
 - `E_B(outcome)` is the sum of gross user entitlements before platform and relayer fee allocation.
 
-The executed-order change total is `S_B - (M_B - R_B) - F_B`. For normal resolution, total bettor value is that change plus `W_B(outcome)`. For VOID, the market returns `M_B`, the trade fee remains refundable, the protocol recovers only its rounding contribution, and bettor value returns to `S_B`. The contract accepts no batch statement that omits either non-void outcome check or the VOID equality.
+Every accepted batch requires `F_B >= R_B`. The executed-order change total is `S_B - (M_B - R_B) - F_B`. For normal resolution, total bettor value is that change plus `W_B(outcome)`, the rounding reserve first recovers `R_B` from vested fee escrow, and only `F_B - R_B` is split between LPs and the protocol. For VOID, the market returns `M_B`, the trade fee remains refundable, the rounding reserve recovers `R_B` from the market return, and bettor value returns to `S_B`. The contract accepts no batch statement that omits either non-void outcome check or the VOID equality.
 
 For each user transition, output notes plus explicitly authorized service-fee notes must equal the proved value. A void or never-included refund has no trade fee. Market fixed-point conversion occurs before uniform fixed-lot atomic charge allocation. The explicit rounding contribution is bounded and separately funded. It is never silently reclassified as treasury revenue.
 
@@ -493,9 +567,13 @@ These invariants require unit, sequence, fuzz, and stateful property tests. A sp
 
 - Never log proof witnesses, note plaintext, spending keys, side, exact amount, or decrypted individual order data.
 - Redact proofs, public signals, commitments, nullifiers, authorization entries, and request bodies from default logs.
+- Disable third-party analytics, session replay, advertising pixels, and unredacted error reporting on private balance, portfolio, proof, backup, and recovery routes.
+- Do not cache note plaintext, wallet signatures, derived keys, decrypted archives, proofs, or witnesses in a service worker, CDN, server component, browser URL, or crash report.
+- Verify the hash manifest for public circuit WASM, proving keys, verification keys, and worker code before proving. Bind the expected artifact commitment to the immutable vault deployment or an independently signed deployment record so the same compromised frontend cannot replace both code and manifest. Public proving artifacts are safe to host, but an unverified replacement can steal witnesses.
 - Use short retention for IP and request metadata and document the exact retention policy.
 - Separate social accounts and comments from private trading storage.
 - Do not use wallet addresses as primary keys for note synchronization.
+- Do not reuse a social Supabase session, wallet-linked auth user, storage path, or database relation for the private archive.
 - Provide multiple relayer endpoints and permit direct self-submission.
 - Rate-limit with idempotency keys and spent-nullifier checks where possible, not permanent wallet profiling.
 
@@ -526,6 +604,11 @@ The feature is not testnet ready until all gates pass:
 12. Two positions from different batches settle using their own batch allocation roots, and their aggregate entitlements equal backing for YES, NO, and VOID.
 13. A clean wallet that was offline longer than public RPC event retention restores from persistent or independently archived ledger data.
 14. Terminal market-maker equity cannot reach the isolated liquidity vault before aggregate winning redemption and cannot reduce any user entitlement.
+15. Every batch has at least eight positions, at least two positions per side, complete eligible-set inclusion, and verified aggregate decryption.
+16. Supabase contains no plaintext wallet, market, pool, transaction, commitment, nullifier, side, value, action type, or exact action time for private archive records.
+17. A clean device restores created-market, bettor, LP, change, claim, refund, and withdrawal history from opaque Supabase pages plus durable chain data.
+18. Supabase deletion, rollback, duplicate pages, stale generations, ciphertext replacement, and social-account correlation do not lose funds, forge status, or expose archive plaintext.
+19. The legacy `private_positions` client path and live table are removed before the new testnet starts, and no legacy row is imported into the opaque archive.
 
 ## Mainnet prohibition
 

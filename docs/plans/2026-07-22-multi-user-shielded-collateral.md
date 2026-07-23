@@ -245,15 +245,19 @@ Measure contract resources for deposit, transfer, order spend, batch routing, cl
 - Reject a market that does not designate the vault as its sole batcher.
 - Accept a proof-bound private position without a wallet owner and consume its funding-note nullifiers atomically.
 - Reject orders at and after market close.
+- Enforce one sequential collecting epoch per market, seal its exact accepted root and count at the ledger-time cutoff, and open the next epoch only after execution or refund finalization.
 - Reject duplicate commitments, input nullifiers, and action IDs while keeping the position spend nullifier private until claim or refund.
-- Apply a batch only once and only when the mandatory aggregate proof and required committee threshold statement both verify.
+- Apply a batch only once and only when the mandatory aggregate proof, verifiable aggregate decryption, and required committee threshold statement verify.
 - Reject a batch whose quantities, commitments, batch allocation root, market, epoch, backing statement, or signer set differs from the attested statement.
 - Reject a batch unless every included commitment belongs to the accepted-position tree and changes from absent to present under the sparse included-position set root.
-- Process normal batches of four while open. During the final window, process a short batch of two or three only when both aggregate YES and NO quantities are nonzero.
+- Process only complete epoch sets with at least eight positions and at least two positions on each side. Never weaken this floor for a final window.
+- Permit one configured lot per market epoch, cap acceptance at the measured maximum, and reject later orders without consuming their notes.
+- Require every eligible commitment accepted for the bounded epoch and reject coordinator-selected omissions or substitutions.
 - Never settle a lone order or a one-sided aggregate. Make every affected position shielded-refund eligible after the deadline.
 - Authorize only the exact vault-to-market USDC transfer returned by `quote_batch`, call `apply_batch` as the vault, and assert the returned charge.
 - Use the companion fixed-lot Aumann-Shapley rule to calculate order-independent uniform YES and NO charges.
 - Prove that user side charges plus the explicit bounded protocol rounding contribution equal the exact atomic LMSR charge.
+- Repay every rounding contribution before the normal-resolution fee split or from the returned market charge on VOID.
 - Record authoritative uniform side prices, side charges, lot, pre-state, post-state, and one immutable batch allocation root.
 - Prove before acceptance that bettor entitlements, fee escrow, protocol rounding, and market redemption reconcile exactly for YES, NO, and VOID.
 - Make an unbatched order shielded-refund eligible after the deadline.
@@ -270,11 +274,12 @@ Measure contract resources for deposit, transfer, order spend, batch routing, cl
 - Store policy capabilities, not an operator-curated list of individual markets. Approved factory, WASM hashes, resolver types, USDC, timing bounds, and fee caps are governance parameters; qualifying market creation and registration are permissionless.
 - Use the companion execution-fee curve and LP split for new LP-backed markets. Preserve existing deployed-market fee behavior only for compatibility.
 - Keep order commitments and statuses independent of wallet addresses.
+- Store accepted fixed-length ciphertexts and acceptance sequences in durable ledger-reconstructable data so any coordinator can rebuild the complete batch.
 - Call each LMSR market with aggregate values only.
 - Store per-batch allocation root, informative average execution price, sparse included-set state, aggregate market receipts, and claim-finalization state.
 - Expose permissionless close, final-batch, refund-enable, aggregate-redeem, and TTL functions.
 - Ensure a coordinator or committee outage cannot block refunds after the defined deadline.
-- Keep the offchain coordinator stateless with respect to custody. Any relayer can call the vault with the mandatory proof and required threshold statement.
+- Keep the offchain coordinator stateless with respect to custody. Any relayer can call the vault with the mandatory proof, verifiable aggregation and decryption evidence, and required threshold statement.
 
 ### Existing contract changes
 
@@ -322,6 +327,8 @@ For every circuit, include positive and negative witness tests for:
 - Private membership in included and refundable position roots without exposing the position commitment.
 - Private membership in an immutable batch root, or accepted membership plus included non-membership under sealed final roots, with unique position-nullifier replay protection.
 - Nonzero aggregate YES and NO enforcement.
+- Minimum batch size of eight, minimum per-side count of two, complete eligible-set inclusion, and no short-final-set bypass.
+- Correct homomorphic sum and threshold decryption against the public DKG transcript.
 - Exact atomic charge allocation and two-outcome entitlement equality.
 - Fee-free void and principal refund.
 - Signed relayer quote, fee-note beneficiary, operation, expiry, and replay binding.
@@ -365,9 +372,14 @@ Add tests for:
 - Duplicate, reordered, delayed, and expired intents.
 - Concurrent nullifier conflicts.
 - Concurrent final-batch-versus-refundable-root sealing and duplicate claim or refund nullifier conflicts.
+- Next-epoch acceptance racing prior-epoch execution or refund finalization.
 - Process termination during every database transition.
 - Queue restart with no lost or duplicated orders.
 - Two batch workers competing for the same market window.
+- Coordinator attempts to skip, reorder, substitute, or selectively include accepted commitments.
+- Valid committee signatures attached to a false aggregate or invalid decryption.
+- DKG rotation while accepted old-epoch orders remain pending.
+- DKG transcript mismatch, duplicate member, bad verification share, identity point, wrong subgroup, failed proof of possession, and unresolved complaint.
 - Committee member timeout and quorum recovery.
 - RPC timeout after submission but before transaction confirmation.
 - Indexer reset and restore from a durable checkpoint.
@@ -380,7 +392,7 @@ Add tests for:
 ### Durable state
 
 - Replace mutable JSON queue files with a transactional job store that supports unique action IDs, unique nullifiers, row locking, status history, and retries.
-- Use the existing free Supabase/Postgres environment for testnet only if the stored rows contain no plaintext wallet, amount, side, note secret, or viewing key.
+- Use the existing free Supabase/Postgres environment for testnet only if private archive rows contain no plaintext wallet, market, pool, transaction hash, commitment, nullifier, action type, amount, side, payout, note secret, viewing key, or exact action time.
 - Keep a storage adapter so the service can move to self-hosted Postgres without protocol changes.
 - Persist encrypted intents and public proof data only as long as required for batching and recovery.
 - Define cleanup and retention jobs with tests.
@@ -405,9 +417,14 @@ Add tests for:
 ### Committee, coordinator, and batch submitter
 
 - Register the shared vault, its approved markets, and the internal routing capability through exact onchain linkage and approved WASM hashes.
+- Run reviewed dealerless DKG and publish the network, vault, encryption suite, threshold, member set, member verification shares, transcript hash, proof-of-possession results, activation ledger, and retirement policy.
+- Block an epoch on invalid or missing shares, transcript disagreement, duplicate members, identity or wrong-subgroup points, failed possession proof, or unresolved complaints.
+- Keep secret shares out of Supabase, application logs, browser state, general backups, images, and source control.
 - Queue across all registered markets.
 - Build windows fairly so one high-volume market cannot starve another.
-- Maintain minimum batch privacy, require nonzero YES and NO aggregate quantities, and never process a single or one-sided final set.
+- Derive each window from every eligible commitment accepted for the bounded market epoch.
+- Maintain the batch floor of eight and per-side floor of two, and never process a short or one-sided final set.
+- Verify homomorphic aggregation and each aggregate threshold decryption against public DKG verification shares. Committee signatures alone never authorize quantities.
 - Persist DKG epoch, consumed funding-note nullifiers, action IDs, batch membership, and transaction results without storing future position spend nullifiers.
 - Allow any relayer to submit a valid aggregate proof with the required threshold statement. Do not require an admin endpoint for fallback.
 
@@ -432,21 +449,43 @@ Add tests for:
 - Browser crash before submission, during submission, after chain confirmation, and before local commit.
 - Wallet switch, network switch, vault switch, and locked wallet.
 - Corrupted local database, corrupted cloud blob, missing cloud service, and stale indexer.
+- Supabase administrator reads every private table and sees no wallet, market, pool, transaction, commitment, nullifier, action type, amount, side, payout, note purpose, or exact action time.
+- Social wallet authentication and private synchronization cannot be joined by auth user, wallet, email, row key, storage path, foreign key, request tag, or shared client session.
+- Replay, reused nonce, wrong bucket, wrong request signature, expired request, stale generation, modified ciphertext, duplicate page, and compare-and-swap conflict.
+- Two devices update the same archive, merge by cryptographic action ID and chain finality, and preserve every record.
+- Supabase deletes, rolls back, reorders, and duplicates archive pages without losing spendability or forging a chain-confirmed status.
+- Fixed-size page padding prevents one database row or ciphertext length from identifying one bet type.
+- Private endpoints, analytics, error reporting, and server logs contain no request body, wallet signature, derived key, decrypted archive, or stable social identity.
+- Supabase request logs receive the gateway identity and opaque archive fields, not the user's browser IP, wallet cookies, or social session.
 - No plaintext market, amount, side, secret, nullifier, or transaction link in cloud rows.
+- Fresh testnet cutover removes the legacy `private_positions` table and code path without importing its rows into the opaque archive.
 
 ### Work
 
 - Replace wallet-keyed position records with an encrypted note database keyed by opaque note identifiers.
 - Add an encrypted intent journal written before submission.
-- Derive separate spending, viewing, backup, and sync keys from domain-separated wallet signatures.
+- Derive separate spending, viewing, archive-encryption, bucket, request-signing, and export keys with a reviewed KDF from domain-separated wallet signatures.
 - Label the wallet signature as local unlock and recovery. Do not treat it as authorization for private vault actions.
-- Authenticate private backup synchronization with an opaque sync capability, not the social wallet session.
+- Never send the recovery signature or derived private keys to Moros or Supabase.
+- Authenticate private backup synchronization with an opaque signed capability bound to method, bucket, generation, body hash, one-time nonce, and expiry, not the social wallet session.
+- Consume request nonces once and expire their bounded replay records without using expiry as the authorization check.
 - Scan encrypted output payloads and verify every discovered commitment locally.
 - Reconcile nullifiers and outputs against the chain before selecting notes.
 - Keep encrypted export and import as an independent recovery path.
-- Change Supabase backup to opaque encrypted blobs and monotonic sync counters.
-- Remove plaintext wallet, market, pool, transaction, placed-time, and commitment metadata from private backup storage where possible.
+- Change Supabase backup to fixed-size padded AEAD pages, random opaque bucket and page identifiers, an encrypted manifest, and compare-and-swap generations.
+- Pack multiple activity records and dummy slots per page so row count does not directly equal bet count.
+- Remove plaintext wallet, market, pool, transaction, commitment, nullifier, purpose, status, amount, side, payout, exact action time, and LP metadata from private backup storage without exceptions.
+- Route private sync through a fixed-shape gateway that verifies opaque request signatures, strips browser cookies and identity headers, and uses a dedicated server-only Supabase client.
+- Do not let the browser access private archive tables with `supabase-js`, and do not reuse the wallet-linked social auth user or JWT.
+- Keep only cipher-suite version, schema version, opaque identifiers, generation, ciphertext, nonce, hash, and minimal provider-required retention timestamps outside encryption.
+- Validate decrypted records against their authenticated schema and reconcile every financial status with onchain roots, nullifiers, receipts, and market state.
+- Treat Supabase as a replaceable cache. A clean device must also recover notes from the wallet-derived viewing key and durable ledger output envelopes.
+- Disable legacy `private_positions` writes, remove its browser code and live table, and start the opaque archive under the fresh shared-vault deployment without importing old rows.
+- Keep old testnet contracts claimable and provide an export notice before cutover. Old local or exported records remain the user's recovery path for those positions.
+- Document that historical provider backups and logs may retain old plaintext metadata until their configured retention expires.
 - Keep social comments, profiles, watchlists, and market metadata completely separate.
+- Disable third-party analytics, session replay, and unredacted crash reporting on private portfolio, proof, sync, and recovery routes.
+- Verify published hashes for circuit WASM, proving keys, verification keys, and proof workers against an immutable vault commitment or independently signed deployment record before exposing secrets to them.
 
 ## Work package 8: Build the shielded balance and betting UX
 
@@ -491,7 +530,11 @@ Add tests for:
 
 - Build history from the user's decrypted notes and chain-confirmed nullifiers.
 - Do not derive private history from public wallet transactions.
-- Support pagination, multiple markets, multiple pending actions, and restored devices.
+- Restore the encrypted Supabase archive after the local recovery signature, then reconcile it with durable chain data before showing financial status.
+- Include created markets, shielded deposits and withdrawals, bettor positions, change, claims, losses, refunds, LP funding, exits, fees, and terminal LP redemption.
+- Mark market creation as public onchain even when its personal history entry is encrypted in the archive.
+- Support client-side filtering and pagination across multiple markets, multiple pending actions, and restored devices without sending plaintext filters to Supabase.
+- Show `Local`, `Encrypted sync pending`, `Encrypted sync current`, `Chain reconciled`, and `Recovery degraded` separately.
 - Provide encrypted export and recovery status from the portfolio page.
 
 ### UI tests
@@ -502,6 +545,9 @@ Add tests for:
 - Wallet disconnect after intent creation.
 - Relayer failover.
 - Empty, loading, partial recovery, degraded indexer, and service outage states.
+- Cleared browser storage followed by full opaque Supabase and chain recovery.
+- Supabase unavailable while the user continues through the durable ledger recovery path.
+- Social account signed in while private archive remains unlinkable to that social session.
 - Privacy copy exactly matches the specification.
 
 ## Work package 9: Cross-market batching and market-choice privacy research gate
@@ -531,9 +577,9 @@ Hiding each selected market requires a bounded cross-market construction. It mus
 
 Do not enable a UI statement that market choice is hidden from the relayer until one option passes security review and multi-user load testing.
 
-## Work package 10: Migration and testnet deployment
+## Work package 10: Fresh testnet cutover and deployment
 
-### Compatibility
+### Old testnet isolation
 
 - Existing market and shielded-pool contracts remain readable and claimable.
 - Existing positions are never converted automatically.
@@ -549,14 +595,16 @@ Do not enable a UI statement that market choice is hidden from the relayer until
 3. Deploy the shared USDC vault with development verification keys and the approved factory address.
 4. Configure multisig, timelock, immutable treasury shielded key, relayers, committee, and resolver registry.
 5. Create one proposal without creator USDC, fund it from independent LPs, activate it, and verify its liquidity vault, funded loss bound, shared-vault batcher, resolver, USDC, rules, fee, batch policy, timing, deployment record, and vault registration.
-6. Start two indexers, two relayers, two coordinator instances, committee members, batch workers, and resolution keeper.
-7. Publish frontend configuration only after service health and contract hashes match.
-8. Run multi-user live testnet scenarios.
-9. Enable creation of additional shared-vault markets only after the first market passes every lifecycle path.
+6. Deploy the opaque private archive schema and signed-capability endpoint separately from wallet-linked social tables.
+7. Disable legacy private backup writes, remove the live `private_positions` table and client path, and verify that the new archive starts empty under the fresh vault domain.
+8. Start two indexers, two relayers, two coordinator instances, committee members, batch workers, and resolution keeper.
+9. Publish frontend configuration only after service health and contract hashes match.
+10. Run multi-user live testnet scenarios.
+11. Enable creation of additional shared-vault markets only after the first market passes every lifecycle path.
 
 ### No partial activation
 
-If any component reports the wrong factory, deployment record, shared vault, liquidity vault, market batcher, collateral, funded loss bound, committee, verification key, resolver, rules hash, fee policy, batch policy, treasury, network, or WASM hash, market activation and betting fail closed.
+If any component reports the wrong factory, deployment record, shared vault, liquidity vault, market batcher, collateral, funded loss bound, committee, verification key, proving-artifact commitment, resolver, rules hash, fee policy, batch policy, treasury, private archive domain, network, or WASM hash, market activation and betting fail closed.
 
 ## Work package 11: Full verification
 
@@ -577,9 +625,9 @@ Use independently generated test accounts, not one wallet repeated:
 
 - 100 users deposit and restore shielded balances.
 - Multiple users propose supported markets through the factory without creator USDC or a Moros operator transaction. A failed metadata listing retries without redeploying or moving LP funding again.
-- 100 users place mixed and one-sided demand across multiple markets. Mixed batches settle, while demand that cannot form a privacy-safe two-sided batch becomes privately refundable.
+- 100 users place mixed and one-sided demand across multiple markets. Complete epoch sets of at least eight with at least two positions per side settle, while demand below either floor becomes privately refundable.
 - 20 clients submit concurrently against recent accepted roots.
-- Full and short final batches settle.
+- No short final batch settles.
 - Lone and one-sided final sets receive shielded refunds without revealing a public user address.
 - Multiple batches at different market states retain separate exact batch allocation roots and informative average execution prices.
 - YES, NO, VOID, stale-oracle, and delayed-resolution paths complete.
@@ -589,6 +637,9 @@ Use independently generated test accounts, not one wallet repeated:
 - Users reuse payouts in another market without a public wallet transaction.
 - Users withdraw partial and full balances through different relayers.
 - A clean wallet offline beyond public RPC retention restores every unspent note from persistent or independently archived ledger data.
+- A clean browser with deleted local storage restores encrypted created-market, bettor, LP, claim, refund, and withdrawal history from opaque Supabase pages, then reconciles every status with chain data.
+- A Supabase administrator export contains only opaque identifiers, padded ciphertext, cipher metadata, generations, hashes, and minimal provider timestamps.
+- Supabase rollback, deletion, outage, and cross-device write conflict do not lose funds or forge history.
 - Terminal market-maker equity reaches the correct LP vault only after aggregate winning redemption and does not change bettor liability coverage.
 - Duplicate nullifier, replay, wrong network, wrong market, stale root, and tampered recipient attacks fail.
 - A relayer, committee member, keeper, indexer, and RPC endpoint each fail during active use.
