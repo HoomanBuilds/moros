@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "event-resolver",
     "lmsr-market",
+    "market-factory",
     "market-liquidity-vault",
     "resolver",
     "shielded-collateral-vault",

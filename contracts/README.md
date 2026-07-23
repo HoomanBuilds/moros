@@ -13,6 +13,7 @@ cargo test                  # native tests via the Soroban test env
 | Crate | Contract | Status |
 |---|---|---|
 | `lmsr-market` | LMSR pricing + market state (YES/NO quantities, cost, price) | in progress |
+| `market-factory` | Creator-free proposals, deterministic deployment, capability gates, and atomic LP-backed activation | implemented, integration pending |
 | `market-liquidity-vault` | Isolated permissionless LP funding, exits, and terminal redemption | implemented, integration pending |
 | `shielded-collateral-vault` | Shared USDC notes, nullifiers, durable recovery outputs, and private LP routing | implemented, proof artifacts pending |
 | `resolver` | Quorum price resolution with free SEP-40 feeds and optional Pyth verification | implemented |

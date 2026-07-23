@@ -798,18 +798,28 @@ impl MarketLiquidityVault {
         market: Address,
         returned_assets: i128,
         outcome: TerminalOutcome,
+        prior_unallocated_balance: i128,
         expected_version: u64,
     ) -> Result<(), Error> {
         Self::require_market(&env, &market)?;
         Self::require_version(&env, expected_version)?;
         if Self::get::<Phase>(&env, &DataKey::Phase) != Phase::Active
             || returned_assets < 0
+            || prior_unallocated_balance < 0
             || (outcome == TerminalOutcome::Void
                 && returned_assets != Self::get::<i128>(&env, &DataKey::Funded))
         {
             return Err(Error::InvalidTerminalAssets);
         }
-        Self::transfer_in_exact(&env, &market, returned_assets)?;
+        let token = Self::get::<Address>(&env, &DataKey::Token);
+        let raw_balance = token::Client::new(&env, &token).balance(&env.current_contract_address());
+        if raw_balance
+            != prior_unallocated_balance
+                .checked_add(returned_assets)
+                .ok_or(Error::Arithmetic)?
+        {
+            return Err(Error::TransferMismatch);
+        }
         env.storage()
             .instance()
             .set(&DataKey::TerminalAssets, &returned_assets);
@@ -892,6 +902,10 @@ impl MarketLiquidityVault {
             Phase::Active => 0,
         };
         raw.checked_sub(accounted).ok_or(Error::TransferMismatch)
+    }
+
+    pub fn state_version(env: Env) -> u64 {
+        Self::get(&env, &DataKey::Version)
     }
 
     pub fn extend_ttl(env: Env) {

@@ -1,5 +1,5 @@
 [package]
-name = "lmsr-market"
+name = "market-factory"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -12,5 +12,4 @@ doctest = false
 soroban-sdk = { workspace = true }
 
 [dev-dependencies]
-market-liquidity-vault = { path = "../market-liquidity-vault" }
 soroban-sdk = { workspace = true, features = ["testutils"] }

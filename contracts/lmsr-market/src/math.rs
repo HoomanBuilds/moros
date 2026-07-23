@@ -4,6 +4,10 @@ pub const FRAC: u32 = 32;
 pub const SCALE: i128 = 1 << FRAC; // 2^32
 const LN2: i128 = 2977044472; // ln(2) * 2^32
 
+pub fn initial_loss_bound(b: i128) -> i128 {
+    (b * LN2) >> FRAC
+}
+
 #[inline]
 fn fmul(a: i128, b: i128) -> i128 {
     (a * b) >> FRAC

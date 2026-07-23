@@ -4,8 +4,8 @@
 mod math;
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token,
-    Address, Env, Symbol,
+    contract, contractclient, contracterror, contractevent, contractimpl, contracttype,
+    panic_with_error, token, Address, BytesN, Env, Symbol,
 };
 
 /// Which outcome a trade is on.
@@ -45,6 +45,42 @@ pub struct MarketInfo {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PrivateMarketConfig {
+    pub batcher: Address,
+    pub liquidity_vault: Address,
+    pub resolver: Address,
+    pub rules_hash: BytesN<32>,
+    pub funding: i128,
+    pub fee_bps: u32,
+    pub lot_size: i128,
+    pub fixed_batch_size: u32,
+    pub minimum_side_count: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiquidityOutcome {
+    Yes,
+    No,
+    Void,
+}
+
+#[contractclient(crate_path = "soroban_sdk", name = "LiquidityVaultClient")]
+pub trait LiquidityVault {
+    fn unallocated_balance(env: Env) -> i128;
+    fn state_version(env: Env) -> u64;
+    fn record_terminal(
+        env: Env,
+        market: Address,
+        returned_assets: i128,
+        outcome: LiquidityOutcome,
+        prior_unallocated_balance: i128,
+        expected_version: u64,
+    );
+}
+
+#[contracttype]
 enum DataKey {
     Admin,
     Token,
@@ -61,6 +97,15 @@ enum DataKey {
     Resolver,
     Funding,
     BatchCollateral,
+    AccountedBalance,
+    LiquidityVault,
+    RulesHash,
+    FeeBps,
+    LotSize,
+    FixedBatchSize,
+    MinimumSideCount,
+    PrivateConfigured,
+    LiquiditySettled,
     Refund(Address),
     Shares(Address, Side),
 }
@@ -84,6 +129,7 @@ pub enum Error {
     TooEarlyToResolve = 10,
     ResolverLocked = 11,
     ConfigurationLocked = 12,
+    AlreadySettled = 13,
 }
 
 #[contractevent(topics = ["created"], data_format = "vec")]
@@ -154,11 +200,76 @@ pub struct Redeem {
     pub payout: i128,
 }
 
+#[contractevent(topics = ["private_activated"], data_format = "vec")]
+pub struct PrivateActivated {
+    pub batcher: Address,
+    pub liquidity_vault: Address,
+    pub resolver: Address,
+    pub funding: i128,
+    pub fee_bps: u32,
+    pub lot_size: i128,
+}
+
+#[contractevent(topics = ["liquidity_settled"], data_format = "vec")]
+pub struct LiquiditySettled {
+    pub liquidity_vault: Address,
+    pub assets: i128,
+    pub outcome: Outcome,
+}
+
 #[contract]
 pub struct LmsrMarket;
 
 #[contractimpl]
 impl LmsrMarket {
+    fn return_liquidity(
+        env: &Env,
+        assets: i128,
+        liquidity_outcome: LiquidityOutcome,
+        market_outcome: Outcome,
+    ) -> Result<(), Error> {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::LiquiditySettled)
+            .unwrap_or(false)
+        {
+            return Err(Error::AlreadySettled);
+        }
+        let liquidity_vault: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LiquidityVault)
+            .ok_or(Error::NotInitialized)?;
+        let client = LiquidityVaultClient::new(env, &liquidity_vault);
+        let prior_unallocated = client.unallocated_balance();
+        let liquidity_version = client.state_version();
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        let current = env.current_contract_address();
+        Self::transfer_accounted_out(env, &token_addr, &liquidity_vault, assets)?;
+        client.record_terminal(
+            &current,
+            &assets,
+            &liquidity_outcome,
+            &prior_unallocated,
+            &liquidity_version,
+        );
+        env.storage()
+            .instance()
+            .set(&DataKey::LiquiditySettled, &true);
+        LiquiditySettled {
+            liquidity_vault,
+            assets,
+            outcome: market_outcome,
+        }
+        .publish(env);
+        Ok(())
+    }
+
     /// Constructor (runs atomically at deploy and cannot be front-run). Sets the
     /// `admin`, `collateral` token (SEP-41), liquidity parameter `b` (fixed-point,
     /// value * 2^32), and resolution parameters (`asset` / `threshold` / `expiry`).
@@ -242,6 +353,107 @@ impl LmsrMarket {
     /// (q_yes, q_no, b), the current market quantities in fixed-point form.
     pub fn get_state(env: Env) -> Result<(i128, i128, i128), Error> {
         Self::state(&env)
+    }
+
+    pub fn required_funding(env: Env) -> Result<i128, Error> {
+        let (_, _, b) = Self::state(&env)?;
+        Ok(Self::to_atomic(&env, math::initial_loss_bound(b), true))
+    }
+
+    pub fn private_config(env: Env) -> Option<PrivateMarketConfig> {
+        if !env
+            .storage()
+            .instance()
+            .get(&DataKey::PrivateConfigured)
+            .unwrap_or(false)
+        {
+            return None;
+        }
+        let storage = env.storage().instance();
+        Some(PrivateMarketConfig {
+            batcher: storage.get(&DataKey::Batcher).unwrap(),
+            liquidity_vault: storage.get(&DataKey::LiquidityVault).unwrap(),
+            resolver: storage.get(&DataKey::Resolver).unwrap(),
+            rules_hash: storage.get(&DataKey::RulesHash).unwrap(),
+            funding: storage.get(&DataKey::Funding).unwrap_or(0),
+            fee_bps: storage.get(&DataKey::FeeBps).unwrap_or(0),
+            lot_size: storage.get(&DataKey::LotSize).unwrap_or(0),
+            fixed_batch_size: storage.get(&DataKey::FixedBatchSize).unwrap_or(0),
+            minimum_side_count: storage.get(&DataKey::MinimumSideCount).unwrap_or(0),
+        })
+    }
+
+    pub fn activate_private(
+        env: Env,
+        factory: Address,
+        config: PrivateMarketConfig,
+    ) -> Result<(), Error> {
+        factory.require_auth();
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        if factory != admin {
+            return Err(Error::Unauthorized);
+        }
+        let storage = env.storage().instance();
+        if storage.has(&DataKey::PrivateConfigured)
+            || storage.has(&DataKey::Batcher)
+            || storage.has(&DataKey::Resolver)
+            || storage.get::<_, i128>(&DataKey::Funding).unwrap_or(0) != 0
+        {
+            return Err(Error::ConfigurationLocked);
+        }
+        let (qy, qn, _) = Self::state(&env)?;
+        let decimals: u32 = storage
+            .get(&DataKey::Decimals)
+            .ok_or(Error::NotInitialized)?;
+        if qy != 0
+            || qn != 0
+            || decimals != 7
+            || config.funding < Self::required_funding(env.clone())?
+            || config.fee_bps > 1_000
+            || config.lot_size <= 0
+            || config.lot_size > MAX_Q
+            || config.fixed_batch_size < 8
+            || config.minimum_side_count < 2
+            || config
+                .minimum_side_count
+                .checked_mul(2)
+                .is_none_or(|count| count > config.fixed_batch_size)
+            || Self::is_zero_bytes(&config.rules_hash)
+        {
+            return Err(Error::InvalidParams);
+        }
+        let token_addr: Address = storage.get(&DataKey::Token).ok_or(Error::NotInitialized)?;
+        if token::Client::new(&env, &token_addr).balance(&env.current_contract_address())
+            < config.funding
+        {
+            return Err(Error::Undersolvent);
+        }
+        storage.set(&DataKey::Batcher, &config.batcher);
+        storage.set(&DataKey::LiquidityVault, &config.liquidity_vault);
+        storage.set(&DataKey::Resolver, &config.resolver);
+        storage.set(&DataKey::RulesHash, &config.rules_hash);
+        storage.set(&DataKey::Funding, &config.funding);
+        storage.set(&DataKey::FeeBps, &config.fee_bps);
+        storage.set(&DataKey::LotSize, &config.lot_size);
+        storage.set(&DataKey::FixedBatchSize, &config.fixed_batch_size);
+        storage.set(&DataKey::MinimumSideCount, &config.minimum_side_count);
+        storage.set(&DataKey::AccountedBalance, &config.funding);
+        storage.set(&DataKey::PrivateConfigured, &true);
+        PrivateActivated {
+            batcher: config.batcher,
+            liquidity_vault: config.liquidity_vault,
+            resolver: config.resolver,
+            funding: config.funding,
+            fee_bps: config.fee_bps,
+            lot_size: config.lot_size,
+        }
+        .publish(&env);
+        Self::bump(&env);
+        Ok(())
     }
 
     pub fn extend_ttl(env: Env) {
@@ -511,29 +723,37 @@ impl LmsrMarket {
         if held < reserved {
             return Err(Error::Undersolvent);
         }
-        let sponsor: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
         if pool_refund > 0 {
             let batcher: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Batcher)
                 .ok_or(Error::NotInitialized)?;
-            token::Client::new(env, &token_addr).transfer(
-                &env.current_contract_address(),
-                &batcher,
-                &pool_refund,
-            );
+            if env.storage().instance().has(&DataKey::PrivateConfigured) {
+                Self::transfer_accounted_out(env, &token_addr, &batcher, pool_refund)?;
+            } else {
+                token::Client::new(env, &token_addr).transfer(
+                    &env.current_contract_address(),
+                    &batcher,
+                    &pool_refund,
+                );
+            }
         }
         if funding > 0 {
-            token::Client::new(env, &token_addr).transfer(
-                &env.current_contract_address(),
-                &sponsor,
-                &funding,
-            );
+            if env.storage().instance().has(&DataKey::PrivateConfigured) {
+                Self::return_liquidity(env, funding, LiquidityOutcome::Void, Outcome::Void)?;
+            } else {
+                let sponsor: Address = env
+                    .storage()
+                    .instance()
+                    .get(&DataKey::Admin)
+                    .ok_or(Error::NotInitialized)?;
+                token::Client::new(env, &token_addr).transfer(
+                    &env.current_contract_address(),
+                    &sponsor,
+                    &funding,
+                );
+            }
         }
         env.storage()
             .instance()
@@ -552,6 +772,9 @@ impl LmsrMarket {
     pub fn fund(env: Env, from: Address, amount: i128) -> Result<(), Error> {
         from.require_auth();
         Self::ensure_open(&env)?;
+        if env.storage().instance().has(&DataKey::PrivateConfigured) {
+            return Err(Error::ConfigurationLocked);
+        }
         if amount <= 0 {
             return Err(Error::InvalidParams);
         }
@@ -658,6 +881,9 @@ impl LmsrMarket {
         env.storage()
             .instance()
             .set(&DataKey::BatchCollateral, &updated_collateral);
+        if env.storage().instance().has(&DataKey::PrivateConfigured) {
+            Self::increase_accounted_balance(&env, net)?;
+        }
 
         env.storage().instance().set(&DataKey::QYes, &qy2);
         env.storage().instance().set(&DataKey::QNo, &qn2);
@@ -722,11 +948,15 @@ impl LmsrMarket {
                 .instance()
                 .get(&DataKey::Token)
                 .ok_or(Error::NotInitialized)?;
-            token::Client::new(&env, &token_addr).transfer(
-                &env.current_contract_address(),
-                &trader,
-                &payout,
-            );
+            if env.storage().instance().has(&DataKey::PrivateConfigured) {
+                Self::transfer_accounted_out(&env, &token_addr, &trader, payout)?;
+            } else {
+                token::Client::new(&env, &token_addr).transfer(
+                    &env.current_contract_address(),
+                    &trader,
+                    &payout,
+                );
+            }
         }
         Redeem {
             trader,
@@ -736,6 +966,74 @@ impl LmsrMarket {
         .publish(&env);
         Self::bump(&env);
         Ok(payout)
+    }
+
+    pub fn settle_liquidity(env: Env) -> Result<i128, Error> {
+        if !env.storage().instance().has(&DataKey::PrivateConfigured) {
+            return Err(Error::InvalidParams);
+        }
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::LiquiditySettled)
+            .unwrap_or(false)
+        {
+            return Err(Error::AlreadySettled);
+        }
+        let outcome: Outcome = env
+            .storage()
+            .instance()
+            .get(&DataKey::Outcome)
+            .ok_or(Error::NotResolved)?;
+        let liquidity_outcome = match outcome {
+            Outcome::Yes => LiquidityOutcome::Yes,
+            Outcome::No => LiquidityOutcome::No,
+            Outcome::Void => return Err(Error::AlreadySettled),
+        };
+        let batcher: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Batcher)
+            .ok_or(Error::NotInitialized)?;
+        let yes_shares: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Shares(batcher.clone(), Side::Yes))
+            .unwrap_or(0);
+        let no_shares: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Shares(batcher, Side::No))
+            .unwrap_or(0);
+        if yes_shares != 0 || no_shares != 0 {
+            return Err(Error::InsufficientShares);
+        }
+        let assets = env
+            .storage()
+            .instance()
+            .get(&DataKey::AccountedBalance)
+            .ok_or(Error::NotInitialized)?;
+        Self::return_liquidity(&env, assets, liquidity_outcome, outcome)?;
+        Self::bump(&env);
+        Ok(assets)
+    }
+
+    pub fn unallocated_balance(env: Env) -> Result<i128, Error> {
+        if !env.storage().instance().has(&DataKey::PrivateConfigured) {
+            return Err(Error::InvalidParams);
+        }
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        let raw = token::Client::new(&env, &token_addr).balance(&env.current_contract_address());
+        let accounted: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AccountedBalance)
+            .unwrap_or(0);
+        raw.checked_sub(accounted).ok_or(Error::Undersolvent)
     }
 }
 
@@ -821,6 +1119,53 @@ impl LmsrMarket {
         let qy: i128 = s.get(&DataKey::QYes).unwrap_or(0);
         let qn: i128 = s.get(&DataKey::QNo).unwrap_or(0);
         Ok((qy, qn, b))
+    }
+
+    fn is_zero_bytes(value: &BytesN<32>) -> bool {
+        value.to_array().iter().all(|byte| *byte == 0)
+    }
+
+    fn increase_accounted_balance(env: &Env, amount: i128) -> Result<(), Error> {
+        let accounted: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AccountedBalance)
+            .ok_or(Error::NotInitialized)?;
+        env.storage().instance().set(
+            &DataKey::AccountedBalance,
+            &accounted.checked_add(amount).ok_or(Error::InvalidParams)?,
+        );
+        Ok(())
+    }
+
+    fn transfer_accounted_out(
+        env: &Env,
+        token_addr: &Address,
+        destination: &Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+        if amount < 0 {
+            return Err(Error::InvalidParams);
+        }
+        let accounted: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AccountedBalance)
+            .ok_or(Error::NotInitialized)?;
+        if amount > accounted {
+            return Err(Error::Undersolvent);
+        }
+        if amount > 0 {
+            token::Client::new(env, token_addr).transfer(
+                &env.current_contract_address(),
+                destination,
+                &amount,
+            );
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::AccountedBalance, &(accounted - amount));
+        Ok(())
     }
 
     fn apply(qy: i128, qn: i128, side: Side, shares: i128) -> (i128, i128) {

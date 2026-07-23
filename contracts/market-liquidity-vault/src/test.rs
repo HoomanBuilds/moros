@@ -259,7 +259,7 @@ fn active_exit_is_state_bound_and_does_not_reduce_market_backing() {
 #[test]
 fn exit_can_be_cancelled_and_terminal_assets_redeem_pro_rata() {
     let env = Env::default();
-    let (client, _token, factory, controller, market) = setup(&env);
+    let (client, token, factory, controller, market) = setup(&env);
     client.fund(&controller, &id(&env, 1), &TARGET, &0);
     client.activate(&factory, &market, &1);
     client.request_exit(
@@ -277,7 +277,8 @@ fn exit_can_be_cancelled_and_terminal_assets_redeem_pro_rata() {
         ExitStatus::Cancelled
     );
 
-    client.record_terminal(&market, &80_000_000, &TerminalOutcome::Yes, &4);
+    TokenClient::new(&env, &token).transfer(&market, &client.address, &80_000_000);
+    client.record_terminal(&market, &80_000_000, &TerminalOutcome::Yes, &0, &4);
     assert_eq!(client.info().phase, Phase::Settled);
     assert_eq!(
         client.redeem_terminal(&controller, &25_000_000, &5),
@@ -297,6 +298,6 @@ fn void_requires_full_principal_return() {
     client.fund(&controller, &id(&env, 1), &TARGET, &0);
     client.activate(&factory, &market, &1);
     assert!(client
-        .try_record_terminal(&market, &(TARGET - 1), &TerminalOutcome::Void, &2)
+        .try_record_terminal(&market, &(TARGET - 1), &TerminalOutcome::Void, &0, &2,)
         .is_err());
 }
