@@ -55,6 +55,14 @@ export const PYTH_PRO_FEEDS = {
   XAU: 346,
 };
 
+export function selectFreeResolver(configured, deployment, fallback) {
+  const resolver = configured || deployment?.contracts?.resolver || fallback;
+  if (!/^C[A-Z2-7]{55}$/.test(resolver || "")) {
+    throw new Error("free resolver contract ID is invalid");
+  }
+  return resolver;
+}
+
 export function resolvableAssets(oracleMode) {
   return new Set(oracleMode === "pyth_pro" ? Object.keys(PYTH_PRO_FEEDS) : FREE_REFLECTOR_ASSETS);
 }

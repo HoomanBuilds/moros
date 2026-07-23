@@ -26,6 +26,14 @@ export function decimal(value, name = "value") {
   throw new Error(`${name} must be a nonnegative integer`);
 }
 
+export function invocationResultValue(value) {
+  return value &&
+    (typeof value === "object" || typeof value === "function") &&
+    "result" in value
+    ? value.result
+    : value;
+}
+
 export function bytes(value, length, name = "value") {
   const result = Buffer.isBuffer(value) || value instanceof Uint8Array
     ? Buffer.from(value)

@@ -27,7 +27,10 @@ import {
   FixedWindowRateLimiter,
   decodeRelayRequest,
 } from "./private-relayer.mjs";
-import { jsonValue } from "./private-protocol.mjs";
+import {
+  invocationResultValue,
+  jsonValue,
+} from "./private-protocol.mjs";
 import {
   contractClient,
   runtimeSource,
@@ -71,10 +74,6 @@ const ALLOWED_ORIGINS = new Set(
     .map((value) => value.trim())
     .filter(Boolean),
 );
-
-function resultValue(value) {
-  return value && Object.hasOwn(value, "result") ? value.result : value;
-}
 
 function hash(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -204,18 +203,29 @@ async function main() {
     rpcUrl: RPC_URL,
     networkPassphrase: NETWORK_PASSPHRASE,
   });
-  const vaultInfo = resultValue(await vault.info());
+  const vaultInfo = invocationResultValue(await vault.info());
+  const identity = testnetPrivacyIdentity(process.env.FUNDER_SK);
   if (
     vaultInfo.factory !== deployment.contracts.factory ||
     vaultInfo.verifier !== deployment.contracts.verifier ||
     vaultInfo.token !== deployment.collateral.contract ||
     Number(vaultInfo.levels) !== deployment.privacy.treeLevels ||
+    Buffer.from(vaultInfo.network_domain).toString("hex") !==
+      deployment.networkDomain ||
     Buffer.from(vaultInfo.verifier_domain).toString("hex") !==
-      deployment.verifierDomain
+      deployment.verifierDomain ||
+    BigInt(`0x${Buffer.from(vaultInfo.treasury_key).toString("hex")}`) !==
+      BigInt(deployment.privacy.treasuryKey) ||
+    Buffer.from(identity.committeeConfigHash).toString("hex") !==
+      deployment.privacy.committeeConfigHash ||
+    identity.committeePublicKey[0] !==
+      BigInt(deployment.privacy.committeePublicKeyX) ||
+    identity.committeePublicKey[1] !==
+      BigInt(deployment.privacy.committeePublicKeyY) ||
+    identity.treasuryKey !== BigInt(deployment.privacy.treasuryKey)
   ) {
     throw new Error("shared vault wiring does not match the deployment");
   }
-  const identity = testnetPrivacyIdentity(process.env.FUNDER_SK);
   const serialize = serializeTransactions();
   const factory = await contractClient({
     server,
@@ -261,7 +271,7 @@ async function main() {
   const registry = new PrivateMarketRegistry({
     stateFile: MARKET_STATE,
     verify: async (market) => {
-      const registration = resultValue(
+      const registration = invocationResultValue(
         await vault.registration({ market }),
       );
       if (
@@ -286,7 +296,7 @@ async function main() {
     stateFile: PROPOSAL_STATE,
     verify: async (proposalId) => {
       const encoded = Buffer.from(proposalId, "hex");
-      const proposal = resultValue(await factory.proposal({
+      const proposal = invocationResultValue(await factory.proposal({
         proposal_id: encoded,
       }));
       if (
@@ -300,8 +310,8 @@ async function main() {
         factory.market_address({ proposal_id: encoded }),
         factory.liquidity_address({ proposal_id: encoded }),
       ]);
-      const expectedMarket = resultValue(market);
-      const expectedLiquidity = resultValue(liquidityVault);
+      const expectedMarket = invocationResultValue(market);
+      const expectedLiquidity = invocationResultValue(liquidityVault);
       if (
         proposal.liquidity_vault !== expectedLiquidity ||
         (proposal.market && proposal.market !== expectedMarket)
@@ -322,7 +332,7 @@ async function main() {
     stateFile: EXIT_STATE,
     verify: async (entry) => {
       const market = await getMarketClient(entry.market);
-      const privateConfig = resultValue(await market.private_config());
+      const privateConfig = invocationResultValue(await market.private_config());
       if (
         !privateConfig ||
         privateConfig.batcher !== vaultId ||
@@ -337,11 +347,11 @@ async function main() {
           exit_id: Buffer.from(entry.exitId, "hex"),
         }),
       ]);
-      const decodedInfo = resultValue(info);
+      const decodedInfo = invocationResultValue(info);
       if (
         decodedInfo.share_controller !== vaultId ||
         decodedInfo.market !== entry.market ||
-        !resultValue(intent)
+        !invocationResultValue(intent)
       ) {
         throw new Error("liquidity exit is not registered on the linked vault");
       }
@@ -391,7 +401,7 @@ async function main() {
 
   const processProposal = async (entry) => {
     const proposalId = Buffer.from(entry.proposalId, "hex");
-    let proposal = resultValue(await factory.proposal({
+    let proposal = invocationResultValue(await factory.proposal({
       proposal_id: proposalId,
     }));
     if (!proposal) throw new Error("registered proposal no longer exists");
@@ -403,7 +413,7 @@ async function main() {
       rpcUrl: RPC_URL,
       networkPassphrase: NETWORK_PASSPHRASE,
     });
-    let info = resultValue(await liquidity.info());
+    let info = invocationResultValue(await liquidity.info());
     const now = Math.floor(Date.now() / 1_000);
 
     if (phase === "Funding" && phaseName(info.phase) === "Ready") {
@@ -413,7 +423,7 @@ async function main() {
           expected_version: BigInt(proposal.state_version),
         })).signAndSend()
       );
-      proposal = resultValue(await factory.proposal({
+      proposal = invocationResultValue(await factory.proposal({
         proposal_id: proposalId,
       }));
       phase = phaseName(proposal.phase);
@@ -441,7 +451,7 @@ async function main() {
     }
 
     if (phase === "Ready") {
-      info = resultValue(await liquidity.info());
+      info = invocationResultValue(await liquidity.info());
       await serialize(async () =>
         (await factory.activate({
           proposal_id: proposalId,
@@ -449,7 +459,7 @@ async function main() {
           liquidity_version: BigInt(info.state_version),
         })).signAndSend()
       );
-      proposal = resultValue(await factory.proposal({
+      proposal = invocationResultValue(await factory.proposal({
         proposal_id: proposalId,
       }));
       phase = phaseName(proposal.phase);
@@ -496,10 +506,10 @@ async function main() {
       liquidity.market_snapshot(),
       liquidity.info(),
     ]);
-    const decodedIntent = resultValue(intent);
+    const decodedIntent = invocationResultValue(intent);
     if (!decodedIntent) throw new Error("registered liquidity exit is missing");
-    const decodedSnapshot = resultValue(snapshot);
-    const decodedInfo = resultValue(info);
+    const decodedSnapshot = invocationResultValue(snapshot);
+    const decodedInfo = invocationResultValue(info);
     return {
       ...entry,
       status: phaseName(decodedIntent.status),
@@ -611,7 +621,11 @@ async function main() {
       return;
     }
     try {
-      if (request.method === "GET" && requestUrl.pathname === "/health") {
+      if (
+        request.method === "GET" &&
+        (requestUrl.pathname === "/health" ||
+          requestUrl.pathname === "/private/health")
+      ) {
         const lastTick = Date.parse(runtime.lastTickAt || "");
         const healthy =
           Number.isFinite(lastTick) &&
@@ -669,11 +683,11 @@ async function main() {
       ) {
         const markets = [];
         for (const market of registry.list()) {
-          const registration = resultValue(
+          const registration = invocationResultValue(
             await vault.registration({ market }),
           );
           const epoch = registration
-            ? resultValue(await vault.epoch({
+            ? invocationResultValue(await vault.epoch({
                 market,
                 epoch_number: BigInt(registration.current_epoch),
               }))

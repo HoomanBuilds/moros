@@ -6,6 +6,7 @@ import {
   REFLECTOR_FIAT_ASSETS,
   resolutionPhase,
   resolvableAssets,
+  selectFreeResolver,
 } from "./oracle-config.mjs";
 
 assert.equal(new Set(FREE_REFLECTOR_ASSETS).size, FREE_REFLECTOR_ASSETS.length);
@@ -19,5 +20,24 @@ assert.equal(resolutionPhase(1_000, 1_000, 1_300, 3_600), "final_batch");
 assert.equal(resolutionPhase(1_300, 1_000, 1_300, 3_600), "resolve");
 assert.equal(resolutionPhase(4_900, 1_000, 1_300, 3_600), "void");
 assert.throws(() => resolutionPhase(1, 2, 1, 300), /invalid resolution timing/);
+const deployedResolver = `C${"A".repeat(55)}`;
+const fallbackResolver = `C${"B".repeat(55)}`;
+assert.equal(
+  selectFreeResolver(
+    "",
+    { contracts: { resolver: deployedResolver } },
+    fallbackResolver,
+  ),
+  deployedResolver,
+);
+assert.equal(
+  selectFreeResolver(
+    fallbackResolver,
+    { contracts: { resolver: deployedResolver } },
+    deployedResolver,
+  ),
+  fallbackResolver,
+);
+assert.throws(() => selectFreeResolver("", undefined, "bad"), /invalid/);
 
 console.log("oracle config ok");

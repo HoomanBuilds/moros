@@ -5,11 +5,8 @@ import {
   batchPublicSignals,
   buildBatchStatement,
   decryptBatchSides,
+  invocationResultValue,
 } from "./private-protocol.mjs";
-
-function resultValue(value) {
-  return value && Object.hasOwn(value, "result") ? value.result : value;
-}
 
 async function send(transaction) {
   return (await transaction).signAndSend();
@@ -97,19 +94,19 @@ export class PrivateBatchCoordinator {
   }
 
   async processUnlocked(market) {
-    const registration = resultValue(
+    const registration = invocationResultValue(
       await this.vault.registration({ market }),
     );
     if (!registration) throw new Error("market is not registered");
     if (registration.finalized) return { status: "finalized" };
     const marketContract = await this.marketClient(market);
-    const outcome = resultValue(await marketContract.outcome());
+    const outcome = invocationResultValue(await marketContract.outcome());
     if (outcome !== undefined && outcome !== null) {
       await this.submit(this.vault.finalize_market({ market }));
       return { status: "finalized" };
     }
     const epochNumber = BigInt(registration.current_epoch);
-    let epoch = resultValue(
+    let epoch = invocationResultValue(
       await this.vault.epoch({
         market,
         epoch_number: epochNumber,
@@ -131,7 +128,7 @@ export class PrivateBatchCoordinator {
         market,
         epoch_number: epochNumber,
       }));
-      epoch = resultValue(
+      epoch = invocationResultValue(
         await this.vault.epoch({
           market,
           epoch_number: epochNumber,
@@ -171,7 +168,7 @@ export class PrivateBatchCoordinator {
         sequence <= BigInt(epoch.last_sequence);
         sequence++
       ) {
-        const order = resultValue(
+        const order = invocationResultValue(
           await this.vault.order({ market, sequence }),
         );
         if (!order) throw new Error(`private order ${sequence} is unavailable`);
@@ -190,7 +187,7 @@ export class PrivateBatchCoordinator {
           accepted: orders.length,
         };
       }
-      const quote = resultValue(
+      const quote = invocationResultValue(
         await marketContract.quote_private_batch({
           expected_version: BigInt(epoch.market_state_version),
           yes_count: yesCount,
@@ -249,7 +246,7 @@ export class PrivateBatchCoordinator {
       (phase === "Executed" || phase === "Refundable") &&
       now < Number(registration.expiry)
     ) {
-      const next = resultValue(
+      const next = invocationResultValue(
         await this.submit(this.vault.open_next_epoch({
           market,
           prior_epoch: epochNumber,

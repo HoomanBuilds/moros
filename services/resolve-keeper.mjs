@@ -9,16 +9,41 @@ import {
   scValToNative,
   xdr,
 } from "@stellar/stellar-sdk";
-import { mkdirSync, renameSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "fs";
+import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { PythLazerClient } from "@pythnetwork/pyth-lazer-sdk";
-import { PYTH_PRO_FEEDS, resolvableAssets, resolutionPhase } from "./oracle-config.mjs";
+import {
+  PYTH_PRO_FEEDS,
+  resolvableAssets,
+  resolutionPhase,
+  selectFreeResolver,
+} from "./oracle-config.mjs";
+import { contractResultValue } from "./deployment-utils.mjs";
 
 const RPC = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
 const PASSPHRASE = process.env.NETWORK_PASSPHRASE || "Test SDF Network ; September 2015";
 const ORACLE_MODE = process.env.ORACLE_MODE || "free";
-const FREE_RESOLVER = process.env.FREE_RESOLVER_ID || "CATOCURLCPJXJNYOEBBV5Q2XVHO6S5J2ATZE6NP3A3DAJMUW3G43HNQ7";
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const PRIVATE_DEPLOYMENT_PATH = resolve(
+  REPO_ROOT,
+  process.env.MOROS_PUBLIC_DEPLOYMENT ||
+    "deployments/private-testnet.json",
+);
+const PRIVATE_DEPLOYMENT = existsSync(PRIVATE_DEPLOYMENT_PATH)
+  ? JSON.parse(readFileSync(PRIVATE_DEPLOYMENT_PATH, "utf8"))
+  : undefined;
+const FREE_RESOLVER = selectFreeResolver(
+  process.env.FREE_RESOLVER_ID,
+  PRIVATE_DEPLOYMENT,
+  "CATOCURLCPJXJNYOEBBV5Q2XVHO6S5J2ATZE6NP3A3DAJMUW3G43HNQ7",
+);
 const PYTH_PRO_RESOLVER = process.env.PYTH_PRO_RESOLVER_ID || "";
 const RESOLVER = ORACLE_MODE === "pyth_pro" ? PYTH_PRO_RESOLVER : FREE_RESOLVER;
 const FUNDER_SK = process.env.FUNDER_SK || "";
@@ -278,7 +303,7 @@ async function main() {
   if (!new Set(["free", "pyth_pro"]).has(ORACLE_MODE)) throw new Error("ORACLE_MODE must be free or pyth_pro");
   if (!RESOLVER) throw new Error(`Resolver is not configured for ${ORACLE_MODE} mode`);
   if (ORACLE_MODE === "pyth_pro" && !PYTH_TOKEN) throw new Error("PYTH_ACCESS_TOKEN is required in pyth_pro mode");
-  const config = await readContract(RESOLVER, "config");
+  const config = contractResultValue(await readContract(RESOLVER, "config"));
   resolutionTimeout = Number(config.resolution_timeout);
   if (!Number.isSafeInteger(resolutionTimeout) || resolutionTimeout < 300) {
     throw new Error("Resolver returned an invalid resolution timeout");

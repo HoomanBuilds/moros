@@ -31,6 +31,7 @@ import {
 import {
   PRIVATE_GENESIS_ROOT,
   PRIVATE_TREE_LEVELS,
+  contractResultValue,
   deriveContractId,
   deterministicSalt,
   fieldBytes,
@@ -522,6 +523,7 @@ async function main() {
     vault.info(),
     factory.config(),
   ]);
+  const resolverValue = contractResultValue(resolverConfig.result);
   if (
     vaultInfo.result.factory !== ids.factory ||
     vaultInfo.result.verifier !== ids.verifier ||
@@ -529,7 +531,7 @@ async function main() {
     factoryConfig.result.shared_vault !== ids.sharedVault ||
     factoryConfig.result.resolver !== ids.resolver ||
     factoryConfig.result.collateral !== COLLATERAL ||
-    resolverConfig.result.quorum !== 1
+    resolverValue.quorum !== 1
   ) {
     throw new Error("deployed contract wiring did not match the manifest");
   }

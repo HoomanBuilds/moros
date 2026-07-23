@@ -3,6 +3,7 @@ import { Keypair, Networks, StrKey } from "@stellar/stellar-sdk";
 import {
   PRIVATE_GENESIS_ROOT,
   PRIVATE_TREE_LEVELS,
+  contractResultValue,
   deriveContractId,
   deterministicSalt,
   fieldBytes,
@@ -45,5 +46,13 @@ assert.deepEqual(
 );
 
 assert.throws(() => fieldBytes(0n), /nonzero/);
+assert.deepEqual(
+  contractResultValue({ value: { quorum: 1 } }),
+  { quorum: 1 },
+);
+assert.deepEqual(
+  contractResultValue({ quorum: 1 }),
+  { quorum: 1 },
+);
 
 console.log("deployment utils ok");

@@ -16,6 +16,14 @@ export const PRIVATE_TREE_LEVELS = 20;
 export const PRIVATE_GENESIS_ROOT =
   2611866331166115416723223527596396580179948542347864251823105860387727173205n;
 
+export function contractResultValue(value) {
+  return value &&
+    typeof value === "object" &&
+    Object.hasOwn(value, "value")
+    ? value.value
+    : value;
+}
+
 function sha256(value) {
   return createHash("sha256").update(value).digest();
 }

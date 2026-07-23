@@ -15,6 +15,7 @@ import {
   bytes32Limbs,
   decryptAllocationWitness,
   fixedRoot,
+  invocationResultValue,
   membershipPath,
   merkleNode,
   merkleTree,
@@ -25,6 +26,13 @@ import {
 
 const contract =
   "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
+const invocation = Object.create({
+  get result() {
+    return { ok: true };
+  },
+});
+assert.deepEqual(invocationResultValue(invocation), { ok: true });
+assert.equal(invocationResultValue(7n), 7n);
 const digest = createHash("sha256")
   .update(Address.fromString(contract).toScVal().toXDR())
   .digest();

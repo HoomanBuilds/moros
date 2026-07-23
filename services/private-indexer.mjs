@@ -8,13 +8,10 @@ import {
 import { dirname } from "node:path";
 import {
   decimal,
+  invocationResultValue,
   jsonValue,
   merkleTree,
 } from "./private-protocol.mjs";
-
-function resultValue(value) {
-  return value && Object.hasOwn(value, "result") ? value.result : value;
-}
 
 function outputValue(value) {
   return {
@@ -72,7 +69,7 @@ export class PrivateOutputIndexer {
   }
 
   async sync() {
-    const info = resultValue(await this.client.info());
+    const info = invocationResultValue(await this.client.info());
     if (
       Number(info.levels) !== this.levels ||
       Number(info.next_leaf_index) < this.state.outputs.length
@@ -85,7 +82,7 @@ export class PrivateOutputIndexer {
       leafIndex < nextLeafIndex;
       leafIndex++
     ) {
-      const value = resultValue(
+      const value = invocationResultValue(
         await this.client.output({ index: leafIndex }),
       );
       if (!value) {
