@@ -283,6 +283,17 @@ fn setup() -> (
 }
 
 #[test]
+fn extend_ttl_preserves_verifier_state() {
+    let env = Env::default();
+    let controller = Address::generate(&env);
+    let address = env.register(ZkVerifier, (controller,));
+    let client = ZkVerifierClient::new(&env, &address);
+    let before = client.info();
+    client.extend_ttl();
+    assert_eq!(client.info(), before);
+}
+
+#[test]
 fn verifies_typed_action_and_batch_proofs_and_rejects_statement_changes() {
     let (env, client, action_key, batch_key) = setup();
     let info = client.info();

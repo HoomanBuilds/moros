@@ -120,6 +120,14 @@ fn creator_proposes_without_usdc_or_a_collateral_transfer() {
 }
 
 #[test]
+fn extend_ttl_preserves_factory_configuration() {
+    let (_, client, _) = setup();
+    let before = client.config();
+    client.extend_ttl();
+    assert_eq!(client.config(), before);
+}
+
+#[test]
 fn proposal_identifier_binds_creator_nonce_and_configuration() {
     let (env, client, creator) = setup();
     let first = request(&env, creator.clone());

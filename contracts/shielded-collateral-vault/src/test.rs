@@ -256,6 +256,14 @@ fn setup() -> Setup {
 }
 
 #[test]
+fn extend_ttl_preserves_vault_state() {
+    let setup = setup();
+    let before = setup.vault.info();
+    setup.vault.extend_ttl();
+    assert_eq!(setup.vault.info(), before);
+}
+
+#[test]
 #[should_panic]
 fn constructor_rejects_wrong_verifier_domain() {
     let env = Env::default();

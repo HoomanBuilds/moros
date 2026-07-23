@@ -333,6 +333,10 @@ impl MarketFactory {
         env.storage().instance().get(&DataKey::Config).unwrap()
     }
 
+    pub fn extend_ttl(env: Env) {
+        Self::bump(&env);
+    }
+
     pub fn proposal_id(env: Env, request: ProposalRequest) -> BytesN<32> {
         let config = Self::config(env.clone());
         Self::validate_request(&env, &config, &request);

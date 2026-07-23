@@ -156,6 +156,10 @@ impl ZkVerifier {
         }
     }
 
+    pub fn extend_ttl(env: Env) {
+        Self::bump_instance(&env);
+    }
+
     pub fn domain(env: Env) -> BytesN<32> {
         if !Self::is_finalized(&env) {
             panic_with_error!(&env, VerifierError::NotFinalized);

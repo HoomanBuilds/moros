@@ -776,6 +776,10 @@ impl ShieldedCollateralVault {
         }
     }
 
+    pub fn extend_ttl(env: Env) {
+        Self::bump_instance(&env);
+    }
+
     pub fn context_digest(
         env: Env,
         action: ProofAction,
