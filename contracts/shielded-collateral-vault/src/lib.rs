@@ -5,6 +5,8 @@ use soroban_sdk::{
     panic_with_error, token, xdr::ToXdr, Address, Bytes, BytesN, Env, Vec, U256,
 };
 
+pub use privacy_types::{BatchProofStatement, BatchQuote, ProofAction, ProofStatement};
+
 #[cfg(test)]
 mod test;
 
@@ -26,22 +28,6 @@ const BN254_SCALAR_MODULUS: [u8; 32] = [
     48, 100, 78, 114, 225, 49, 160, 41, 184, 80, 69, 182, 129, 129, 88, 93, 40, 51, 232, 72, 121,
     185, 112, 145, 67, 225, 245, 147, 240, 0, 0, 1,
 ];
-
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProofAction {
-    Deposit,
-    Transfer,
-    Withdraw,
-    Order,
-    Claim,
-    Refund,
-    LiquidityFund,
-    LiquidityExit,
-    LiquidityRedeem,
-    ExecutionChange,
-    Treasury,
-}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -133,29 +119,6 @@ pub struct MarketPrivateConfig {
     pub fixed_batch_size: u32,
     pub minimum_side_count: u32,
     pub maximum_price_movement: i128,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BatchQuote {
-    pub state_version: u64,
-    pub batch_size: u32,
-    pub yes_count: u32,
-    pub no_count: u32,
-    pub pre_yes_price: i128,
-    pub post_yes_price: i128,
-    pub yes_price: i128,
-    pub no_price: i128,
-    pub aggregate_market_charge: i128,
-    pub yes_market_cost: i128,
-    pub no_market_cost: i128,
-    pub yes_charge_per_position: i128,
-    pub no_charge_per_position: i128,
-    pub rounding_contribution: i128,
-    pub fee_per_position: i128,
-    pub fee_escrow: i128,
-    pub conditional_lp_fee: i128,
-    pub conditional_protocol_fee: i128,
 }
 
 #[contracttype]
@@ -269,26 +232,6 @@ pub struct EpochRootPreimage {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BatchProofStatement {
-    pub network_domain: BytesN<32>,
-    pub vault: Address,
-    pub market: Address,
-    pub epoch: u64,
-    pub accepted_root: BytesN<32>,
-    pub accepted_count: u32,
-    pub first_sequence: u64,
-    pub last_sequence: u64,
-    pub committee_epoch: u64,
-    pub committee_config_hash: BytesN<32>,
-    pub aggregate_ciphertext_hash: BytesN<32>,
-    pub decryption_proof_hash: BytesN<32>,
-    pub committee_statement_hash: BytesN<32>,
-    pub allocation_root: U256,
-    pub quote: BatchQuote,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BatchSubmission {
     pub yes_count: u32,
     pub no_count: u32,
@@ -343,20 +286,6 @@ pub struct AllocationBinding {
     pub position_commitment: U256,
     pub outcome: SettlementState,
     pub quote: BatchQuote,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProofStatement {
-    pub action: ProofAction,
-    pub context_digest: BytesN<32>,
-    pub membership_root: U256,
-    pub append_root: U256,
-    pub new_root: U256,
-    pub input_nullifiers: Vec<U256>,
-    pub output_commitments: Vec<U256>,
-    pub first_leaf_index: u32,
-    pub public_amount: i128,
 }
 
 #[contracttype]
@@ -579,6 +508,7 @@ pub struct PrivateMarketFinalized {
 
 #[contractclient(crate_path = "soroban_sdk", name = "ProofVerifierClient")]
 pub trait ProofVerifier {
+    fn domain(env: Env) -> BytesN<32>;
     fn verify(env: Env, statement: ProofStatement, proof: Bytes) -> bool;
     fn verify_batch(env: Env, statement: BatchProofStatement, proof: Bytes) -> bool;
 }
@@ -663,6 +593,7 @@ impl ShieldedCollateralVault {
         envelope_length: u32,
     ) {
         let decimals = token::Client::new(&env, &token).decimals();
+        let deployed_verifier_domain = ProofVerifierClient::new(&env, &verifier).domain();
         if decimals != EXPECTED_USDC_DECIMALS
             || levels < MIN_TREE_LEVELS
             || levels > MAX_TREE_LEVELS
@@ -673,6 +604,7 @@ impl ShieldedCollateralVault {
             || envelope_length > MAX_ENVELOPE_LENGTH
             || Self::is_zero_bytes(&network_domain)
             || Self::is_zero_bytes(&verifier_domain)
+            || deployed_verifier_domain != verifier_domain
             || Self::is_zero_bytes(&treasury_key)
             || !Self::canonical_field(&env, &genesis_root)
             || genesis_root == U256::from_u32(&env, 0)

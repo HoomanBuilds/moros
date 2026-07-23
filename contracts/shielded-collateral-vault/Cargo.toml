@@ -9,6 +9,7 @@ crate-type = ["cdylib", "rlib"]
 doctest = false
 
 [dependencies]
+privacy-types = { path = "../privacy-types" }
 soroban-sdk = { workspace = true }
 
 [dev-dependencies]

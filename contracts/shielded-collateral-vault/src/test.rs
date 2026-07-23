@@ -33,6 +33,10 @@ struct MockVerifier;
 
 #[contractimpl]
 impl MockVerifier {
+    pub fn domain(env: Env) -> BytesN<32> {
+        id(&env, 2)
+    }
+
     pub fn set_expected(env: Env, digest: BytesN<32>) {
         env.storage()
             .instance()
@@ -160,6 +164,33 @@ fn setup() -> Setup {
         governance,
         user,
     }
+}
+
+#[test]
+#[should_panic]
+fn constructor_rejects_wrong_verifier_domain() {
+    let env = Env::default();
+    let token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let verifier = env.register(MockVerifier, ());
+    env.register(
+        ShieldedCollateralVault,
+        (
+            token,
+            Address::generate(&env),
+            Address::generate(&env),
+            verifier,
+            id(&env, 1),
+            id(&env, 4),
+            id(&env, 3),
+            field(&env, 1),
+            8u32,
+            8u32,
+            100u32,
+            ENVELOPE_LENGTH as u32,
+        ),
+    );
 }
 
 fn expect(

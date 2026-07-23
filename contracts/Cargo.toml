@@ -5,8 +5,10 @@ members = [
     "lmsr-market",
     "market-factory",
     "market-liquidity-vault",
+    "privacy-types",
     "resolver",
     "shielded-collateral-vault",
+    "zk-verifier",
 ]
 exclude = ["shielded-pool"]
 
