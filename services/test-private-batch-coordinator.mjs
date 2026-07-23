@@ -24,6 +24,8 @@ let now = 100;
 let sealCalls = 0;
 let refundableCalls = 0;
 let openCalls = 0;
+let finalizeCalls = 0;
+let outcome;
 const registration = {
   finalized: false,
   current_epoch: 1n,
@@ -54,15 +56,16 @@ const vault = {
   open_next_epoch: async () => transaction({ epoch: 2n }, () => {
     openCalls++;
   }),
+  finalize_market: async () => transaction(undefined, () => {
+    finalizeCalls++;
+  }),
 };
 const coordinator = new PrivateBatchCoordinator({
   vault,
   vaultId: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
   networkDomain: Buffer.alloc(32, 1),
   committeeSecret: 1n,
-  marketClient: async () => {
-    throw new Error("not expected");
-  },
+  marketClient: async () => ({ outcome: async () => ({ result: outcome }) }),
   prove: async () => {
     throw new Error("not expected");
   },
@@ -85,5 +88,9 @@ assert.equal(openCalls, 1);
 
 registration.finalized = true;
 assert.equal((await coordinator.process("market")).status, "finalized");
+registration.finalized = false;
+outcome = { tag: "Yes" };
+assert.equal((await coordinator.process("market")).status, "finalized");
+assert.equal(finalizeCalls, 1);
 
 process.stdout.write("private batch coordinator tests passed\n");

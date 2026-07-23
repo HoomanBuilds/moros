@@ -100,6 +100,12 @@ export class PrivateBatchCoordinator {
     );
     if (!registration) throw new Error("market is not registered");
     if (registration.finalized) return { status: "finalized" };
+    const marketContract = await this.marketClient(market);
+    const outcome = resultValue(await marketContract.outcome());
+    if (outcome !== undefined && outcome !== null) {
+      await this.submit(this.vault.finalize_market({ market }));
+      return { status: "finalized" };
+    }
     const epochNumber = BigInt(registration.current_epoch);
     let epoch = resultValue(
       await this.vault.epoch({
@@ -182,7 +188,6 @@ export class PrivateBatchCoordinator {
           accepted: orders.length,
         };
       }
-      const marketContract = await this.marketClient(market);
       const quote = resultValue(
         await marketContract.quote_private_batch({
           expected_version: BigInt(epoch.market_state_version),
