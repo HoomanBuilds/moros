@@ -36,7 +36,7 @@ test("market creation accepts an exact local settlement time", async ({ page }) 
   await expect(settlement).toHaveAttribute("type", "datetime-local");
   await expect(settlement).not.toHaveAttribute("max");
   await expect(settlement).not.toHaveValue("");
-  await expect(page.getByRole("button", { name: "1 hour", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "3 hours", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "30 days", exact: true })).toHaveAttribute("aria-pressed", "true");
 
   const customValue = "2045-07-20T08:45";
