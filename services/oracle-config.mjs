@@ -34,6 +34,16 @@ export const REFLECTOR_FIAT_ASSETS = [
 
 export const FREE_REFLECTOR_ASSETS = [...REFLECTOR_CEX_ASSETS, ...REFLECTOR_FIAT_ASSETS];
 
+export const FREE_REFLECTOR_RISK_GROUPS = FREE_REFLECTOR_ASSETS.map((asset) => ({
+  asset,
+  risk_group:
+    asset === "XAU"
+      ? "METALS"
+      : REFLECTOR_FIAT_ASSETS.includes(asset)
+        ? "FX"
+        : "CRYPTO",
+}));
+
 export const PYTH_PRO_FEEDS = {
   BTC: 1,
   ETH: 2,

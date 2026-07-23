@@ -17,6 +17,7 @@ export type PrivateDeploymentConfig = {
     verifier: string;
     resolver: string;
     sharedVault: string;
+    liquidityPool: string;
     factory: string;
   };
   privacy: {
@@ -42,6 +43,16 @@ export type PrivateDeploymentConfig = {
     minimumFundingWindow: number;
     minimumOpenWindow: number;
     maximumMarketDuration: number;
+  };
+  liquidityPolicy: {
+    depositCap: string;
+    maxActiveAllocations: number;
+    maxDeployedBps: number;
+    maxMarketBps: number;
+    maxGroupBps: number;
+    minimumIdleBps: number;
+    withdrawalWindow: number;
+    maxWithdrawalBps: number;
   };
   mainnetReady: false;
 };
@@ -141,9 +152,10 @@ export async function getPrivateConfig(): Promise<PrivateDeploymentConfig> {
     config.collateral.contract !== NETWORK.collateral.sac ||
     !/^[0-9a-f]{64}$/u.test(config.networkDomain) ||
     !/^[0-9a-f]{64}$/u.test(config.verifierDomain) ||
+    !/^C[A-Z2-7]{55}$/u.test(config.contracts.liquidityPool) ||
     config.privacy.treeLevels !== 20 ||
     config.marketPolicy.fixedBatchSize !== 8 ||
-    config.marketPolicy.minimumSideCount < 2
+    config.marketPolicy.minimumSideCount !== 2
   ) {
     throw new Error("Private service configuration is incompatible");
   }

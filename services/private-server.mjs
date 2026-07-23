@@ -185,6 +185,7 @@ async function main() {
     deployment.network !== "testnet" ||
     deployment.mainnetReady !== false ||
     !deployment.contracts?.sharedVault ||
+    !deployment.contracts?.liquidityPool ||
     !deployment.contracts?.factory
   ) {
     throw new Error("invalid private testnet deployment manifest");
@@ -204,11 +205,32 @@ async function main() {
     networkPassphrase: NETWORK_PASSPHRASE,
   });
   const vaultInfo = invocationResultValue(await vault.info());
+  const liquidityPool = await contractClient({
+    server,
+    contractId: deployment.contracts.liquidityPool,
+    source,
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+  const poolInfo = invocationResultValue(await liquidityPool.info());
+  const factory = await contractClient({
+    server,
+    contractId: deployment.contracts.factory,
+    source,
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+  const factoryInfo = invocationResultValue(await factory.config());
   const identity = testnetPrivacyIdentity(process.env.FUNDER_SK);
   if (
     vaultInfo.factory !== deployment.contracts.factory ||
     vaultInfo.verifier !== deployment.contracts.verifier ||
     vaultInfo.token !== deployment.collateral.contract ||
+    poolInfo.factory !== deployment.contracts.factory ||
+    poolInfo.shared_vault !== deployment.contracts.sharedVault ||
+    poolInfo.token !== deployment.collateral.contract ||
+    factoryInfo.liquidity_pool !== deployment.contracts.liquidityPool ||
+    factoryInfo.shared_vault !== deployment.contracts.sharedVault ||
     Number(vaultInfo.levels) !== deployment.privacy.treeLevels ||
     Buffer.from(vaultInfo.network_domain).toString("hex") !==
       deployment.networkDomain ||
@@ -224,16 +246,9 @@ async function main() {
       BigInt(deployment.privacy.committeePublicKeyY) ||
     identity.treasuryKey !== BigInt(deployment.privacy.treasuryKey)
   ) {
-    throw new Error("shared vault wiring does not match the deployment");
+    throw new Error("private contract wiring does not match the deployment");
   }
   const serialize = serializeTransactions();
-  const factory = await contractClient({
-    server,
-    contractId: deployment.contracts.factory,
-    source,
-    rpcUrl: RPC_URL,
-    networkPassphrase: NETWORK_PASSPHRASE,
-  });
   const indexer = new PrivateOutputIndexer({
     client: vault,
     stateFile: OUTPUT_STATE,
@@ -394,10 +409,49 @@ async function main() {
     outputs: Number(vaultInfo.next_leaf_index),
     markets: {},
     proposals: {},
+    liquidityPool: {},
     exits: {},
     errors: [],
   };
   let ticking = false;
+
+  const allocateAvailableLiquidity = async () => {
+    for (let attempt = 0; attempt < 32; attempt++) {
+      const before = invocationResultValue(await liquidityPool.info());
+      if (BigInt(before.queue_head) >= BigInt(before.queue_tail)) break;
+      await serialize(async () =>
+        (await liquidityPool.allocate_next()).signAndSend()
+      );
+      const after = invocationResultValue(await liquidityPool.info());
+      if (BigInt(after.queue_head) === BigInt(before.queue_head)) break;
+    }
+    const [info, nav] = await Promise.all([
+      liquidityPool.info(),
+      liquidityPool.nav(),
+    ]);
+    return {
+      info: invocationResultValue(info),
+      nav: invocationResultValue(nav),
+    };
+  };
+
+  const harvestTerminalAllocation = async (entry, liquidityInfo) => {
+    if (!["Cancelled", "Settled"].includes(phaseName(liquidityInfo.phase))) {
+      return false;
+    }
+    const allocation = invocationResultValue(await liquidityPool.allocation({
+      liquidity_vault: entry.liquidityVault,
+    }));
+    if (!allocation || phaseName(allocation.status) !== "Deployed") {
+      return false;
+    }
+    await serialize(async () =>
+      (await liquidityPool.harvest({
+        liquidity_vault: entry.liquidityVault,
+      })).signAndSend()
+    );
+    return true;
+  };
 
   const processProposal = async (entry) => {
     const proposalId = Buffer.from(entry.proposalId, "hex");
@@ -470,6 +524,8 @@ async function main() {
         throw new Error("activated proposal returned an unexpected market");
       }
       await registry.register(entry.market);
+      info = invocationResultValue(await liquidity.info());
+      const harvested = await harvestTerminalAllocation(entry, info);
       const sync = await syncPublicMarketState(
         entry.proposalId,
         "active",
@@ -478,14 +534,18 @@ async function main() {
       return {
         phase,
         market: entry.market,
+        harvested,
         registrySyncConfigured: sync.configured,
       };
     }
     if (phase === "Cancelled") {
+      info = invocationResultValue(await liquidity.info());
+      const harvested = await harvestTerminalAllocation(entry, info);
       const sync = await syncPublicMarketState(entry.proposalId, "cancelled");
       return {
         phase,
         market: entry.market,
+        harvested,
         registrySyncConfigured: sync.configured,
       };
     }
@@ -530,6 +590,24 @@ async function main() {
       const tree = await indexer.sync();
       runtime.outputs = tree.nextLeafIndex;
       runtime.lastIndexAt = new Date().toISOString();
+      try {
+        runtime.liquidityPool = {
+          ...(await allocateAvailableLiquidity()),
+          checkedAt: new Date().toISOString(),
+        };
+      } catch (error) {
+        runtime.liquidityPool = {
+          status: "error",
+          checkedAt: new Date().toISOString(),
+          error: String(error?.message || error),
+        };
+        runtime.errors.push({
+          at: new Date().toISOString(),
+          liquidityPool: deployment.contracts.liquidityPool,
+          error: String(error?.message || error),
+        });
+        runtime.errors = runtime.errors.slice(-20);
+      }
       for (const proposal of proposals.list()) {
         try {
           runtime.proposals[proposal.proposalId] = {
@@ -641,6 +719,7 @@ async function main() {
           healthy,
           network: "testnet",
           vault: vaultId,
+          liquidityPool: deployment.contracts.liquidityPool,
           ...runtime,
         });
         return;

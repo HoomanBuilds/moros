@@ -40,6 +40,7 @@ import {
 } from "./deployment-utils.mjs";
 import {
   FREE_REFLECTOR_ASSETS,
+  FREE_REFLECTOR_RISK_GROUPS,
   REFLECTOR_CEX_ORACLE,
   REFLECTOR_FIAT_ORACLE,
 } from "./oracle-config.mjs";
@@ -86,6 +87,7 @@ const contractFiles = {
   verifier: "zk_verifier.wasm",
   resolver: "resolver.wasm",
   sharedVault: "shielded_collateral_vault.wasm",
+  liquidityPool: "pooled_liquidity_vault.wasm",
   factory: "market_factory.wasm",
   market: "lmsr_market.wasm",
   liquidityVault: "market_liquidity_vault.wasm",
@@ -372,7 +374,7 @@ async function main() {
   const artifacts = wasmArtifacts();
   const identity = testnetPrivacyIdentity(SECRET);
   const salts = Object.fromEntries(
-    ["verifier", "resolver", "sharedVault", "factory"].map((name) => [
+    ["verifier", "resolver", "sharedVault", "liquidityPool", "factory"].map((name) => [
       name,
       deterministicSalt(`${LABEL}:${name}`),
     ]),
@@ -466,6 +468,30 @@ async function main() {
   await deployContract({
     server,
     source,
+    artifact: artifacts.liquidityPool,
+    contractId: ids.liquidityPool,
+    salt: salts.liquidityPool,
+    args: {
+      token: COLLATERAL,
+      factory: ids.factory,
+      shared_vault: ids.sharedVault,
+      governance: sourceAddress,
+      policy: {
+        deposit_cap: 1_000_000_000_000n,
+        max_active_allocations: 8,
+        max_deployed_bps: 8_000,
+        max_market_bps: 2_500,
+        max_group_bps: 5_000,
+        minimum_idle_bps: 2_000,
+        withdrawal_window: 3_600n,
+        max_withdrawal_bps: 1_000,
+      },
+    },
+  });
+
+  await deployContract({
+    server,
+    source,
     artifact: artifacts.factory,
     contractId: ids.factory,
     salt: salts.factory,
@@ -474,11 +500,13 @@ async function main() {
         governance: sourceAddress,
         collateral: COLLATERAL,
         shared_vault: ids.sharedVault,
+        liquidity_pool: ids.liquidityPool,
         resolver: ids.resolver,
         network_domain: networkDomain(PASSPHRASE),
         market_wasm_hash: artifacts.market.hash,
         liquidity_wasm_hash: artifacts.liquidityVault.hash,
         allowed_assets: FREE_REFLECTOR_ASSETS,
+        asset_risk_groups: FREE_REFLECTOR_RISK_GROUPS,
         liquidity_tiers: [
           200_000_000n,
           500_000_000n,
@@ -518,9 +546,15 @@ async function main() {
     ids.factory,
     source,
   );
-  const [resolverConfig, vaultInfo, factoryConfig] = await Promise.all([
+  const liquidityPool = await clientFor(
+    artifacts.liquidityPool,
+    ids.liquidityPool,
+    source,
+  );
+  const [resolverConfig, vaultInfo, poolInfo, factoryConfig] = await Promise.all([
     resolver.config(),
     vault.info(),
+    liquidityPool.info(),
     factory.config(),
   ]);
   const resolverValue = contractResultValue(resolverConfig.result);
@@ -528,7 +562,11 @@ async function main() {
     vaultInfo.result.factory !== ids.factory ||
     vaultInfo.result.verifier !== ids.verifier ||
     vaultInfo.result.token !== COLLATERAL ||
+    poolInfo.result.factory !== ids.factory ||
+    poolInfo.result.shared_vault !== ids.sharedVault ||
+    poolInfo.result.token !== COLLATERAL ||
     factoryConfig.result.shared_vault !== ids.sharedVault ||
+    factoryConfig.result.liquidity_pool !== ids.liquidityPool ||
     factoryConfig.result.resolver !== ids.resolver ||
     factoryConfig.result.collateral !== COLLATERAL ||
     resolverValue.quorum !== 1
@@ -551,6 +589,7 @@ async function main() {
       verifier: ids.verifier,
       resolver: ids.resolver,
       sharedVault: ids.sharedVault,
+      liquidityPool: ids.liquidityPool,
       factory: ids.factory,
     },
     wasm: state.wasm,
@@ -573,6 +612,7 @@ async function main() {
     },
     marketPolicy: {
       allowedAssets: FREE_REFLECTOR_ASSETS,
+      assetRiskGroups: FREE_REFLECTOR_RISK_GROUPS,
       liquidityTiers: [
         200_000_000n,
         500_000_000n,
@@ -587,12 +627,22 @@ async function main() {
       minimumOpenWindow: 3_600,
       maximumMarketDuration: 7_776_000,
     },
+    liquidityPolicy: {
+      depositCap: 1_000_000_000_000n,
+      maxActiveAllocations: 8,
+      maxDeployedBps: 8_000,
+      maxMarketBps: 2_500,
+      maxGroupBps: 5_000,
+      minimumIdleBps: 2_000,
+      withdrawalWindow: 3_600,
+      maxWithdrawalBps: 1_000,
+    },
     mainnetReady: false,
   };
   savePublic(publicDeployment);
   saveState({ ...state, complete: true, publicDeployment });
   process.stdout.write(
-    `private testnet contracts ready: factory ${ids.factory}, vault ${ids.sharedVault}\n`,
+    `private testnet contracts ready: factory ${ids.factory}, vault ${ids.sharedVault}, pool ${ids.liquidityPool}\n`,
   );
 }
 

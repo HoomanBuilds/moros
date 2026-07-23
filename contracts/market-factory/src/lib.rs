@@ -11,7 +11,8 @@ mod test;
 
 const MAX_ALLOWED_ASSETS: u32 = 64;
 const MAX_LIQUIDITY_TIERS: u32 = 8;
-const MAX_PRIVATE_BATCH_SIZE: u32 = 8;
+const PRIVATE_BATCH_SIZE: u32 = 8;
+const PRIVATE_MINIMUM_SIDE_COUNT: u32 = 2;
 const MAX_USDC_AMOUNT: i128 = 1_000_000_000_000_000_000;
 const MAX_LOT_SIZE: i128 = 1i128 << 60;
 const FIXED_SCALE: i128 = 1i128 << 32;
@@ -42,15 +43,24 @@ pub enum LiquidityPhase {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetRiskGroup {
+    pub asset: Symbol,
+    pub risk_group: Symbol,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FactoryConfig {
     pub governance: Address,
     pub collateral: Address,
     pub shared_vault: Address,
+    pub liquidity_pool: Address,
     pub resolver: Address,
     pub network_domain: BytesN<32>,
     pub market_wasm_hash: BytesN<32>,
     pub liquidity_wasm_hash: BytesN<32>,
     pub allowed_assets: Vec<Symbol>,
+    pub asset_risk_groups: Vec<AssetRiskGroup>,
     pub liquidity_tiers: Vec<i128>,
     pub minimum_funding_window: u64,
     pub minimum_open_window: u64,
@@ -93,6 +103,7 @@ pub struct ProposalPreimage {
     pub network_domain: BytesN<32>,
     pub collateral: Address,
     pub shared_vault: Address,
+    pub liquidity_pool: Address,
     pub resolver: Address,
     pub market_wasm_hash: BytesN<32>,
     pub liquidity_wasm_hash: BytesN<32>,
@@ -107,6 +118,7 @@ pub struct ProposalPreimage {
     pub fixed_batch_size: u32,
     pub minimum_side_count: u32,
     pub maximum_price_movement: i128,
+    pub risk_group: Symbol,
     pub request: ProposalRequest,
 }
 
@@ -116,6 +128,7 @@ pub struct Proposal {
     pub proposal_id: BytesN<32>,
     pub creator: Address,
     pub asset: Symbol,
+    pub risk_group: Symbol,
     pub threshold: i128,
     pub rules_hash: BytesN<32>,
     pub metadata_hash: BytesN<32>,
@@ -126,6 +139,7 @@ pub struct Proposal {
     pub lot_size: i128,
     pub fee_bps: u32,
     pub liquidity_vault: Option<Address>,
+    pub liquidity_sequence: Option<u64>,
     pub market: Option<Address>,
     pub phase: ProposalPhase,
     pub state_version: u64,
@@ -198,6 +212,20 @@ pub trait SharedVault {
     );
 }
 
+#[contractclient(crate_path = "soroban_sdk", name = "PooledLiquidityVaultClient")]
+pub trait PooledLiquidityVault {
+    fn register_candidate(
+        env: Env,
+        factory: Address,
+        proposal_id: BytesN<32>,
+        liquidity_vault: Address,
+        asset: Symbol,
+        risk_group: Symbol,
+        target_assets: i128,
+        funding_deadline: u64,
+    ) -> u64;
+}
+
 #[contracttype]
 #[derive(Clone)]
 enum DataKey {
@@ -229,6 +257,7 @@ pub struct MarketProposed {
     pub proposal_id: BytesN<32>,
     pub creator: Address,
     pub asset: Symbol,
+    pub risk_group: Symbol,
     pub expiry: u64,
     pub liquidity_target: i128,
 }
@@ -238,6 +267,7 @@ pub struct LiquidityDeployed {
     #[topic]
     pub proposal_id: BytesN<32>,
     pub liquidity_vault: Address,
+    pub liquidity_sequence: u64,
     pub state_version: u64,
 }
 
@@ -271,6 +301,7 @@ impl MarketFactory {
             || Self::is_zero(&config.liquidity_wasm_hash)
             || config.allowed_assets.is_empty()
             || config.allowed_assets.len() > MAX_ALLOWED_ASSETS
+            || config.asset_risk_groups.len() != config.allowed_assets.len()
             || config.liquidity_tiers.is_empty()
             || config.liquidity_tiers.len() > MAX_LIQUIDITY_TIERS
             || config.minimum_funding_window == 0
@@ -294,13 +325,8 @@ impl MarketFactory {
             )
             || config.maximum_fee_bps > 1_000
             || config.lp_fee_share_bps > 10_000
-            || config.fixed_batch_size < 8
-            || config.fixed_batch_size > MAX_PRIVATE_BATCH_SIZE
-            || config.minimum_side_count < 2
-            || config
-                .minimum_side_count
-                .checked_mul(2)
-                .is_none_or(|count| count > config.fixed_batch_size)
+            || config.fixed_batch_size != PRIVATE_BATCH_SIZE
+            || config.minimum_side_count != PRIVATE_MINIMUM_SIDE_COUNT
             || config.maximum_price_movement <= 0
             || config.maximum_price_movement > FIXED_SCALE
         {
@@ -311,6 +337,23 @@ impl MarketFactory {
                 if config.allowed_assets.get(i) == config.allowed_assets.get(prior) {
                     panic_with_error!(&env, Error::InvalidConfiguration);
                 }
+            }
+            let asset = config.allowed_assets.get(i).unwrap();
+            let mut mappings = 0u32;
+            for mapping in config.asset_risk_groups.iter() {
+                if mapping.asset == asset {
+                    mappings = mappings
+                        .checked_add(1)
+                        .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+                }
+            }
+            if mappings != 1 {
+                panic_with_error!(&env, Error::InvalidConfiguration);
+            }
+        }
+        for mapping in config.asset_risk_groups.iter() {
+            if !config.allowed_assets.contains(&mapping.asset) {
+                panic_with_error!(&env, Error::InvalidConfiguration);
             }
         }
         for i in 0..config.liquidity_tiers.len() {
@@ -356,6 +399,7 @@ impl MarketFactory {
             proposal_id: proposal_id.clone(),
             creator: request.creator.clone(),
             asset: request.asset.clone(),
+            risk_group: Self::risk_group_for(&env, &config, &request.asset),
             threshold: request.threshold,
             rules_hash: request.rules_hash,
             metadata_hash: request.metadata_hash,
@@ -366,6 +410,7 @@ impl MarketFactory {
             lot_size: request.lot_size,
             fee_bps: request.fee_bps,
             liquidity_vault: None,
+            liquidity_sequence: None,
             market: None,
             phase: ProposalPhase::Proposed,
             state_version: 0,
@@ -376,6 +421,7 @@ impl MarketFactory {
             proposal_id: proposal_id.clone(),
             creator: request.creator,
             asset: request.asset,
+            risk_group: proposal.risk_group,
             expiry: request.expiry,
             liquidity_target: request.liquidity_target,
         }
@@ -424,7 +470,7 @@ impl MarketFactory {
                 (
                     config.collateral,
                     env.current_contract_address(),
-                    config.shared_vault,
+                    config.liquidity_pool.clone(),
                     proposal_id.clone(),
                     proposal.liquidity_target,
                     proposal.funding_deadline,
@@ -436,7 +482,18 @@ impl MarketFactory {
         if address != expected {
             panic_with_error!(&env, Error::DeploymentMismatch);
         }
+        let liquidity_sequence = PooledLiquidityVaultClient::new(&env, &config.liquidity_pool)
+            .register_candidate(
+                &env.current_contract_address(),
+                &proposal_id,
+                &address,
+                &proposal.asset,
+                &proposal.risk_group,
+                &proposal.liquidity_target,
+                &proposal.funding_deadline,
+            );
         proposal.liquidity_vault = Some(address.clone());
+        proposal.liquidity_sequence = Some(liquidity_sequence);
         proposal.phase = ProposalPhase::Funding;
         proposal.state_version = proposal
             .state_version
@@ -447,6 +504,7 @@ impl MarketFactory {
         LiquidityDeployed {
             proposal_id,
             liquidity_vault: address.clone(),
+            liquidity_sequence,
             state_version: proposal.state_version,
         }
         .publish(&env);
@@ -696,7 +754,7 @@ impl MarketFactory {
         let config = Self::config(env.clone());
         if info.token != config.collateral
             || info.factory != env.current_contract_address()
-            || info.share_controller != config.shared_vault
+            || info.share_controller != config.liquidity_pool
             || info.proposal_id != proposal.proposal_id
             || info.target_assets != proposal.liquidity_target
             || info.funding_deadline != proposal.funding_deadline
@@ -787,6 +845,7 @@ impl MarketFactory {
             network_domain: config.network_domain.clone(),
             collateral: config.collateral.clone(),
             shared_vault: config.shared_vault.clone(),
+            liquidity_pool: config.liquidity_pool.clone(),
             resolver: config.resolver.clone(),
             market_wasm_hash: config.market_wasm_hash.clone(),
             liquidity_wasm_hash: config.liquidity_wasm_hash.clone(),
@@ -801,6 +860,7 @@ impl MarketFactory {
             fixed_batch_size: config.fixed_batch_size,
             minimum_side_count: config.minimum_side_count,
             maximum_price_movement: config.maximum_price_movement,
+            risk_group: Self::risk_group_for(env, config, &request.asset),
             request,
         };
         env.crypto().sha256(&preimage.to_xdr(env)).into()
@@ -808,6 +868,15 @@ impl MarketFactory {
 
     fn is_zero(value: &BytesN<32>) -> bool {
         value.to_array().iter().all(|byte| *byte == 0)
+    }
+
+    fn risk_group_for(env: &Env, config: &FactoryConfig, asset: &Symbol) -> Symbol {
+        for mapping in config.asset_risk_groups.iter() {
+            if mapping.asset == *asset {
+                return mapping.risk_group;
+            }
+        }
+        panic_with_error!(env, Error::UnsupportedAsset);
     }
 
     fn bump(env: &Env) {

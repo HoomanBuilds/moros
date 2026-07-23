@@ -1,6 +1,9 @@
 extern crate std;
 
-use crate::{FactoryConfig, MarketFactory, MarketFactoryClient, ProposalPhase, ProposalRequest};
+use crate::{
+    AssetRiskGroup, FactoryConfig, MarketFactory, MarketFactoryClient, ProposalPhase,
+    ProposalRequest,
+};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol, Vec, U256};
 
@@ -43,17 +46,35 @@ fn tiers(env: &Env) -> Vec<i128> {
     Vec::from_array(env, [100_000_000, 500_000_000])
 }
 
+fn risk_groups(env: &Env) -> Vec<AssetRiskGroup> {
+    Vec::from_array(
+        env,
+        [
+            AssetRiskGroup {
+                asset: symbol_short!("BTC"),
+                risk_group: symbol_short!("CRYPTO"),
+            },
+            AssetRiskGroup {
+                asset: symbol_short!("XLM"),
+                risk_group: symbol_short!("CRYPTO"),
+            },
+        ],
+    )
+}
+
 fn config(env: &Env, collateral: Address) -> FactoryConfig {
     let (committee_public_key_x, committee_public_key_y) = babyjub_base(env);
     FactoryConfig {
         governance: Address::generate(env),
         collateral,
         shared_vault: Address::generate(env),
+        liquidity_pool: Address::generate(env),
         resolver: Address::generate(env),
         network_domain: id(env, 1),
         market_wasm_hash: id(env, 2),
         liquidity_wasm_hash: id(env, 3),
         allowed_assets: symbols(env),
+        asset_risk_groups: risk_groups(env),
         liquidity_tiers: tiers(env),
         minimum_funding_window: 300,
         minimum_open_window: 600,
@@ -114,8 +135,10 @@ fn creator_proposes_without_usdc_or_a_collateral_transfer() {
     let proposal_id = client.propose(&request(&env, creator.clone()));
     let proposal = client.proposal(&proposal_id).unwrap();
     assert_eq!(proposal.creator, creator);
+    assert_eq!(proposal.risk_group, symbol_short!("CRYPTO"));
     assert_eq!(proposal.phase, ProposalPhase::Proposed);
     assert_eq!(proposal.liquidity_vault, None);
+    assert_eq!(proposal.liquidity_sequence, None);
     assert_eq!(proposal.state_version, 0);
 }
 
@@ -217,6 +240,50 @@ fn constructor_rejects_duplicate_capabilities() {
         .address();
     let mut bad = config(&env, collateral);
     bad.allowed_assets = Vec::from_array(&env, [symbol_short!("BTC"), symbol_short!("BTC")]);
+    env.register(MarketFactory, (bad,));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")]
+fn constructor_rejects_missing_asset_risk_groups() {
+    let env = Env::default();
+    let token_admin = Address::generate(&env);
+    let collateral = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+    let mut bad = config(&env, collateral);
+    bad.asset_risk_groups = Vec::from_array(
+        &env,
+        [AssetRiskGroup {
+            asset: symbol_short!("BTC"),
+            risk_group: symbol_short!("CRYPTO"),
+        }],
+    );
+    env.register(MarketFactory, (bad,));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")]
+fn constructor_rejects_duplicate_asset_risk_groups() {
+    let env = Env::default();
+    let token_admin = Address::generate(&env);
+    let collateral = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+    let mut bad = config(&env, collateral);
+    bad.asset_risk_groups = Vec::from_array(
+        &env,
+        [
+            AssetRiskGroup {
+                asset: symbol_short!("BTC"),
+                risk_group: symbol_short!("CRYPTO"),
+            },
+            AssetRiskGroup {
+                asset: symbol_short!("BTC"),
+                risk_group: symbol_short!("CRYPTO"),
+            },
+        ],
+    );
     env.register(MarketFactory, (bad,));
 }
 
