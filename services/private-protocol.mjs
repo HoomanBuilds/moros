@@ -1,9 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { Address } from "@stellar/stellar-sdk";
 import { poseidon2Hash } from "@zkpassport/poseidon2";
 import {
   aggregateCiphertexts,
   decryptSide,
+  mod,
+  multiply,
   publicKey,
 } from "./committee/bn254-babyjub.mjs";
 
@@ -239,6 +241,127 @@ export function positionPayout(lotSize) {
   return (numerator + Q32 - 1n) / Q32;
 }
 
+function allocationPlaintext({
+  market,
+  epoch,
+  sequence,
+  positionCommitment,
+  side,
+  charge,
+  fee,
+  payout,
+  leafIndex,
+  siblings,
+}) {
+  if (!Array.isArray(siblings) || siblings.length !== FIXED_TREE_LEVELS) {
+    throw new Error("allocation witness must contain six siblings");
+  }
+  return [
+    1n,
+    ...addressLimbs(market),
+    decimal(epoch, "epoch"),
+    decimal(sequence, "sequence"),
+    decimal(positionCommitment, "position commitment"),
+    decimal(side, "side"),
+    decimal(charge, "charge"),
+    decimal(fee, "fee"),
+    decimal(payout, "payout"),
+    decimal(leafIndex, "allocation leaf index"),
+    ...siblings.map((value) => decimal(value, "allocation sibling")),
+  ];
+}
+
+function allocationAuthentication(shared, nonce, plaintext) {
+  return poseidon2Hash([
+    1015n,
+    shared[0],
+    shared[1],
+    nonce,
+    ...plaintext,
+  ]);
+}
+
+export function encryptAllocationWitness({
+  order,
+  committeeSecret,
+  nonce = mod(BigInt(`0x${randomBytes(31).toString("hex")}`)) || 1n,
+  ...witness
+}) {
+  const shared = multiply(
+    [
+      decimal(order.encrypted_order.c1_x, "c1_x"),
+      decimal(order.encrypted_order.c1_y, "c1_y"),
+    ],
+    8n * decimal(committeeSecret, "committee secret"),
+  );
+  const plaintext = allocationPlaintext(witness);
+  const ciphertext = plaintext.map((value, index) =>
+    mod(value + poseidon2Hash([
+      1014n,
+      shared[0],
+      shared[1],
+      nonce,
+      BigInt(index),
+    ]))
+  );
+  return {
+    market: witness.market,
+    epoch: decimal(witness.epoch, "epoch"),
+    positionCommitment: decimal(
+      witness.positionCommitment,
+      "position commitment",
+    ),
+    envelope: [
+      1n,
+      nonce,
+      ...ciphertext,
+      allocationAuthentication(shared, nonce, plaintext),
+    ],
+  };
+}
+
+export function decryptAllocationWitness(envelope, shared) {
+  if (!Array.isArray(envelope) || envelope.length !== 20) {
+    throw new Error("allocation witness envelope has the wrong size");
+  }
+  const fields = envelope.map((value) => decimal(value));
+  if (fields[0] !== 1n) {
+    throw new Error("allocation witness envelope version is unsupported");
+  }
+  const nonce = fields[1];
+  const plaintext = fields.slice(2, -1).map((value, index) =>
+    mod(value - poseidon2Hash([
+      1014n,
+      decimal(shared[0]),
+      decimal(shared[1]),
+      nonce,
+      BigInt(index),
+    ]))
+  );
+  if (
+    allocationAuthentication(
+      shared.map((value) => decimal(value)),
+      nonce,
+      plaintext,
+    ) !== fields.at(-1)
+  ) {
+    throw new Error("allocation witness authentication failed");
+  }
+  return {
+    format: plaintext[0],
+    market: plaintext.slice(1, 3),
+    epoch: plaintext[3],
+    sequence: plaintext[4],
+    positionCommitment: plaintext[5],
+    side: plaintext[6],
+    charge: plaintext[7],
+    fee: plaintext[8],
+    payout: plaintext[9],
+    leafIndex: plaintext[10],
+    siblings: plaintext.slice(11),
+  };
+}
+
 function ciphertext(record) {
   return {
     c1: [
@@ -377,6 +500,32 @@ export function buildBatchStatement({
   }
   const allocationRoot = fixedRoot(allocationLeaves);
   const includedRoot = fixedRoot(includedLeaves);
+  const allocationTree = merkleTree(
+    [
+      ...allocationLeaves,
+      ...Array(FIXED_TREE_LEAVES - allocationLeaves.length).fill(0n),
+    ],
+    FIXED_TREE_LEVELS,
+  );
+  const allocationPackages = ordered.map((order, index) => {
+    const side = sides[index];
+    return encryptAllocationWitness({
+      order,
+      committeeSecret,
+      market,
+      epoch: epoch.epoch,
+      sequence: order.sequence,
+      positionCommitment: order.position_commitment,
+      side,
+      charge: side === 1
+        ? quote.yes_charge_per_position
+        : quote.no_charge_per_position,
+      fee: quote.fee_per_position,
+      payout,
+      leafIndex: index,
+      siblings: membershipPath(allocationTree, index),
+    });
+  });
   const publicTranscript = {
     market,
     epoch: decimal(epoch.epoch),
@@ -441,6 +590,7 @@ export function buildBatchStatement({
     aggregate,
     allocationRoot,
     includedRoot,
+    allocationPackages,
     decryptionProofHash,
     committeeStatementHash,
   };

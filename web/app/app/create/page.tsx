@@ -42,6 +42,7 @@ import {
   type PendingProposal,
   type ProposalStep,
 } from "@/lib/markets/propose";
+import { registerPrivateProposal } from "@/lib/private/client";
 import { saveMarketToRegistry } from "@/lib/supabase/markets-meta";
 import { uploadMarketBanner } from "@/lib/supabase/market-media";
 import { cn } from "@/lib/utils";
@@ -385,6 +386,7 @@ export default function CreatePage() {
         activationCutoff: proposal.activationCutoff * 1_000,
         settlementTime: proposal.expiryUnix * 1_000,
       });
+      await registerPrivateProposal(proposal.proposalId);
       const bannerSource = selectedImage
         ? selectedImage.kind === "upload"
           ? { kind: "upload" as const, file: selectedImage.file }

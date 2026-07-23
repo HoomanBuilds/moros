@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { Address, StrKey } from "@stellar/stellar-sdk";
 import {
   encryptSide,
+  multiply,
   publicKey,
 } from "./committee/bn254-babyjub.mjs";
 import {
@@ -12,6 +13,7 @@ import {
   batchPublicSignals,
   buildBatchStatement,
   bytes32Limbs,
+  decryptAllocationWitness,
   fixedRoot,
   membershipPath,
   merkleNode,
@@ -223,6 +225,28 @@ assert.equal(batchPublicSignals(statement.witness).length, 45);
 assert.equal(statement.witness.acceptedRoot, acceptedRoot);
 assert.notEqual(statement.allocationRoot, 0n);
 assert.notEqual(statement.includedRoot, 0n);
+assert.equal(statement.allocationPackages.length, 8);
+const firstAllocation = decryptAllocationWitness(
+  statement.allocationPackages[0].envelope,
+  multiply(committeeKey, 8n * 100n),
+);
+assert.equal(firstAllocation.format, 1n);
+assert.equal(firstAllocation.epoch, 4n);
+assert.equal(firstAllocation.sequence, 20n);
+assert.equal(firstAllocation.positionCommitment, 1_000n);
+assert.equal(firstAllocation.side, 1n);
+assert.equal(firstAllocation.charge, batchQuote.yes_charge_per_position);
+assert.equal(firstAllocation.fee, batchQuote.fee_per_position);
+assert.equal(firstAllocation.payout, 10_000_000n);
+assert.equal(firstAllocation.leafIndex, 0n);
+assert.equal(firstAllocation.siblings.length, 6);
+assert.throws(
+  () => decryptAllocationWitness(
+    statement.allocationPackages[0].envelope,
+    multiply(committeeKey, 8n * 101n),
+  ),
+  /authentication/,
+);
 assert.throws(
   () => buildBatchStatement({
     networkDomain: Buffer.alloc(32, 7),

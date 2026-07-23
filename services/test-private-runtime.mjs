@@ -7,7 +7,9 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { StrKey } from "@stellar/stellar-sdk";
 import { parseRange } from "./private-artifacts.mjs";
+import { PrivateAllocationRegistry } from "./private-allocation-registry.mjs";
 import { PrivateMarketRegistry } from "./private-market-registry.mjs";
+import { PrivateProposalRegistry } from "./private-proposal-registry.mjs";
 
 assert.deepEqual(
   parseRange(undefined, 100),
@@ -51,6 +53,80 @@ try {
   await assert.rejects(() => resumed.register("bad"), /invalid/);
 } finally {
   rmSync(directory, { recursive: true, force: true });
+}
+
+const proposalDirectory = mkdtempSync(resolve(tmpdir(), "moros-private-proposals-"));
+const proposalFile = resolve(proposalDirectory, "proposals.json");
+const liquidityVault = StrKey.encodeContract(Buffer.alloc(32, 5));
+const proposalId = "a".repeat(64);
+
+try {
+  const proposals = new PrivateProposalRegistry({
+    stateFile: proposalFile,
+    verify: async (value) => ({
+      proposalId: value,
+      market,
+      liquidityVault,
+    }),
+  });
+  await proposals.register(proposalId);
+  await proposals.register(proposalId);
+  assert.deepEqual(proposals.list(), [{
+    proposalId,
+    market,
+    liquidityVault,
+  }]);
+  await assert.rejects(() => proposals.register("bad"), /invalid proposal/);
+
+  const resumed = new PrivateProposalRegistry({
+    stateFile: proposalFile,
+    verify: async () => {
+      throw new Error("verification should not run while loading state");
+    },
+  });
+  assert.deepEqual(resumed.list(), proposals.list());
+} finally {
+  rmSync(proposalDirectory, { recursive: true, force: true });
+}
+
+const allocationDirectory = mkdtempSync(resolve(tmpdir(), "moros-private-allocations-"));
+const allocationFile = resolve(allocationDirectory, "allocations.json");
+const allocation = {
+  market,
+  epoch: 2n,
+  positionCommitment: 123n,
+  envelope: Array.from({ length: 20 }, (_, index) => BigInt(index)),
+};
+
+try {
+  const allocations = new PrivateAllocationRegistry({
+    stateFile: allocationFile,
+  });
+  allocations.putMany([allocation]);
+  allocations.putMany([allocation]);
+  assert.deepEqual(
+    allocations.get(market, "2", "123"),
+    {
+      market,
+      epoch: "2",
+      positionCommitment: "123",
+      envelope: Array.from({ length: 20 }, (_, index) => String(index)),
+    },
+  );
+  assert.equal(allocations.get(market, "2", "124"), undefined);
+  assert.throws(
+    () => allocations.putMany([{ ...allocation, envelope: [1n] }]),
+    /invalid/,
+  );
+  const resumed = new PrivateAllocationRegistry({
+    stateFile: allocationFile,
+  });
+  assert.deepEqual(
+    resumed.get(market, "2", "123"),
+    allocations.get(market, "2", "123"),
+  );
+} finally {
+  rmSync(allocationDirectory, { recursive: true, force: true });
 }
 
 process.stdout.write("private runtime tests passed\n");

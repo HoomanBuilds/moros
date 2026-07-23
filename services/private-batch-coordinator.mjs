@@ -60,6 +60,7 @@ export class PrivateBatchCoordinator {
     committeeSecret,
     marketClient,
     prove,
+    publishAllocations = async () => {},
     submit = send,
     now = () => Math.floor(Date.now() / 1_000),
   }) {
@@ -79,6 +80,7 @@ export class PrivateBatchCoordinator {
     this.committeeSecret = committeeSecret;
     this.marketClient = marketClient;
     this.prove = prove;
+    this.publishAllocations = publishAllocations;
     this.submit = submit;
     this.now = now;
     this.processing = new Set();
@@ -206,6 +208,7 @@ export class PrivateBatchCoordinator {
         committeeSecret: this.committeeSecret,
       });
       const proof = await this.prove(statement.witness);
+      await this.publishAllocations(statement.allocationPackages);
       await this.submit(this.vault.submit_batch({
         market,
         epoch_number: epochNumber,

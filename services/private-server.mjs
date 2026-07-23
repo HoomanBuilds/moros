@@ -16,9 +16,11 @@ import {
   createBatchProver,
   phaseName,
 } from "./private-batch-coordinator.mjs";
+import { PrivateAllocationRegistry } from "./private-allocation-registry.mjs";
 import { PrivateArtifactStore } from "./private-artifacts.mjs";
 import { PrivateOutputIndexer } from "./private-indexer.mjs";
 import { PrivateMarketRegistry } from "./private-market-registry.mjs";
+import { PrivateProposalRegistry } from "./private-proposal-registry.mjs";
 import {
   FixedWindowRateLimiter,
   decodeRelayRequest,
@@ -53,6 +55,8 @@ const RUNTIME_ROOT = resolve(
 );
 const OUTPUT_STATE = resolve(RUNTIME_ROOT, "outputs.json");
 const MARKET_STATE = resolve(RUNTIME_ROOT, "markets.json");
+const PROPOSAL_STATE = resolve(RUNTIME_ROOT, "proposals.json");
+const ALLOCATION_STATE = resolve(RUNTIME_ROOT, "allocations.json");
 const TICK_MS = Number(process.env.PRIVATE_TICK_MS || 10_000);
 const MAX_BODY = 256 * 1024;
 const ALLOWED_ORIGINS = new Set(
@@ -125,6 +129,38 @@ function serializeTransactions() {
   };
 }
 
+async function syncPublicMarketState(proposalId, state, poolId) {
+  const url =
+    process.env.MARKET_REGISTRY_SUPABASE_URL ||
+    process.env.PRIVATE_SYNC_SUPABASE_URL;
+  const key =
+    process.env.MARKET_REGISTRY_SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.PRIVATE_SYNC_SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return { configured: false };
+  const response = await fetch(
+    `${url.replace(/\/+$/u, "")}/rest/v1/markets_meta?proposal_id=eq.${proposalId}`,
+    {
+      method: "PATCH",
+      headers: {
+        apikey: key,
+        authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+        prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        market_state: state,
+        pool_id: poolId || null,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `public market registry update failed with HTTP ${response.status}`,
+    );
+  }
+  return { configured: true };
+}
+
 async function main() {
   if (
     cfg.network !== "testnet" ||
@@ -174,6 +210,13 @@ async function main() {
   }
   const identity = testnetPrivacyIdentity(process.env.FUNDER_SK);
   const serialize = serializeTransactions();
+  const factory = await contractClient({
+    server,
+    contractId: deployment.contracts.factory,
+    source,
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
   const indexer = new PrivateOutputIndexer({
     client: vault,
     stateFile: OUTPUT_STATE,
@@ -219,8 +262,47 @@ async function main() {
     },
   });
   for (const market of registry.list()) await registry.register(market);
+  const proposals = new PrivateProposalRegistry({
+    stateFile: PROPOSAL_STATE,
+    verify: async (proposalId) => {
+      const encoded = Buffer.from(proposalId, "hex");
+      const proposal = resultValue(await factory.proposal({
+        proposal_id: encoded,
+      }));
+      if (
+        !proposal ||
+        Buffer.from(proposal.proposal_id).toString("hex") !== proposalId ||
+        !proposal.liquidity_vault
+      ) {
+        throw new Error("proposal is not deployed by the configured factory");
+      }
+      const [market, liquidityVault] = await Promise.all([
+        factory.market_address({ proposal_id: encoded }),
+        factory.liquidity_address({ proposal_id: encoded }),
+      ]);
+      const expectedMarket = resultValue(market);
+      const expectedLiquidity = resultValue(liquidityVault);
+      if (
+        proposal.liquidity_vault !== expectedLiquidity ||
+        (proposal.market && proposal.market !== expectedMarket)
+      ) {
+        throw new Error("proposal deterministic addresses do not match");
+      }
+      return {
+        proposalId,
+        market: expectedMarket,
+        liquidityVault: expectedLiquidity,
+      };
+    },
+  });
+  for (const proposal of proposals.list()) {
+    await proposals.register(proposal.proposalId);
+  }
 
   const batchRoot = resolve(ARTIFACT_ROOT, "batch");
+  const allocations = new PrivateAllocationRegistry({
+    stateFile: ALLOCATION_STATE,
+  });
   const coordinator = new PrivateBatchCoordinator({
     vault,
     vaultId,
@@ -232,6 +314,7 @@ async function main() {
       zkeyPath: resolve(batchRoot, "batch.zkey"),
       vkeyPath: resolve(batchRoot, "batch.vk.json"),
     }),
+    publishAllocations: async (packages) => allocations.putMany(packages),
     submit: (transaction) =>
       serialize(async () => (await transaction).signAndSend()),
   });
@@ -249,9 +332,108 @@ async function main() {
     lastIndexAt: new Date().toISOString(),
     outputs: Number(vaultInfo.next_leaf_index),
     markets: {},
+    proposals: {},
     errors: [],
   };
   let ticking = false;
+
+  const processProposal = async (entry) => {
+    const proposalId = Buffer.from(entry.proposalId, "hex");
+    let proposal = resultValue(await factory.proposal({
+      proposal_id: proposalId,
+    }));
+    if (!proposal) throw new Error("registered proposal no longer exists");
+    let phase = phaseName(proposal.phase);
+    const liquidity = await contractClient({
+      server,
+      contractId: entry.liquidityVault,
+      source,
+      rpcUrl: RPC_URL,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    });
+    let info = resultValue(await liquidity.info());
+    const now = Math.floor(Date.now() / 1_000);
+
+    if (phase === "Funding" && phaseName(info.phase) === "Ready") {
+      await serialize(async () =>
+        (await factory.sync_funding({
+          proposal_id: proposalId,
+          expected_version: BigInt(proposal.state_version),
+        })).signAndSend()
+      );
+      proposal = resultValue(await factory.proposal({
+        proposal_id: proposalId,
+      }));
+      phase = phaseName(proposal.phase);
+    }
+
+    if (
+      ["Proposed", "Funding", "Ready"].includes(phase) &&
+      (
+        now > Number(proposal.activation_cutoff) ||
+        (
+          phase !== "Ready" &&
+          now > Number(proposal.funding_deadline)
+        )
+      )
+    ) {
+      await serialize(async () =>
+        (await factory.cancel({
+          proposal_id: proposalId,
+          expected_version: BigInt(proposal.state_version),
+          liquidity_version: BigInt(info.state_version),
+        })).signAndSend()
+      );
+      await syncPublicMarketState(entry.proposalId, "cancelled");
+      return { phase: "Cancelled", market: entry.market };
+    }
+
+    if (phase === "Ready") {
+      info = resultValue(await liquidity.info());
+      await serialize(async () =>
+        (await factory.activate({
+          proposal_id: proposalId,
+          expected_version: BigInt(proposal.state_version),
+          liquidity_version: BigInt(info.state_version),
+        })).signAndSend()
+      );
+      proposal = resultValue(await factory.proposal({
+        proposal_id: proposalId,
+      }));
+      phase = phaseName(proposal.phase);
+    }
+
+    if (phase === "Active") {
+      if (proposal.market !== entry.market) {
+        throw new Error("activated proposal returned an unexpected market");
+      }
+      await registry.register(entry.market);
+      const sync = await syncPublicMarketState(
+        entry.proposalId,
+        "active",
+        vaultId,
+      );
+      return {
+        phase,
+        market: entry.market,
+        registrySyncConfigured: sync.configured,
+      };
+    }
+    if (phase === "Cancelled") {
+      const sync = await syncPublicMarketState(entry.proposalId, "cancelled");
+      return {
+        phase,
+        market: entry.market,
+        registrySyncConfigured: sync.configured,
+      };
+    }
+    return {
+      phase,
+      fundedAssets: info.funded_assets,
+      targetAssets: info.target_assets,
+      market: entry.market,
+    };
+  };
 
   const tick = async () => {
     if (ticking) return;
@@ -260,6 +442,26 @@ async function main() {
       const tree = await indexer.sync();
       runtime.outputs = tree.nextLeafIndex;
       runtime.lastIndexAt = new Date().toISOString();
+      for (const proposal of proposals.list()) {
+        try {
+          runtime.proposals[proposal.proposalId] = {
+            ...(await processProposal(proposal)),
+            checkedAt: new Date().toISOString(),
+          };
+        } catch (error) {
+          runtime.proposals[proposal.proposalId] = {
+            status: "error",
+            checkedAt: new Date().toISOString(),
+            error: String(error?.message || error),
+          };
+          runtime.errors.push({
+            at: new Date().toISOString(),
+            proposal: proposal.proposalId,
+            error: String(error?.message || error),
+          });
+          runtime.errors = runtime.errors.slice(-20);
+        }
+      }
       for (const market of registry.list()) {
         try {
           runtime.markets[market] = {
@@ -332,6 +534,8 @@ async function main() {
       ) {
         sendJson(request, response, 200, {
           ...deployment,
+          networkDomain: Buffer.from(vaultInfo.network_domain).toString("hex"),
+          verifierDomain: Buffer.from(vaultInfo.verifier_domain).toString("hex"),
           artifactBase: "/zk/private",
           publicDepositBoundary: true,
           testnetSingleVmCommittee: true,
@@ -343,6 +547,24 @@ async function main() {
         requestUrl.pathname === "/private/tree"
       ) {
         sendJson(request, response, 200, await indexer.sync());
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/private/allocation"
+      ) {
+        const allocation = allocations.get(
+          requestUrl.searchParams.get("market") || "",
+          requestUrl.searchParams.get("epoch") || "",
+          requestUrl.searchParams.get("commitment") || "",
+        );
+        if (!allocation) {
+          sendJson(request, response, 404, {
+            error: "private allocation witness is not available",
+          });
+          return;
+        }
+        sendJson(request, response, 200, allocation);
         return;
       }
       if (
@@ -370,6 +592,23 @@ async function main() {
           });
         }
         sendJson(request, response, 200, { markets });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/private/register-proposal"
+      ) {
+        const clientKey = request.socket.remoteAddress || "unknown";
+        if (!perClient.take(`proposal:${clientKey}`).allowed) {
+          sendJson(request, response, 429, { error: "rate limit exceeded" });
+          return;
+        }
+        const body = await readBody(request);
+        const proposal = await proposals.register(body.proposalId);
+        sendJson(request, response, 200, {
+          ...proposal,
+          registered: true,
+        });
         return;
       }
       if (
