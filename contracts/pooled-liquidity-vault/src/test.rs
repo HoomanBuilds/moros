@@ -103,6 +103,16 @@ fn cell(
     deadline: u64,
     cutoff: u64,
 ) -> MarketLiquidityVaultClient<'_> {
+    cell_with_target(setup, proposal, TARGET, deadline, cutoff)
+}
+
+fn cell_with_target(
+    setup: &Setup,
+    proposal: BytesN<32>,
+    target: i128,
+    deadline: u64,
+    cutoff: u64,
+) -> MarketLiquidityVaultClient<'_> {
     let address = setup.env.register(
         MarketLiquidityVault,
         (
@@ -110,7 +120,7 @@ fn cell(
             setup.factory.clone(),
             setup.pool.clone(),
             proposal,
-            TARGET,
+            target,
             deadline,
             cutoff,
             7u32,
@@ -120,13 +130,22 @@ fn cell(
 }
 
 fn register(setup: &Setup, cell: &MarketLiquidityVaultClient<'_>, proposal: BytesN<32>) -> u64 {
+    register_with_target(setup, cell, proposal, TARGET)
+}
+
+fn register_with_target(
+    setup: &Setup,
+    cell: &MarketLiquidityVaultClient<'_>,
+    proposal: BytesN<32>,
+    target: i128,
+) -> u64 {
     setup.pool().register_candidate(
         &setup.factory,
         &proposal,
         &cell.address,
         &symbol_short!("XLM"),
         &symbol_short!("CRYPTO"),
-        &TARGET,
+        &target,
         &2_000,
     )
 }
@@ -196,7 +215,31 @@ fn fifo_allocation_funds_the_next_isolated_cell() {
         CandidateStatus::Allocated
     );
     assert_eq!(pool.info().queue_head, 1);
+    assert_eq!(pool.info().pending_candidates, 1);
     assert_eq!(pool.info().idle_assets, DEPOSIT - TARGET);
+}
+
+#[test]
+fn an_oversized_candidate_does_not_block_an_eligible_market() {
+    let setup = setup();
+    let pool = setup.pool();
+    deposit(&setup, DEPOSIT, 1);
+    let oversized_proposal = id(&setup.env, 11);
+    let eligible_proposal = id(&setup.env, 12);
+    let oversized = cell_with_target(&setup, oversized_proposal.clone(), 30_000_000, 2_000, 2_500);
+    let eligible = cell(&setup, eligible_proposal.clone(), 2_000, 2_500);
+    register_with_target(&setup, &oversized, oversized_proposal, 30_000_000);
+    register(&setup, &eligible, eligible_proposal);
+
+    let allocated = pool.allocate_next().unwrap();
+    assert_eq!(allocated.liquidity_vault, eligible.address);
+    assert_eq!(pool.candidate(&0).unwrap().status, CandidateStatus::Pending);
+    assert_eq!(
+        pool.candidate(&1).unwrap().status,
+        CandidateStatus::Allocated
+    );
+    assert_eq!(pool.info().queue_head, 0);
+    assert_eq!(pool.info().pending_candidates, 1);
 }
 
 #[test]

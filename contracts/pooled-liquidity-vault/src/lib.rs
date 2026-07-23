@@ -13,6 +13,7 @@ const USDC_DECIMALS: u32 = 7;
 const VIRTUAL_ASSETS: i128 = 1_000_000;
 const VIRTUAL_SHARES: i128 = 1_000_000;
 const MAX_ACTIVE_ALLOCATIONS: u32 = 16;
+const MAX_QUEUE_SCAN: u32 = 16;
 const MAX_AMOUNT: i128 = 1_000_000_000_000_000_000;
 const TTL_THRESHOLD: u32 = 350_000;
 const TTL_EXTEND_TO: u32 = 500_000;
@@ -151,6 +152,8 @@ pub struct PoolInfo {
     pub active_allocations: u32,
     pub queue_head: u64,
     pub queue_tail: u64,
+    pub pending_candidates: u32,
+    pub allocation_cursor: u64,
     pub state_version: u64,
     pub withdrawal_window_started_at: u64,
     pub withdrawal_window_limit: i128,
@@ -197,6 +200,8 @@ enum DataKey {
     StateVersion,
     QueueHead,
     QueueTail,
+    PendingCandidates,
+    AllocationCursor,
     Candidate(u64),
     CandidateVault(Address),
     CandidateProposal(BytesN<32>),
@@ -304,6 +309,8 @@ impl PooledLiquidityVault {
         storage.set(&DataKey::StateVersion, &0u64);
         storage.set(&DataKey::QueueHead, &0u64);
         storage.set(&DataKey::QueueTail, &0u64);
+        storage.set(&DataKey::PendingCandidates, &0u32);
+        storage.set(&DataKey::AllocationCursor, &0u64);
         storage.set(&DataKey::ActiveAllocations, &Vec::<Address>::new(&env));
         storage.set(&DataKey::WindowStart, &env.ledger().timestamp());
         storage.set(&DataKey::WindowLimit, &0i128);
@@ -329,6 +336,8 @@ impl PooledLiquidityVault {
             active_allocations: active.len(),
             queue_head: storage.get(&DataKey::QueueHead).unwrap_or(0),
             queue_tail: storage.get(&DataKey::QueueTail).unwrap_or(0),
+            pending_candidates: storage.get(&DataKey::PendingCandidates).unwrap_or(0),
+            allocation_cursor: storage.get(&DataKey::AllocationCursor).unwrap_or(0),
             state_version: storage.get(&DataKey::StateVersion).unwrap_or(0),
             withdrawal_window_started_at: storage.get(&DataKey::WindowStart).unwrap_or(0),
             withdrawal_window_limit: storage.get(&DataKey::WindowLimit).unwrap_or(0),
@@ -682,6 +691,17 @@ impl PooledLiquidityVault {
             .set(&DataKey::CandidateProposal(proposal_id.clone()), &sequence);
         Self::bump_persistent(&env, &key);
         env.storage().instance().set(&DataKey::QueueTail, &next);
+        let pending: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingCandidates)
+            .unwrap_or(0);
+        env.storage().instance().set(
+            &DataKey::PendingCandidates,
+            &pending
+                .checked_add(1)
+                .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic)),
+        );
         Self::increment_version(&env);
         Self::bump(&env);
         PoolCandidate {
@@ -695,7 +715,7 @@ impl PooledLiquidityVault {
     }
 
     pub fn allocate_next(env: Env) -> Option<PoolAllocation> {
-        let head: u64 = env
+        let mut head: u64 = env
             .storage()
             .instance()
             .get(&DataKey::QueueHead)
@@ -705,39 +725,83 @@ impl PooledLiquidityVault {
             .instance()
             .get(&DataKey::QueueTail)
             .unwrap_or(0);
-        if head >= tail {
-            return None;
-        }
-        let key = DataKey::Candidate(head);
-        let mut candidate: AllocationCandidate = env
+        let mut pending: u32 = env
             .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidCandidate));
-        if candidate.status != CandidateStatus::Pending {
-            Self::advance_head(&env, head);
+            .instance()
+            .get(&DataKey::PendingCandidates)
+            .unwrap_or(0);
+        if head >= tail || pending == 0 {
             return None;
         }
-        let cell = MarketLiquidityCellClient::new(&env, &candidate.liquidity_vault);
-        let info = cell.info();
-        if env.ledger().timestamp() > candidate.funding_deadline
-            || Self::cell_matches_candidate(&env, &info, &candidate).is_err()
-            || info.phase != CellPhase::Funding
-            || info.funded_assets != 0
-            || info.total_shares != 0
-        {
-            candidate.status = CandidateStatus::Skipped;
-            env.storage().persistent().set(&key, &candidate);
-            Self::bump_persistent(&env, &key);
-            Self::advance_head(&env, head);
-            Self::increment_version(&env);
-            Self::bump(&env);
-            return None;
+        let mut cursor: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AllocationCursor)
+            .unwrap_or(head);
+        if cursor < head || cursor >= tail {
+            cursor = head;
         }
-        let nav = Self::pool_nav(&env);
-        if !Self::has_allocation_capacity(&env, &candidate, &nav) {
-            return None;
-        }
+        let mut scanned = 0u32;
+        let mut changed = false;
+        let (sequence, key, mut candidate, cell) = loop {
+            if scanned >= MAX_QUEUE_SCAN || pending == 0 {
+                env.storage()
+                    .instance()
+                    .set(&DataKey::PendingCandidates, &pending);
+                env.storage().instance().set(&DataKey::QueueHead, &head);
+                env.storage()
+                    .instance()
+                    .set(&DataKey::AllocationCursor, &cursor);
+                if changed {
+                    Self::increment_version(&env);
+                    Self::bump(&env);
+                }
+                return None;
+            }
+            let sequence = cursor;
+            cursor = if cursor.saturating_add(1) >= tail {
+                head
+            } else {
+                cursor + 1
+            };
+            scanned += 1;
+            let key = DataKey::Candidate(sequence);
+            let mut candidate: AllocationCandidate = env
+                .storage()
+                .persistent()
+                .get(&key)
+                .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidCandidate));
+            if candidate.status != CandidateStatus::Pending {
+                continue;
+            }
+            let cell = MarketLiquidityCellClient::new(&env, &candidate.liquidity_vault);
+            let info = cell.info();
+            if env.ledger().timestamp() > candidate.funding_deadline
+                || Self::cell_matches_candidate(&env, &info, &candidate).is_err()
+                || info.phase != CellPhase::Funding
+                || info.funded_assets != 0
+                || info.total_shares != 0
+            {
+                candidate.status = CandidateStatus::Skipped;
+                env.storage().persistent().set(&key, &candidate);
+                Self::bump_persistent(&env, &key);
+                pending = pending
+                    .checked_sub(1)
+                    .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+                changed = true;
+                if sequence == head {
+                    head = Self::compact_head(&env, head, tail);
+                    if cursor < head {
+                        cursor = head;
+                    }
+                }
+                continue;
+            }
+            let nav = Self::pool_nav(&env);
+            if Self::has_allocation_capacity(&env, &candidate, &nav) {
+                break (sequence, key, candidate, cell);
+            }
+        };
         let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let current = env.current_contract_address();
         let token_client = token::Client::new(&env, &token);
@@ -820,11 +884,28 @@ impl PooledLiquidityVault {
         candidate.status = CandidateStatus::Allocated;
         env.storage().persistent().set(&key, &candidate);
         Self::bump_persistent(&env, &key);
-        Self::advance_head(&env, head);
+        pending = pending
+            .checked_sub(1)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+        if sequence == head {
+            head = Self::compact_head(&env, head, tail);
+        }
+        if pending == 0 {
+            cursor = tail;
+        } else if cursor < head || cursor >= tail {
+            cursor = head;
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingCandidates, &pending);
+        env.storage().instance().set(&DataKey::QueueHead, &head);
+        env.storage()
+            .instance()
+            .set(&DataKey::AllocationCursor, &cursor);
         let state_version = Self::increment_version(&env);
         Self::bump(&env);
         PoolAllocationEvent {
-            sequence: head,
+            sequence,
             liquidity_vault: candidate.liquidity_vault,
             risk_group: candidate.risk_group,
             principal: candidate.target_assets,
@@ -1217,13 +1298,21 @@ impl PooledLiquidityVault {
         }
     }
 
-    fn advance_head(env: &Env, head: u64) {
-        env.storage().instance().set(
-            &DataKey::QueueHead,
-            &head
+    fn compact_head(env: &Env, mut head: u64, tail: u64) -> u64 {
+        while head < tail {
+            let candidate: AllocationCandidate = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Candidate(head))
+                .unwrap_or_else(|| panic_with_error!(env, Error::InvalidCandidate));
+            if candidate.status == CandidateStatus::Pending {
+                break;
+            }
+            head = head
                 .checked_add(1)
-                .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic)),
-        );
+                .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        }
+        head
     }
 
     fn require_controller(env: &Env, controller: &Address) {

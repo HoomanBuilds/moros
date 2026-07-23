@@ -64,6 +64,15 @@ const BABYJUB_BASE8: Point = [
   16950150798460657717958625567821834550301663161624707787222815936182638968203n,
 ];
 
+function formatPrivateAtomic(amount: bigint): string {
+  const whole = amount / USDC_SCALE;
+  const fraction = (amount % USDC_SCALE)
+    .toString()
+    .padStart(7, "0")
+    .replace(/0+$/u, "");
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
 type PrivateTransition = {
   proof: Uint8Array;
   membership_root: bigint;
@@ -86,6 +95,57 @@ export type LiquidityVaultInfo = {
   decimals: number;
   phase: string | { tag: string };
   market?: string;
+  state_version: bigint;
+};
+
+export type PooledLiquidityInfo = {
+  token: string;
+  factory: string;
+  shared_vault: string;
+  governance: string;
+  policy: {
+    deposit_cap: bigint;
+    max_active_allocations: number;
+    max_deployed_bps: number;
+    max_market_bps: number;
+    max_group_bps: number;
+    minimum_idle_bps: number;
+    withdrawal_window: bigint;
+    max_withdrawal_bps: number;
+  };
+  idle_assets: bigint;
+  total_shares: bigint;
+  deployed_principal: bigint;
+  active_allocations: number;
+  queue_head: bigint;
+  queue_tail: bigint;
+  pending_candidates: number;
+  allocation_cursor: bigint;
+  state_version: bigint;
+  withdrawal_window_started_at: bigint;
+  withdrawal_window_limit: bigint;
+  withdrawal_window_used: bigint;
+};
+
+export type PooledLiquidityNav = {
+  deposit_nav: bigint;
+  withdrawal_nav: bigint;
+  idle_assets: bigint;
+  funding_assets: bigint;
+  terminal_assets: bigint;
+  active_floor_assets: bigint;
+  active_ceiling_assets: bigint;
+  conditional_fees_excluded: bigint;
+  immediate_assets: bigint;
+  limiter_resets_at: bigint;
+};
+
+export type PooledRedemptionPreview = {
+  shares: bigint;
+  assets: bigint;
+  immediate_assets: bigint;
+  can_redeem_now: boolean;
+  limiter_resets_at: bigint;
   state_version: bigint;
 };
 
@@ -841,7 +901,51 @@ export async function getLiquidityVaultInfo(
   );
 }
 
-export async function fundMarketLiquidity(
+export async function getPooledLiquidityState(
+  address: string,
+): Promise<{
+  poolId: string;
+  info: PooledLiquidityInfo;
+  nav: PooledLiquidityNav;
+}> {
+  const config = await getPrivateConfig();
+  const [info, nav] = await Promise.all([
+    readPrivateContract<PooledLiquidityInfo>(
+      config.contracts.liquidityPool,
+      address,
+      "info",
+    ),
+    readPrivateContract<PooledLiquidityNav>(
+      config.contracts.liquidityPool,
+      address,
+      "nav",
+    ),
+  ]);
+  if (
+    info.token !== config.collateral.contract ||
+    info.factory !== config.contracts.factory ||
+    info.shared_vault !== config.contracts.sharedVault
+  ) {
+    throw new Error("The pooled liquidity vault is not wired to this deployment");
+  }
+  return { poolId: config.contracts.liquidityPool, info, nav };
+}
+
+export async function previewPooledLiquidityRedemption(
+  address: string,
+  shares: bigint,
+): Promise<PooledRedemptionPreview> {
+  assertAmount(shares);
+  const config = await getPrivateConfig();
+  return readPrivateContract<PooledRedemptionPreview>(
+    config.contracts.liquidityPool,
+    address,
+    "preview_redeem",
+    { shares },
+  );
+}
+
+async function fundLiquidity(
   address: string,
   liquidityVaultId: string,
   requestedAmount: bigint,
@@ -849,22 +953,38 @@ export async function fundMarketLiquidity(
 ): Promise<{ hash: string; assets: bigint; shares: bigint }> {
   assertAmount(requestedAmount);
   onStatus?.("Reading private balance and LP vault");
-  const info = await getLiquidityVaultInfo(address, liquidityVaultId);
-  if (phaseName(info.phase) !== "Funding") {
-    throw new Error("This market is no longer accepting initial liquidity");
+  const config = await getPrivateConfig();
+  let amount = requestedAmount;
+  let shares: bigint;
+  let stateVersion: bigint;
+  if (liquidityVaultId === config.contracts.liquidityPool) {
+    const state = await getPooledLiquidityState(address);
+    shares = await readPrivateContract<bigint>(
+      liquidityVaultId,
+      address,
+      "preview_deposit",
+      { assets: amount },
+    );
+    stateVersion = state.info.state_version;
+  } else {
+    const info = await getLiquidityVaultInfo(address, liquidityVaultId);
+    if (phaseName(info.phase) !== "Funding") {
+      throw new Error("This market is no longer accepting initial liquidity");
+    }
+    const remaining = info.target_assets - info.funded_assets;
+    amount = requestedAmount < remaining ? requestedAmount : remaining;
+    shares = amount * (info.total_shares + VIRTUAL_SHARES)
+      / (info.funded_assets + VIRTUAL_ASSETS);
+    stateVersion = info.state_version;
   }
-  const remaining = info.target_assets - info.funded_assets;
-  const amount = requestedAmount < remaining ? requestedAmount : remaining;
   assertAmount(amount);
+  assertAmount(shares);
   const { wallet, note: input } = await privateWalletWithSpendableNote(
     address,
     amount,
     onStatus,
   );
   const inputTotal = input.amount;
-  const shares = amount * (info.total_shares + VIRTUAL_SHARES)
-    / (info.funded_assets + VIRTUAL_ASSETS);
-  assertAmount(shares);
   const id = actionId();
   const expiry = actionExpiry();
   const liquidityAddressFields = await addressLimbs(liquidityVaultId);
@@ -911,7 +1031,7 @@ export async function fundMarketLiquidity(
   bindingFields[2] = outputs[1].commitment;
   bindingFields[3] = shares;
   bindingFields[4] = amount;
-  bindingFields[5] = info.state_version;
+  bindingFields[5] = stateVersion;
   const contextFields = await operationContextFields({
     networkDomain: wallet.config.networkDomain,
     vault: wallet.config.contracts.sharedVault,
@@ -978,7 +1098,7 @@ export async function fundMarketLiquidity(
       amount,
       expected_shares: shares,
       share_commitment: hexToBytes(outputs[1].commitment.toString(16).padStart(64, "0")),
-      expected_version: info.state_version,
+      expected_version: stateVersion,
       action_id: hexToBytes(id),
       expiry,
       transition: transition(
@@ -991,6 +1111,29 @@ export async function fundMarketLiquidity(
     },
   );
   return { hash, assets: amount, shares };
+}
+
+export async function fundPooledLiquidity(
+  address: string,
+  requestedAmount: bigint,
+  onStatus?: (status: string) => void,
+): Promise<{ hash: string; assets: bigint; shares: bigint }> {
+  const config = await getPrivateConfig();
+  return fundLiquidity(
+    address,
+    config.contracts.liquidityPool,
+    requestedAmount,
+    onStatus,
+  );
+}
+
+export async function fundMarketLiquidity(
+  address: string,
+  liquidityVaultId: string,
+  requestedAmount: bigint,
+  onStatus?: (status: string) => void,
+): Promise<{ hash: string; assets: bigint; shares: bigint }> {
+  return fundLiquidity(address, liquidityVaultId, requestedAmount, onStatus);
 }
 
 export type OwnedLiquidityShare = {
@@ -1052,18 +1195,42 @@ export async function withdrawLiquidity({
   if (!note || shares > note.amount) {
     throw new Error("The private LP share note is unavailable");
   }
-  const info = await getLiquidityVaultInfo(address, liquidityVaultId);
-  const phase = phaseName(info.phase);
-  const terminal = phase === "Cancelled" || phase === "Settled";
-  if (!terminal && phase !== "Funding" && phase !== "Ready") {
-    throw new Error("Active LP shares require a replacement exit");
+  const config = await getPrivateConfig();
+  let terminal = false;
+  let assets: bigint;
+  let stateVersion: bigint;
+  if (liquidityVaultId === config.contracts.liquidityPool) {
+    const preview = await readPrivateContract<PooledRedemptionPreview>(
+      liquidityVaultId,
+      address,
+      "preview_redeem",
+      { shares },
+    );
+    if (!preview.can_redeem_now) {
+      const available = formatPrivateAtomic(preview.immediate_assets);
+      const resets = new Date(Number(preview.limiter_resets_at) * 1_000)
+        .toLocaleString();
+      throw new Error(
+        `This share note is larger than the current ${available} USDC immediate exit capacity. The limit resets ${resets}.`,
+      );
+    }
+    assets = preview.assets;
+    stateVersion = preview.state_version;
+  } else {
+    const info = await getLiquidityVaultInfo(address, liquidityVaultId);
+    const phase = phaseName(info.phase);
+    terminal = phase === "Cancelled" || phase === "Settled";
+    if (!terminal && phase !== "Funding" && phase !== "Ready") {
+      throw new Error("Active LP shares require a replacement exit");
+    }
+    const assetsAvailable = terminal
+      ? info.terminal_assets
+      : info.funded_assets;
+    assets = shares === info.total_shares
+      ? assetsAvailable
+      : shares * assetsAvailable / info.total_shares;
+    stateVersion = info.state_version;
   }
-  const assetsAvailable = terminal
-    ? info.terminal_assets
-    : info.funded_assets;
-  const assets = shares === info.total_shares
-    ? assetsAvailable
-    : shares * assetsAvailable / info.total_shares;
   assertAmount(assets);
   const remainingShares = note.amount - shares;
   const id = actionId();
@@ -1110,7 +1277,7 @@ export async function withdrawLiquidity({
   bindingFields[2] = outputs[1].commitment;
   bindingFields[3] = shares;
   bindingFields[4] = assets;
-  bindingFields[5] = info.state_version;
+  bindingFields[5] = stateVersion;
   const contextFields = await operationContextFields({
     networkDomain: wallet.config.networkDomain,
     vault: wallet.config.contracts.sharedVault,
@@ -1179,7 +1346,7 @@ export async function withdrawLiquidity({
       remaining_share_commitment: hexToBytes(
         outputs[1].commitment.toString(16).padStart(64, "0"),
       ),
-      expected_version: info.state_version,
+      expected_version: stateVersion,
       action_id: hexToBytes(id),
       expiry,
       transition: transition(

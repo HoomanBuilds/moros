@@ -1,451 +1,289 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRightLeft,
+  Activity,
+  CircleDollarSign,
   Droplets,
+  Layers3,
   LockKeyhole,
+  Network,
   RefreshCw,
   ShieldCheck,
+  Vault,
   WalletCards,
 } from "lucide-react";
-import { AssetIcon } from "@/components/markets/asset-icon";
 import { EmptyState, PageHeader, Panel, Tag } from "@/components/app/app-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import {
-  cancelLiquidityExit,
-  fundMarketLiquidity,
-  getLiquidityExitQuote,
+  fundPooledLiquidity,
   getOwnedLiquidityShares,
-  getPrivateLiquidityExitOffers,
-  getLiquidityVaultInfo,
-  matchLiquidityExit,
-  requestLiquidityExit,
+  getPooledLiquidityState,
+  previewPooledLiquidityRedemption,
   withdrawLiquidity,
-  type LiquidityVaultInfo,
   type OwnedLiquidityShare,
-  type PrivateLiquidityExitOffer,
+  type PooledLiquidityInfo,
+  type PooledLiquidityNav,
+  type PooledRedemptionPreview,
 } from "@/lib/private/actions";
 import { openPrivateWallet } from "@/lib/private/wallet";
-import {
-  fetchLiquidityMarkets,
-  type RegistryMarket,
-} from "@/lib/supabase/markets-meta";
 import {
   formatTokenAmount,
   parseTokenAmount,
 } from "@/lib/stellar/amount";
 import { NETWORK } from "@/lib/network";
-import { connectWallet } from "@/lib/wallet-store";
-import { useWalletAddress } from "@/lib/wallet-store";
+import { connectWallet, useWalletAddress } from "@/lib/wallet-store";
 import { cn } from "@/lib/utils";
 
-type CardState = {
-  amount: string;
+type ShareRow = OwnedLiquidityShare & {
+  preview?: PooledRedemptionPreview;
+};
+
+type ActionState = {
+  busy: boolean;
   status: string;
   error: string;
-  busy: boolean;
 };
 
-type ExitForm = {
-  minimumPayment: string;
-  expiry: string;
+const EMPTY_ACTION: ActionState = {
+  busy: false,
+  status: "",
+  error: "",
 };
 
-function phaseName(value: LiquidityVaultInfo["phase"]): string {
-  return typeof value === "string" ? value : value.tag;
+function token(amount: bigint, digits = 2): string {
+  return formatTokenAmount(amount, NETWORK.collateral.decimals, digits);
 }
 
-function progress(info: LiquidityVaultInfo | undefined, target: bigint): number {
-  if (!info || target <= 0n) return 0;
-  return Math.min(100, Number(info.funded_assets * 10_000n / target) / 100);
+function percent(numerator: bigint, denominator: bigint): string {
+  if (denominator <= 0n) return "0%";
+  return `${Number(numerator * 10_000n / denominator) / 100}%`;
 }
 
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function localDateTimeValue(timestamp: number): string {
-  const date = new Date(timestamp);
-  return new Date(timestamp - date.getTimezoneOffset() * 60_000)
-    .toISOString()
-    .slice(0, 16);
+function shorten(value: string): string {
+  return `${value.slice(0, 7)}...${value.slice(-5)}`;
 }
 
 export default function LiquidityPage() {
   const address = useWalletAddress();
-  const [markets, setMarkets] = useState<RegistryMarket[]>([]);
-  const [vaults, setVaults] = useState<Record<string, LiquidityVaultInfo>>({});
-  const [cards, setCards] = useState<Record<string, CardState>>({});
+  const [poolId, setPoolId] = useState("");
+  const [info, setInfo] = useState<PooledLiquidityInfo>();
+  const [nav, setNav] = useState<PooledLiquidityNav>();
   const [privateBalance, setPrivateBalance] = useState<bigint | null>(null);
-  const [ownedShares, setOwnedShares] = useState<OwnedLiquidityShare[]>([]);
-  const [exitOffers, setExitOffers] = useState<PrivateLiquidityExitOffer[]>([]);
-  const [exitForms, setExitForms] = useState<Record<string, ExitForm>>({});
-  const [loading, setLoading] = useState(true);
+  const [shares, setShares] = useState<ShareRow[]>([]);
+  const [depositAmount, setDepositAmount] = useState("20");
+  const [withdrawAmounts, setWithdrawAmounts] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  const [depositAction, setDepositAction] = useState<ActionState>(EMPTY_ACTION);
+  const [shareActions, setShareActions] = useState<Record<string, ActionState>>({});
   const [pageError, setPageError] = useState("");
-  const [nowSeconds, setNowSeconds] = useState(0);
 
-  const loadMarkets = useCallback(async () => {
-    setLoading(true);
-    setPageError("");
-    try {
-      const rows = await fetchLiquidityMarkets();
-      setMarkets(rows);
-      if (address) {
-        const entries = await Promise.all(rows.map(async (market) => {
-          if (!market.liquidityVaultId) return null;
-          const info = await getLiquidityVaultInfo(address, market.liquidityVaultId);
-          return [market.marketId, info] as const;
-        }));
-        setVaults(Object.fromEntries(entries.filter((entry) => entry !== null)));
-      } else {
-        setVaults({});
-        setPrivateBalance(null);
-        setOwnedShares([]);
-        setExitOffers([]);
-      }
-    } catch (error) {
-      setPageError(error instanceof Error ? error.message : "Funding rounds could not be loaded");
-    } finally {
-      setLoading(false);
+  const readPool = useCallback(async () => {
+    if (!address) {
+      setInfo(undefined);
+      setNav(undefined);
+      setPoolId("");
+      return;
     }
+    const state = await getPooledLiquidityState(address);
+    setPoolId(state.poolId);
+    setInfo(state.info);
+    setNav(state.nav);
   }, [address]);
 
   useEffect(() => {
-    void loadMarkets();
-  }, [loadMarkets]);
+    let cancelled = false;
+    if (!address) {
+      setPrivateBalance(null);
+      setShares([]);
+      void readPool();
+      return;
+    }
+    setLoading(true);
+    setPageError("");
+    void readPool()
+      .catch((error) => {
+        if (!cancelled) {
+          setPageError(
+            error instanceof Error ? error.message : "Liquidity pool could not be loaded",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address, readPool]);
 
-  useEffect(() => {
-    const update = () => setNowSeconds(Math.floor(Date.now() / 1_000));
-    update();
-    const timer = window.setInterval(update, 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const activeMarkets = useMemo(() => markets.filter((market) => {
-    const info = vaults[market.marketId];
-    return !info || ["Funding", "Ready"].includes(phaseName(info.phase));
-  }), [markets, vaults]);
-  const ownedOpenExits = useMemo(() => exitOffers.filter((offer) =>
-    offer.owned && offer.status === "Open"
-  ), [exitOffers]);
-  const availableExitOffers = useMemo(() => exitOffers.filter((offer) =>
-    !offer.owned &&
-    offer.status === "Open" &&
-    offer.expiry >= BigInt(nowSeconds)
-  ), [exitOffers, nowSeconds]);
-
-  function updateCard(marketId: string, update: Partial<CardState>) {
-    setCards((current) => ({
-      ...current,
-      [marketId]: {
-        amount: current[marketId]?.amount ?? "5",
-        status: current[marketId]?.status ?? "",
-        error: current[marketId]?.error ?? "",
-        busy: current[marketId]?.busy ?? false,
-        ...update,
-      },
-    }));
-  }
+  const loadPrivateState = useCallback(async () => {
+    if (!address) throw new Error("Connect a wallet first");
+    const wallet = await openPrivateWallet(address);
+    const state = await getPooledLiquidityState(address);
+    const owned = await getOwnedLiquidityShares(address, [state.poolId], wallet);
+    const rows = await Promise.all(owned.map(async (share) => ({
+      ...share,
+      preview: await previewPooledLiquidityRedemption(address, share.shares),
+    })));
+    setPoolId(state.poolId);
+    setInfo(state.info);
+    setNav(state.nav);
+    setPrivateBalance(wallet.balance);
+    setShares(rows);
+    setWithdrawAmounts((current) => {
+      const next = { ...current };
+      for (const share of rows) {
+        const key = share.commitment.toString();
+        next[key] ??= token(share.shares, NETWORK.collateral.decimals);
+      }
+      return next;
+    });
+    return { wallet, state, rows };
+  }, [address]);
 
   async function unlock() {
     if (!address) return;
     setUnlocking(true);
     setPageError("");
     try {
-      const wallet = await openPrivateWallet(address);
-      const [shares, offers] = await Promise.all([
-        getOwnedLiquidityShares(
-          address,
-          markets.flatMap((market) =>
-            market.liquidityVaultId ? [market.liquidityVaultId] : []
-          ),
-          wallet,
-        ),
-        getPrivateLiquidityExitOffers(address, undefined, wallet),
-      ]);
-      setPrivateBalance(wallet.balance);
-      setOwnedShares(shares);
-      setExitOffers(offers);
+      await loadPrivateState();
     } catch (error) {
-      setPageError(error instanceof Error ? error.message : "Private balance could not be unlocked");
+      setPageError(
+        error instanceof Error ? error.message : "Private balance could not be unlocked",
+      );
     } finally {
       setUnlocking(false);
     }
   }
 
-  async function refreshPrivateLiquidityState() {
-    if (!address) throw new Error("Connect a wallet first");
-    const wallet = await openPrivateWallet(address);
-    const [shares, offers] = await Promise.all([
-      getOwnedLiquidityShares(
-        address,
-        markets.flatMap((entry) =>
-          entry.liquidityVaultId ? [entry.liquidityVaultId] : []
-        ),
-        wallet,
-      ),
-      getPrivateLiquidityExitOffers(address, undefined, wallet),
-    ]);
-    setPrivateBalance(wallet.balance);
-    setOwnedShares(shares);
-    setExitOffers(offers);
-    return { wallet, shares, offers };
-  }
-
-  async function fund(market: RegistryMarket) {
-    if (!address || !market.liquidityVaultId) return;
-    const card = cards[market.marketId] ?? { amount: "5", status: "", error: "", busy: false };
-    updateCard(market.marketId, { busy: true, error: "", status: "Preparing private funding" });
+  async function deposit() {
+    if (!address || privateBalance === null) return;
+    setDepositAction({ busy: true, status: "Preparing private pool deposit", error: "" });
     try {
-      const amount = parseTokenAmount(card.amount, NETWORK.collateral.decimals);
-      const funded = await fundMarketLiquidity(
-        address,
-        market.liquidityVaultId,
-        amount,
-        (status) => updateCard(market.marketId, { status }),
-      );
-      updateCard(market.marketId, {
-        status: `Funded ${formatTokenAmount(funded.assets, NETWORK.collateral.decimals, 2)} USDC privately`,
-      });
-      const [wallet, info] = await Promise.all([
-        openPrivateWallet(address),
-        getLiquidityVaultInfo(address, market.liquidityVaultId),
-      ]);
-      setPrivateBalance(wallet.balance);
-      setOwnedShares(await getOwnedLiquidityShares(
-        address,
-        markets.flatMap((entry) =>
-          entry.liquidityVaultId ? [entry.liquidityVaultId] : []
-        ),
-      ));
-      setVaults((current) => ({ ...current, [market.marketId]: info }));
-    } catch (error) {
-      updateCard(market.marketId, {
-        error: error instanceof Error ? error.message : "Private funding failed",
-        status: "",
-      });
-    } finally {
-      updateCard(market.marketId, { busy: false });
-    }
-  }
-
-  async function withdraw(
-    market: RegistryMarket,
-    share: OwnedLiquidityShare,
-  ) {
-    if (!address || !market.liquidityVaultId) return;
-    const key = `lp:${share.commitment}`;
-    updateCard(key, { busy: true, error: "", status: "Preparing private LP withdrawal" });
-    try {
-      const result = await withdrawLiquidity({
-        address,
-        liquidityVaultId: market.liquidityVaultId,
-        shareCommitment: share.commitment,
-        shares: share.shares,
-        onStatus: (status) => updateCard(key, { status }),
-      });
-      updateCard(key, {
-        status: `Returned ${formatTokenAmount(result.assets, NETWORK.collateral.decimals, 4)} private USDC`,
-      });
-      const [wallet, info, shares] = await Promise.all([
-        openPrivateWallet(address),
-        getLiquidityVaultInfo(address, market.liquidityVaultId),
-        getOwnedLiquidityShares(
-          address,
-          markets.flatMap((entry) =>
-            entry.liquidityVaultId ? [entry.liquidityVaultId] : []
-          ),
-        ),
-      ]);
-      setPrivateBalance(wallet.balance);
-      setOwnedShares(shares);
-      setVaults((current) => ({ ...current, [market.marketId]: info }));
-    } catch (error) {
-      updateCard(key, {
-        error: error instanceof Error ? error.message : "Private LP withdrawal failed",
-        status: "",
-      });
-    } finally {
-      updateCard(key, { busy: false });
-    }
-  }
-
-  async function prepareExit(
-    market: RegistryMarket,
-    share: OwnedLiquidityShare,
-  ) {
-    if (!address || !market.liquidityVaultId) return;
-    const key = `lp:${share.commitment}`;
-    updateCard(key, { busy: true, error: "", status: "Reading current LP scenario value" });
-    try {
-      const quote = await getLiquidityExitQuote({
-        address,
-        market: market.marketId,
-        liquidityVaultId: market.liquidityVaultId,
-        shares: share.shares,
-      });
-      const latestExpiry = (market.settlementTime ?? Date.now() + 86_400_000) - 60_000;
-      const suggestedExpiry = Math.min(
-        Date.now() + 86_400_000,
-        latestExpiry,
-      );
-      if (suggestedExpiry <= Date.now() + 60_000) {
-        throw new Error("This market is too close to expiry for a new LP exit offer");
+      const amount = parseTokenAmount(depositAmount, NETWORK.collateral.decimals);
+      if (amount > privateBalance) {
+        throw new Error("Add enough private USDC in Portfolio before depositing");
       }
-      setExitForms((current) => ({
-        ...current,
-        [key]: {
-          minimumPayment: formatTokenAmount(
-            quote.floor,
-            NETWORK.collateral.decimals,
-            NETWORK.collateral.decimals,
-          ),
-          expiry: localDateTimeValue(suggestedExpiry),
-        },
-      }));
-      updateCard(key, {
-        status: `Current scenario range is ${formatTokenAmount(quote.floor, NETWORK.collateral.decimals, 4)} to ${formatTokenAmount(quote.ceiling, NETWORK.collateral.decimals, 4)} USDC`,
+      const result = await fundPooledLiquidity(
+        address,
+        amount,
+        (status) => setDepositAction({ busy: true, status, error: "" }),
+      );
+      setDepositAction({
+        busy: false,
+        status: `${token(result.assets, 4)} private USDC added to the Moros liquidity pool`,
+        error: "",
       });
+      await loadPrivateState();
     } catch (error) {
-      updateCard(key, {
-        error: error instanceof Error ? error.message : "LP exit terms could not be prepared",
+      setDepositAction({
+        busy: false,
         status: "",
+        error: error instanceof Error ? error.message : "Private pool deposit failed",
       });
-    } finally {
-      updateCard(key, { busy: false });
     }
   }
 
-  async function createExitOffer(
-    market: RegistryMarket,
-    share: OwnedLiquidityShare,
-  ) {
-    if (!address || !market.liquidityVaultId) return;
-    const key = `lp:${share.commitment}`;
-    const form = exitForms[key];
-    if (!form) return;
-    updateCard(key, { busy: true, error: "", status: "Preparing private LP exit" });
+  function updateShareAction(key: string, update: Partial<ActionState>) {
+    setShareActions((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] ?? EMPTY_ACTION),
+        ...update,
+      },
+    }));
+  }
+
+  async function withdraw(share: ShareRow) {
+    if (!address || !poolId) return;
+    const key = share.commitment.toString();
+    updateShareAction(key, {
+      busy: true,
+      status: "Preparing private pool withdrawal",
+      error: "",
+    });
     try {
-      const minimumPayment = parseTokenAmount(
-        form.minimumPayment,
+      const requested = parseTokenAmount(
+        withdrawAmounts[key] || "",
         NETWORK.collateral.decimals,
       );
-      const parsedExpiry = Date.parse(form.expiry);
-      if (!Number.isFinite(parsedExpiry)) throw new Error("Choose a valid exit expiry");
-      const result = await requestLiquidityExit({
-        address,
-        market: market.marketId,
-        liquidityVaultId: market.liquidityVaultId,
-        shareCommitment: share.commitment,
-        shares: share.shares,
-        minimumPayment,
-        exitExpiry: BigInt(Math.floor(parsedExpiry / 1_000)),
-        onStatus: (status) => updateCard(key, { status }),
-      });
-      updateCard(key, {
-        status: result.registrationPending
-          ? `Exit ${result.exitId.slice(0, 10)} is on-chain. Public offer indexing is retrying.`
-          : "Private LP exit offer is open",
-      });
-      setExitForms((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-      for (let attempt = 0; attempt < 6; attempt++) {
-        await wait(2_000);
-        const refreshed = await refreshPrivateLiquidityState();
-        if (refreshed.offers.some((offer) =>
-          offer.exitId === result.exitId && offer.owned
-        )) break;
+      if (requested > share.shares) {
+        throw new Error("Withdrawal shares exceed this private share note");
       }
-    } catch (error) {
-      updateCard(key, {
-        error: error instanceof Error ? error.message : "Private LP exit failed",
-        status: "",
+      const result = await withdrawLiquidity({
+        address,
+        liquidityVaultId: poolId,
+        shareCommitment: share.commitment,
+        shares: requested,
+        onStatus: (status) => updateShareAction(key, { status }),
       });
-    } finally {
-      updateCard(key, { busy: false });
+      updateShareAction(key, {
+        busy: false,
+        status: `${token(result.assets, 4)} private USDC returned to your reusable balance`,
+        error: "",
+      });
+      await loadPrivateState();
+    } catch (error) {
+      updateShareAction(key, {
+        busy: false,
+        status: "",
+        error: error instanceof Error ? error.message : "Private pool withdrawal failed",
+      });
     }
   }
 
-  async function cancelExitOffer(offer: PrivateLiquidityExitOffer) {
-    if (!address) return;
-    const key = `exit:${offer.exitId}`;
-    updateCard(key, { busy: true, error: "", status: "Preparing private cancellation" });
+  const queuedMarkets = info?.pending_candidates ?? 0;
+  const totalPrivateShares = shares.reduce(
+    (total, share) => total + share.shares,
+    0n,
+  );
+  const depositAtomic = (() => {
     try {
-      await cancelLiquidityExit({
-        address,
-        market: offer.market,
-        liquidityVaultId: offer.liquidityVaultId,
-        exitId: offer.exitId,
-        onStatus: (status) => updateCard(key, { status }),
-      });
-      updateCard(key, { status: "LP shares returned to the private wallet" });
-      await wait(2_000);
-      await refreshPrivateLiquidityState();
-    } catch (error) {
-      updateCard(key, {
-        error: error instanceof Error ? error.message : "Private exit cancellation failed",
-        status: "",
-      });
-    } finally {
-      updateCard(key, { busy: false });
+      return parseTokenAmount(depositAmount, NETWORK.collateral.decimals);
+    } catch {
+      return 0n;
     }
-  }
-
-  async function takeExitOffer(offer: PrivateLiquidityExitOffer) {
-    if (!address) return;
-    const key = `offer:${offer.exitId}`;
-    updateCard(key, { busy: true, error: "", status: "Verifying current market risk" });
-    try {
-      const result = await matchLiquidityExit({
-        address,
-        market: offer.market,
-        liquidityVaultId: offer.liquidityVaultId,
-        exitId: offer.exitId,
-        onStatus: (status) => updateCard(key, { status }),
-      });
-      updateCard(key, {
-        status: `Acquired ${formatTokenAmount(result.shares, NETWORK.collateral.decimals, 4)} LP shares`,
-      });
-      await wait(2_000);
-      await refreshPrivateLiquidityState();
-    } catch (error) {
-      updateCard(key, {
-        error: error instanceof Error ? error.message : "Private LP replacement failed",
-        status: "",
-      });
-    } finally {
-      updateCard(key, { busy: false });
-    }
-  }
+  })();
+  const canDeposit =
+    privateBalance !== null &&
+    depositAtomic > 0n &&
+    depositAtomic <= privateBalance;
 
   return (
     <div className="space-y-8 pb-12">
       <PageHeader
         label="Permissionless LP"
-        title="Fund markets"
-        description="Provide private USDC liquidity to isolated market vaults. Each market has its own risk, shares, fees, and settlement."
+        title="Moros liquidity pool"
+        description="Deposit private USDC once. The pool automatically supplies approved markets through isolated risk cells, so market creators never need to fund their own markets."
       />
 
       <Panel className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="flex items-start gap-3">
-          <LockKeyhole className="mt-0.5 size-5 shrink-0 text-[#eca8d6]" aria-hidden="true" />
+          <LockKeyhole
+            className="mt-0.5 size-5 shrink-0 text-[#eca8d6]"
+            aria-hidden="true"
+          />
           <div>
             <p className="text-sm font-medium">Private LP wallet</p>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-foreground/55">
-              Deposits and final withdrawals are public Stellar boundaries. Internal LP ownership, market allocation, exits, and claims use private notes and proof relaying.
+              Wallet shielding and unshielding are public Stellar boundaries. LP ownership stays
+              in encrypted notes. Pool capital, risk limits, and market allocations remain publicly
+              auditable for solvency.
             </p>
             {privateBalance !== null && (
-              <p className="mt-3 font-mono text-sm text-emerald-200">
-                {formatTokenAmount(privateBalance, NETWORK.collateral.decimals, 2)} private USDC available
-              </p>
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs">
+                <span className="text-emerald-200">
+                  {token(privateBalance)} private USDC available
+                </span>
+                <span className="text-foreground/50">
+                  {token(totalPrivateShares, 4)} private pool shares
+                </span>
+              </div>
             )}
           </div>
         </div>
@@ -463,7 +301,7 @@ export default function LiquidityPage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" disabled={unlocking} onClick={() => void unlock()}>
               <RefreshCw className={cn("size-4", unlocking && "animate-spin")} />
-              Refresh balance
+              Refresh
             </Button>
             <Button asChild>
               <Link href="/app/portfolio">Add private USDC</Link>
@@ -473,370 +311,258 @@ export default function LiquidityPage() {
       </Panel>
 
       {pageError && (
-        <div role="alert" className="rounded-lg border border-red-300/20 bg-red-300/[0.05] p-4 text-sm text-red-200">
+        <div
+          role="alert"
+          className="rounded-lg border border-red-300/20 bg-red-300/[0.05] p-4 text-sm text-red-200"
+        >
           {pageError}
         </div>
       )}
 
-      {address && privateBalance !== null && ownedShares.length > 0 && (
-        <section className="space-y-3">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-wider text-foreground/45">Your private LP positions</p>
-            <p className="mt-1 text-sm text-foreground/60">Ownership is recovered from encrypted notes. Each card is isolated to one market.</p>
-          </div>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {ownedShares.map((share) => {
-              const market = markets.find((entry) =>
-                entry.liquidityVaultId === share.liquidityVaultId
-              );
-              if (!market) return null;
-              const info = vaults[market.marketId];
-              const phase = info ? phaseName(info.phase) : "Loading";
-              const withdrawable = ["Funding", "Ready", "Cancelled", "Settled"].includes(phase);
-              const cardKey = `lp:${share.commitment}`;
-              const card = cards[cardKey];
-              const exitForm = exitForms[cardKey];
-              const hasOpenExit = exitOffers.some((offer) =>
-                offer.owned &&
-                offer.status === "Open" &&
-                offer.liquidityVaultId === share.liquidityVaultId
-              );
-              return (
-                <Panel key={share.commitment.toString()} className="p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">{market.title || `${market.asset} market`}</p>
-                      <p className="mt-1 font-mono text-xs text-foreground/50">
-                        {formatTokenAmount(share.shares, NETWORK.collateral.decimals, 4)} LP shares
-                      </p>
-                    </div>
-                    <Tag>{phase}</Tag>
-                  </div>
-                  <p className="mt-4 text-xs leading-relaxed text-foreground/50">
-                    {phase === "Active"
-                      ? "These shares secure an open market. Exit requires a replacement LP or terminal settlement."
-                      : withdrawable
-                        ? "The vault can return this note at its current proportional value."
-                        : "The vault is updating its settlement state."}
-                  </p>
-                  {withdrawable && (
-                    <Button
-                      className="mt-4"
-                      size="sm"
-                      disabled={card?.busy}
-                      onClick={() => void withdraw(market, share)}
-                    >
-                      {card?.busy && <Spinner />}
-                      {phase === "Funding" || phase === "Ready"
-                        ? "Withdraw funding"
-                        : "Redeem LP shares"}
-                    </Button>
-                  )}
-                  {phase === "Active" && !hasOpenExit && !exitForm && (
-                    <Button
-                      className="mt-4"
-                      size="sm"
-                      variant="outline"
-                      disabled={card?.busy}
-                      onClick={() => void prepareExit(market, share)}
-                    >
-                      {card?.busy && <Spinner />}
-                      Prepare private exit
-                    </Button>
-                  )}
-                  {phase === "Active" && exitForm && (
-                    <div className="mt-4 space-y-3 rounded-lg border border-white/[0.08] bg-black/10 p-3">
-                      <div>
-                        <label className="text-[11px] text-foreground/55">
-                          Minimum private USDC payment
-                        </label>
-                        <Input
-                          className="mt-1 h-10 font-mono"
-                          inputMode="decimal"
-                          value={exitForm.minimumPayment}
-                          disabled={card?.busy}
-                          onChange={(event) => setExitForms((current) => ({
-                            ...current,
-                            [cardKey]: {
-                              ...current[cardKey],
-                              minimumPayment: event.target.value,
-                            },
-                          }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-foreground/55">
-                          Offer expiry in your local time
-                        </label>
-                        <Input
-                          className="mt-1 h-10 font-mono"
-                          type="datetime-local"
-                          value={exitForm.expiry}
-                          max={market.settlementTime
-                            ? localDateTimeValue(market.settlementTime - 60_000)
-                            : undefined}
-                          disabled={card?.busy}
-                          onChange={(event) => setExitForms((current) => ({
-                            ...current,
-                            [cardKey]: {
-                              ...current[cardKey],
-                              expiry: event.target.value,
-                            },
-                          }))}
-                        />
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          disabled={card?.busy}
-                          onClick={() => void createExitOffer(market, share)}
-                        >
-                          {card?.busy && <Spinner />}
-                          Open exit offer
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={card?.busy}
-                          onClick={() => setExitForms((current) => {
-                            const next = { ...current };
-                            delete next[cardKey];
-                            return next;
-                          })}
-                        >
-                          Keep position
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  {card?.status && <p className="mt-3 text-xs text-emerald-200">{card.status}</p>}
-                  {card?.error && <p className="mt-3 text-xs text-red-300">{card.error}</p>}
-                </Panel>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {address && privateBalance !== null && ownedOpenExits.length > 0 && (
-        <section className="space-y-3">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-wider text-foreground/45">
-              Your open LP exits
-            </p>
-            <p className="mt-1 text-sm text-foreground/60">
-              Ownership is proven by the encrypted exit receipt. Your wallet address is not stored with the offer.
-            </p>
-          </div>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {ownedOpenExits.map((offer) => {
-              const market = markets.find((entry) =>
-                entry.marketId === offer.market
-              );
-              const key = `exit:${offer.exitId}`;
-              const card = cards[key];
-              return (
-                <Panel key={offer.exitId} className="p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">
-                        {market?.title || `${market?.asset || "Market"} LP exit`}
-                      </p>
-                      <p className="mt-1 font-mono text-xs text-foreground/50">
-                        {formatTokenAmount(offer.shares, NETWORK.collateral.decimals, 4)} shares for at least{" "}
-                        {formatTokenAmount(offer.minimumPayment, NETWORK.collateral.decimals, 4)} USDC
-                      </p>
-                    </div>
-                    <Tag>Open</Tag>
-                  </div>
-                  <p className="mt-3 text-xs text-foreground/50">
-                    Expires {new Date(Number(offer.expiry) * 1_000).toLocaleString()}.
-                    A replacement LP must fill the full offer at the current proof-bound market snapshot.
-                  </p>
-                  <Button
-                    className="mt-4"
-                    size="sm"
-                    variant="outline"
-                    disabled={card?.busy}
-                    onClick={() => void cancelExitOffer(offer)}
-                  >
-                    {card?.busy && <Spinner />}
-                    Cancel privately
-                  </Button>
-                  {card?.status && <p className="mt-3 text-xs text-emerald-200">{card.status}</p>}
-                  {card?.error && <p className="mt-3 text-xs text-red-300">{card.error}</p>}
-                </Panel>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {address && privateBalance !== null && availableExitOffers.length > 0 && (
-        <section className="space-y-3">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-wider text-foreground/45">
-              Available LP replacements
-            </p>
-            <p className="mt-1 text-sm text-foreground/60">
-              Acquire the full private LP position with shielded USDC. The proof rejects changed or stale market state.
-            </p>
-          </div>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {availableExitOffers.map((offer) => {
-              const market = markets.find((entry) =>
-                entry.marketId === offer.market
-              );
-              const key = `offer:${offer.exitId}`;
-              const card = cards[key];
-              const canTake = privateBalance >= offer.minimumPayment;
-              return (
-                <Panel key={offer.exitId} className="p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">
-                        {market?.title || `${market?.asset || "Market"} LP position`}
-                      </p>
-                      <p className="mt-1 font-mono text-xs text-foreground/50">
-                        {formatTokenAmount(offer.minimumPayment, NETWORK.collateral.decimals, 4)} USDC for{" "}
-                        {formatTokenAmount(offer.shares, NETWORK.collateral.decimals, 4)} shares
-                      </p>
-                    </div>
-                    <ArrowRightLeft className="size-4 text-[#eca8d6]" aria-hidden="true" />
-                  </div>
-                  <p className="mt-3 text-xs text-foreground/50">
-                    Market scenario equity is currently{" "}
-                    {formatTokenAmount(offer.equityFloor, NETWORK.collateral.decimals, 2)} to{" "}
-                    {formatTokenAmount(offer.equityCeiling, NETWORK.collateral.decimals, 2)} USDC for all LP shares.
-                  </p>
-                  {canTake ? (
-                    <Button
-                      className="mt-4"
-                      size="sm"
-                      disabled={card?.busy}
-                      onClick={() => void takeExitOffer(offer)}
-                    >
-                      {card?.busy && <Spinner />}
-                      Replace privately
-                    </Button>
-                  ) : (
-                    <Button className="mt-4" size="sm" asChild>
-                      <Link href="/app/portfolio">Add private USDC</Link>
-                    </Button>
-                  )}
-                  {card?.status && <p className="mt-3 text-xs text-emerald-200">{card.status}</p>}
-                  {card?.error && <p className="mt-3 text-xs text-red-300">{card.error}</p>}
-                </Panel>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
       {loading ? (
-        <Panel className="flex min-h-52 items-center justify-center">
+        <Panel className="flex min-h-44 items-center justify-center">
           <Spinner />
         </Panel>
-      ) : activeMarkets.length === 0 ? (
-        <EmptyState
-          title="No funding rounds are open"
-          description="Create a price market proposal or return after another user opens one."
-          action={<Button asChild><Link href="/app/create">Create a market</Link></Button>}
-        />
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {activeMarkets.map((market) => {
-            const info = vaults[market.marketId];
-            const target = info?.target_assets ?? BigInt(market.liquidityTarget ?? "0");
-            const funded = info?.funded_assets ?? 0n;
-            const remaining = target > funded ? target - funded : 0n;
-            const card = cards[market.marketId] ?? { amount: "5", status: "", error: "", busy: false };
-            const amount = (() => {
-              try {
-                return parseTokenAmount(card.amount, NETWORK.collateral.decimals);
-              } catch {
-                return 0n;
-              }
-            })();
-            const canFund = privateBalance !== null && privateBalance >= amount && amount > 0n;
-            return (
-              <Panel key={market.marketId} className="overflow-hidden">
-                <div className="flex items-start gap-3 border-b border-white/[0.08] p-5">
-                  <AssetIcon asset={market.asset} />
-                  <div className="min-w-0 flex-1">
-                    <Tag>{market.category || "Price market"}</Tag>
-                    <h2 className="mt-2 text-lg font-medium leading-snug">
-                      {market.title || `${market.asset} price market`}
-                    </h2>
-                  </div>
-                  <span className="rounded-full border border-[#eca8d6]/20 bg-[#eca8d6]/[0.05] px-2.5 py-1 font-mono text-[10px] uppercase text-[#f4c5e4]">
-                    {info ? phaseName(info.phase) : "Funding"}
+      ) : address && info && nav ? (
+        <>
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Panel className="p-4">
+              <div className="flex items-center gap-2 text-foreground/50">
+                <Vault className="size-4" aria-hidden="true" />
+                <span className="text-xs">Conservative pool value</span>
+              </div>
+              <p className="mt-3 font-mono text-xl">{token(nav.withdrawal_nav)} USDC</p>
+              <p className="mt-1 text-[11px] text-foreground/40">
+                Active positions use the lower outcome value.
+              </p>
+            </Panel>
+            <Panel className="p-4">
+              <div className="flex items-center gap-2 text-foreground/50">
+                <Droplets className="size-4" aria-hidden="true" />
+                <span className="text-xs">Idle reserve</span>
+              </div>
+              <p className="mt-3 font-mono text-xl">{token(nav.idle_assets)} USDC</p>
+              <p className="mt-1 text-[11px] text-foreground/40">
+                {percent(nav.idle_assets, nav.withdrawal_nav)} of conservative value.
+              </p>
+            </Panel>
+            <Panel className="p-4">
+              <div className="flex items-center gap-2 text-foreground/50">
+                <Network className="size-4" aria-hidden="true" />
+                <span className="text-xs">Active market cells</span>
+              </div>
+              <p className="mt-3 font-mono text-xl">{info.active_allocations}</p>
+              <p className="mt-1 text-[11px] text-foreground/40">
+                {token(info.deployed_principal)} USDC allocated with isolated risk.
+              </p>
+            </Panel>
+            <Panel className="p-4">
+              <div className="flex items-center gap-2 text-foreground/50">
+                <Layers3 className="size-4" aria-hidden="true" />
+                <span className="text-xs">Markets waiting</span>
+              </div>
+              <p className="mt-3 font-mono text-xl">{queuedMarkets}</p>
+              <p className="mt-1 text-[11px] text-foreground/40">
+                Eligible markets are funded automatically in queue order.
+              </p>
+            </Panel>
+          </section>
+
+          <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <Panel className="p-5 sm:p-6">
+              <div className="flex items-start gap-3">
+                <CircleDollarSign className="mt-0.5 size-5 text-[#eca8d6]" aria-hidden="true" />
+                <div>
+                  <h2 className="text-lg font-medium">Provide liquidity once</h2>
+                  <p className="mt-1 text-xs leading-relaxed text-foreground/50">
+                    Your deposit receives private pool shares. Share value rises or falls with
+                    realized market results and the LP portion of trading fees.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <div className="relative">
+                  <Input
+                    inputMode="decimal"
+                    value={depositAmount}
+                    disabled={depositAction.busy}
+                    aria-label="USDC pool deposit"
+                    onChange={(event) => {
+                      setDepositAmount(event.target.value);
+                      setDepositAction(EMPTY_ACTION);
+                    }}
+                    className="h-11 pr-16 font-mono"
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center font-mono text-xs text-foreground/45">
+                    USDC
                   </span>
                 </div>
+                {privateBalance === null ? (
+                  <Button disabled={unlocking} onClick={() => void unlock()}>
+                    Unlock balance
+                  </Button>
+                ) : canDeposit ? (
+                  <Button disabled={depositAction.busy} onClick={() => void deposit()}>
+                    {depositAction.busy && <Spinner />}
+                    Deposit privately
+                  </Button>
+                ) : (
+                  <Button asChild>
+                    <Link href="/app/portfolio">Add private USDC</Link>
+                  </Button>
+                )}
+              </div>
+              {depositAction.status && (
+                <p className="mt-3 text-xs text-emerald-200">{depositAction.status}</p>
+              )}
+              {depositAction.error && (
+                <p role="alert" className="mt-3 text-xs text-red-300">
+                  {depositAction.error}
+                </p>
+              )}
+              <div className="mt-5 grid gap-2 border-t border-white/[0.07] pt-4 text-[11px] text-foreground/45 sm:grid-cols-3">
+                <span>Market cap {info.policy.max_market_bps / 100}%</span>
+                <span>Risk group cap {info.policy.max_group_bps / 100}%</span>
+                <span>Minimum idle {info.policy.minimum_idle_bps / 100}%</span>
+              </div>
+            </Panel>
 
-                <div className="space-y-5 p-5">
-                  <div>
-                    <div className="flex items-center justify-between gap-3 text-xs">
-                      <span className="text-foreground/55">Funding progress</span>
-                      <span className="font-mono">
-                        {formatTokenAmount(funded, NETWORK.collateral.decimals, 2)} / {formatTokenAmount(target, NETWORK.collateral.decimals, 2)} USDC
-                      </span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.07]">
-                      <div
-                        className="h-full rounded-full bg-[#eca8d6] transition-[width]"
-                        style={{ width: `${progress(info, target)}%` }}
-                      />
-                    </div>
-                    <p className="mt-2 text-[11px] text-foreground/45">
-                      {formatTokenAmount(remaining, NETWORK.collateral.decimals, 2)} USDC remaining. Capital is isolated to this market.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-[1fr_auto] gap-2">
-                    <div className="relative">
-                      <Input
-                        inputMode="decimal"
-                        value={card.amount}
-                        disabled={card.busy || remaining === 0n}
-                        aria-label="USDC liquidity amount"
-                        onChange={(event) => updateCard(market.marketId, {
-                          amount: event.target.value,
-                          error: "",
-                        })}
-                        className="h-11 pr-16 font-mono"
-                      />
-                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center font-mono text-xs text-foreground/45">USDC</span>
-                    </div>
-                    {!address ? (
-                      <Button onClick={() => void connectWallet()}>Connect</Button>
-                    ) : privateBalance === null ? (
-                      <Button disabled={unlocking} onClick={() => void unlock()}>Unlock</Button>
-                    ) : canFund ? (
-                      <Button disabled={card.busy || remaining === 0n} onClick={() => void fund(market)}>
-                        {card.busy && <Spinner />}
-                        Fund privately
-                      </Button>
-                    ) : (
-                      <Button asChild>
-                        <Link href="/app/portfolio">Add private USDC</Link>
-                      </Button>
-                    )}
-                  </div>
-
-                  {card.status && <p className="text-xs text-emerald-200">{card.status}</p>}
-                  {card.error && <p role="alert" className="text-xs text-red-300">{card.error}</p>}
-
-                  <div className="flex items-center gap-2 text-[11px] text-foreground/45">
-                    <Droplets className="size-3.5" aria-hidden="true" />
-                    LP shares track the vault terminal equity and fee share. Returns are not guaranteed.
-                  </div>
+            <Panel className="p-5 sm:p-6">
+              <div className="flex items-start gap-3">
+                <Activity className="mt-0.5 size-5 text-[#eca8d6]" aria-hidden="true" />
+                <div>
+                  <h2 className="text-lg font-medium">How allocation works</h2>
+                  <p className="mt-1 text-xs leading-relaxed text-foreground/50">
+                    The keeper funds only factory-approved markets. Every market receives a separate
+                    risk cell and cannot spend capital assigned to another market.
+                  </p>
                 </div>
-              </Panel>
-            );
-          })}
-        </div>
-      )}
+              </div>
+              <div className="mt-5 space-y-3 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-foreground/50">Immediate exit capacity</span>
+                  <span className="font-mono">{token(nav.immediate_assets, 4)} USDC</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-foreground/50">Deposit valuation</span>
+                  <span className="font-mono">{token(nav.deposit_nav, 4)} USDC</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-foreground/50">Conditional fees excluded</span>
+                  <span className="font-mono">
+                    {token(nav.conditional_fees_excluded, 4)} USDC
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-foreground/50">Pool contract</span>
+                  <span className="font-mono text-foreground/65">{shorten(poolId)}</span>
+                </div>
+              </div>
+              <p className="mt-5 border-t border-white/[0.07] pt-4 text-[11px] leading-relaxed text-foreground/40">
+                Deposits use the conservative upper liability estimate. Withdrawals use the lower
+                outcome estimate. This prevents timing an LP deposit or exit against unresolved
+                market outcomes.
+              </p>
+            </Panel>
+          </section>
+
+          {privateBalance !== null && shares.length > 0 ? (
+            <section className="space-y-3">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-foreground/45">
+                  Your private pool shares
+                </p>
+                <p className="mt-1 text-sm text-foreground/60">
+                  Each encrypted note can be withdrawn fully or partially into reusable private
+                  USDC.
+                </p>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {shares.map((share) => {
+                  const key = share.commitment.toString();
+                  const action = shareActions[key] ?? EMPTY_ACTION;
+                  const amount = (() => {
+                    try {
+                      return parseTokenAmount(
+                        withdrawAmounts[key] || "",
+                        NETWORK.collateral.decimals,
+                      );
+                    } catch {
+                      return 0n;
+                    }
+                  })();
+                  const canWithdraw =
+                    amount > 0n &&
+                    amount <= share.shares &&
+                    (share.preview?.immediate_assets ?? 0n) > 0n;
+                  return (
+                    <Panel key={key} className="p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">
+                            {token(share.shares, 4)} private shares
+                          </p>
+                          <p className="mt-1 font-mono text-xs text-foreground/50">
+                            Current value {token(share.preview?.assets ?? 0n, 4)} USDC
+                          </p>
+                        </div>
+                        <Tag>
+                          {share.preview?.can_redeem_now ? "Available" : "Partial exit"}
+                        </Tag>
+                      </div>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+                        <div className="relative">
+                          <Input
+                            inputMode="decimal"
+                            value={withdrawAmounts[key] || ""}
+                            disabled={action.busy}
+                            aria-label="Pool shares to withdraw"
+                            onChange={(event) => setWithdrawAmounts((current) => ({
+                              ...current,
+                              [key]: event.target.value,
+                            }))}
+                            className="h-10 pr-16 font-mono"
+                          />
+                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center font-mono text-[10px] text-foreground/45">
+                            SHARES
+                          </span>
+                        </div>
+                        <Button
+                          size="sm"
+                          disabled={action.busy || !canWithdraw}
+                          onClick={() => void withdraw(share)}
+                        >
+                          {action.busy && <Spinner />}
+                          Withdraw
+                        </Button>
+                      </div>
+                      {!share.preview?.can_redeem_now && (
+                        <p className="mt-3 text-[11px] leading-relaxed text-amber-100/70">
+                          This full note exceeds current immediate capacity. Enter a smaller share
+                          amount or retry after the withdrawal window resets.
+                        </p>
+                      )}
+                      {action.status && (
+                        <p className="mt-3 text-xs text-emerald-200">{action.status}</p>
+                      )}
+                      {action.error && (
+                        <p role="alert" className="mt-3 text-xs text-red-300">
+                          {action.error}
+                        </p>
+                      )}
+                    </Panel>
+                  );
+                })}
+              </div>
+            </section>
+          ) : privateBalance !== null ? (
+            <EmptyState
+              title="No private pool shares yet"
+              description="Deposit private USDC above. The pool handles approved market allocation automatically."
+            />
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }

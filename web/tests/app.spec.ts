@@ -16,6 +16,23 @@ test("portfolio provides one reusable private USDC wallet", async ({ page }) => 
   await expect(page.getByRole("button", { name: "Connect wallet to unlock", exact: true })).toBeVisible();
 });
 
+test("liquidity uses one automatic private pool", async ({ page }) => {
+  await page.goto("/app/liquidity");
+  await expect(
+    page.getByRole("heading", { name: "Moros liquidity pool", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/deposit private USDC once.*automatically supplies approved markets/i),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("main").getByRole("button", {
+      name: "Connect wallet",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("Fund markets", { exact: true })).not.toBeVisible();
+});
+
 test("market terminal fails closed for an unknown market", async ({ page }) => {
   await page.goto(`/app/market/${NETWORK.marketId.slice(0, -1)}A`);
   await expect(page.getByRole("heading", { name: "Market not found", exact: true })).toBeVisible();

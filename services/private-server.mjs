@@ -58,11 +58,6 @@ const RUNTIME_ROOT = resolve(
   process.env.MOROS_PRIVATE_RUNTIME_DIR ||
     "services/private-runtime",
 );
-const OUTPUT_STATE = resolve(RUNTIME_ROOT, "outputs.json");
-const MARKET_STATE = resolve(RUNTIME_ROOT, "markets.json");
-const PROPOSAL_STATE = resolve(RUNTIME_ROOT, "proposals.json");
-const ALLOCATION_STATE = resolve(RUNTIME_ROOT, "allocations.json");
-const EXIT_STATE = resolve(RUNTIME_ROOT, "exits.json");
 const TICK_MS = Number(process.env.PRIVATE_TICK_MS || 10_000);
 const MAX_BODY = 256 * 1024;
 const ALLOWED_ORIGINS = new Set(
@@ -190,6 +185,15 @@ async function main() {
   ) {
     throw new Error("invalid private testnet deployment manifest");
   }
+  const deploymentRuntime = resolve(
+    RUNTIME_ROOT,
+    deployment.contracts.factory,
+  );
+  const outputState = resolve(deploymentRuntime, "outputs.json");
+  const marketState = resolve(deploymentRuntime, "markets.json");
+  const proposalState = resolve(deploymentRuntime, "proposals.json");
+  const allocationState = resolve(deploymentRuntime, "allocations.json");
+  const exitState = resolve(deploymentRuntime, "exits.json");
   const artifacts = new PrivateArtifactStore({
     root: ARTIFACT_ROOT,
     deployment,
@@ -251,7 +255,7 @@ async function main() {
   const serialize = serializeTransactions();
   const indexer = new PrivateOutputIndexer({
     client: vault,
-    stateFile: OUTPUT_STATE,
+    stateFile: outputState,
     vaultId,
     levels: Number(vaultInfo.levels),
   });
@@ -284,7 +288,7 @@ async function main() {
     return liquidityClients.get(liquidityVault);
   };
   const registry = new PrivateMarketRegistry({
-    stateFile: MARKET_STATE,
+    stateFile: marketState,
     verify: async (market) => {
       const registration = invocationResultValue(
         await vault.registration({ market }),
@@ -308,7 +312,7 @@ async function main() {
   });
   for (const market of registry.list()) await registry.register(market);
   const proposals = new PrivateProposalRegistry({
-    stateFile: PROPOSAL_STATE,
+    stateFile: proposalState,
     verify: async (proposalId) => {
       const encoded = Buffer.from(proposalId, "hex");
       const proposal = invocationResultValue(await factory.proposal({
@@ -317,7 +321,9 @@ async function main() {
       if (
         !proposal ||
         Buffer.from(proposal.proposal_id).toString("hex") !== proposalId ||
-        !proposal.liquidity_vault
+        !proposal.liquidity_vault ||
+        proposal.liquidity_sequence === undefined ||
+        proposal.liquidity_sequence === null
       ) {
         throw new Error("proposal is not deployed by the configured factory");
       }
@@ -327,9 +333,17 @@ async function main() {
       ]);
       const expectedMarket = invocationResultValue(market);
       const expectedLiquidity = invocationResultValue(liquidityVault);
+      const candidate = invocationResultValue(
+        await liquidityPool.candidate({
+          sequence: BigInt(proposal.liquidity_sequence),
+        }),
+      );
       if (
         proposal.liquidity_vault !== expectedLiquidity ||
-        (proposal.market && proposal.market !== expectedMarket)
+        (proposal.market && proposal.market !== expectedMarket) ||
+        !candidate ||
+        Buffer.from(candidate.proposal_id).toString("hex") !== proposalId ||
+        candidate.liquidity_vault !== expectedLiquidity
       ) {
         throw new Error("proposal deterministic addresses do not match");
       }
@@ -343,8 +357,24 @@ async function main() {
   for (const proposal of proposals.list()) {
     await proposals.register(proposal.proposalId);
   }
+  let discoveredPoolTail = 0n;
+  const discoverPoolProposals = async () => {
+    const current = invocationResultValue(await liquidityPool.info());
+    const tail = BigInt(current.queue_tail);
+    while (discoveredPoolTail < tail) {
+      const candidate = invocationResultValue(await liquidityPool.candidate({
+        sequence: discoveredPoolTail,
+      }));
+      discoveredPoolTail += 1n;
+      if (!candidate) continue;
+      await proposals.register(
+        Buffer.from(candidate.proposal_id).toString("hex"),
+      );
+    }
+  };
+  await discoverPoolProposals();
   const exits = new PrivateExitRegistry({
-    stateFile: EXIT_STATE,
+    stateFile: exitState,
     verify: async (entry) => {
       const market = await getMarketClient(entry.market);
       const privateConfig = invocationResultValue(await market.private_config());
@@ -377,7 +407,7 @@ async function main() {
 
   const batchRoot = resolve(ARTIFACT_ROOT, "batch");
   const allocations = new PrivateAllocationRegistry({
-    stateFile: ALLOCATION_STATE,
+    stateFile: allocationState,
   });
   const coordinator = new PrivateBatchCoordinator({
     vault,
@@ -418,12 +448,15 @@ async function main() {
   const allocateAvailableLiquidity = async () => {
     for (let attempt = 0; attempt < 32; attempt++) {
       const before = invocationResultValue(await liquidityPool.info());
-      if (BigInt(before.queue_head) >= BigInt(before.queue_tail)) break;
+      if (Number(before.pending_candidates) === 0) break;
       await serialize(async () =>
         (await liquidityPool.allocate_next()).signAndSend()
       );
       const after = invocationResultValue(await liquidityPool.info());
-      if (BigInt(after.queue_head) === BigInt(before.queue_head)) break;
+      if (
+        Number(after.pending_candidates) ===
+        Number(before.pending_candidates)
+      ) break;
     }
     const [info, nav] = await Promise.all([
       liquidityPool.info(),
@@ -591,6 +624,7 @@ async function main() {
       runtime.outputs = tree.nextLeafIndex;
       runtime.lastIndexAt = new Date().toISOString();
       try {
+        await discoverPoolProposals();
         runtime.liquidityPool = {
           ...(await allocateAvailableLiquidity()),
           checkedAt: new Date().toISOString(),

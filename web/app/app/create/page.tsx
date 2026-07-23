@@ -65,9 +65,9 @@ import {
 const STEPS: { key: ProposalStep; label: string }[] = [
   { key: "configuration", label: "Checking private testnet policy" },
   { key: "proposal", label: "Creating the market proposal" },
-  { key: "liquidity", label: "Opening the isolated LP vault" },
-  { key: "listing", label: "Publishing the funding round" },
-  { key: "done", label: "Funding round open" },
+  { key: "liquidity", label: "Registering with the liquidity pool" },
+  { key: "listing", label: "Publishing the market" },
+  { key: "done", label: "Market queued for activation" },
 ];
 
 const EXPIRY_PRESETS = [
@@ -236,9 +236,9 @@ export default function CreatePage() {
   const busyLabel = stage === "configuration"
     ? "Checking policy"
     : stage === "listing"
-      ? "Publishing funding round"
+      ? "Publishing market"
       : stage === "liquidity"
-        ? "Opening LP vault"
+        ? "Registering liquidity"
         : "Creating proposal";
   const categoryMode = isPriceMarket ? "price" : "event";
   const categoryPresentation = CATEGORY_PRESENTATION[category];
@@ -398,7 +398,7 @@ export default function CreatePage() {
         try {
           await uploadMarketBanner({ address, marketId: proposal.marketId, source: bannerSource });
         } catch (cause) {
-          setError(cause instanceof Error ? cause.message : "The funding round is open, but its image could not be attached.");
+          setError(cause instanceof Error ? cause.message : "The market is registered, but its image could not be attached.");
         }
       }
       clearPendingProposal(address);
@@ -788,7 +788,7 @@ export default function CreatePage() {
               <SectionHeading
                 number={4}
                 title="Set timing and choose market depth"
-                description="Choose when resolution begins and how much permissionless liquidity the isolated market vault should raise."
+                description="Choose when resolution begins and how much capital the shared Moros pool may allocate to this isolated market."
                 complete={valid}
               />
 
@@ -855,10 +855,10 @@ export default function CreatePage() {
                 <div className="flex items-start gap-3">
                   <AssetIcon asset="USDC" size="md" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">Permissionless USDC liquidity</p>
-                    <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-foreground/50">Isolated testnet LP vault</p>
+                    <p className="text-sm font-medium">Automatic USDC liquidity</p>
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-foreground/50">Shared pool, isolated market risk</p>
                     <p className="mt-3 text-xs leading-relaxed text-foreground/50">
-                      Creating the proposal requires no USDC. Anyone can privately fund its isolated LP vault before the deadline. Your wallet only pays normal Stellar transaction fees and account reserve.
+                      Creating a market requires no USDC. The shared Moros liquidity pool automatically funds eligible markets in queue order while enforcing per-market and per-category limits. Your wallet only pays normal Stellar transaction fees and account reserve.
                     </p>
                   </div>
                 </div>
@@ -917,7 +917,7 @@ export default function CreatePage() {
                     : pendingProposal
                       ? "Resume market proposal"
                       : valid
-                        ? "Open funding round"
+                        ? "Create market"
                         : "Complete market details"}
                 </Button>
               )}
@@ -939,9 +939,9 @@ export default function CreatePage() {
 
               {result && (
                 <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/[0.05] p-4" aria-live="polite">
-                  <p className="text-sm text-emerald-200">Your funding round is open on {NETWORK.name}. The market activates only after its LP target is reached.</p>
+                  <p className="text-sm text-emerald-200">Your market is registered on {NETWORK.name}. The shared liquidity pool will fund and activate it automatically when policy capacity is available.</p>
                   <Link href="/app/liquidity" className="mt-3 inline-flex min-h-11 items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-[#eca8d6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
-                    View funding rounds
+                    View liquidity pool
                     <ArrowUpRight className="size-3.5" aria-hidden="true" />
                   </Link>
                 </div>
