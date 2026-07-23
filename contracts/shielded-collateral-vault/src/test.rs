@@ -10,6 +10,7 @@ use lmsr_market::{
     BatchQuote as LmsrBatchQuote, LmsrMarket, LmsrMarketClient, Outcome, PrivateMarketConfig,
 };
 use market_liquidity_vault::{MarketLiquidityVault, MarketLiquidityVaultClient};
+use privacy_types::{OUTPUT_ENVELOPE_FIELDS, OUTPUT_ENVELOPE_LENGTH, OUTPUT_ENVELOPE_VERSION};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
 use soroban_sdk::{
@@ -17,7 +18,7 @@ use soroban_sdk::{
     Vec, U256,
 };
 
-const ENVELOPE_LENGTH: usize = 96;
+const ORDER_CIPHERTEXT_LENGTH: usize = 128;
 const EXPIRY: u64 = 50_000;
 const S: i128 = 1i128 << 32;
 
@@ -37,14 +38,14 @@ impl MockVerifier {
         id(&env, 2)
     }
 
-    pub fn set_expected(env: Env, digest: BytesN<32>) {
+    pub fn set_expected(env: Env, digest: U256) {
         env.storage()
             .instance()
             .set(&VerifierKey::Expected, &digest);
     }
 
     pub fn verify(env: Env, statement: ProofStatement, proof: Bytes) -> bool {
-        let expected: Option<BytesN<32>> = env.storage().instance().get(&VerifierKey::Expected);
+        let expected: Option<U256> = env.storage().instance().get(&VerifierKey::Expected);
         expected == Some(statement.context_digest)
             && proof == Bytes::from_array(&env, &[7, 11, 13, 17])
     }
@@ -78,7 +79,21 @@ fn field_id(env: &Env, value: u8) -> BytesN<32> {
 }
 
 fn envelope(env: &Env, byte: u8) -> Bytes {
-    Bytes::from_array(env, &[byte; ENVELOPE_LENGTH])
+    let mut envelope = Bytes::new(env);
+    for index in 0..OUTPUT_ENVELOPE_FIELDS {
+        let mut field = [0u8; 32];
+        field[31] = if index == 0 {
+            OUTPUT_ENVELOPE_VERSION as u8
+        } else {
+            byte.wrapping_add(index as u8)
+        };
+        envelope.append(&Bytes::from_array(env, &field));
+    }
+    envelope
+}
+
+fn order_ciphertext(env: &Env, byte: u8) -> Bytes {
+    Bytes::from_array(env, &[byte; ORDER_CIPHERTEXT_LENGTH])
 }
 
 fn transition(
@@ -145,7 +160,6 @@ fn setup() -> Setup {
             8u32,
             8u32,
             100u32,
-            ENVELOPE_LENGTH as u32,
         ),
     );
     let user = Address::generate(&env);
@@ -188,7 +202,6 @@ fn constructor_rejects_wrong_verifier_domain() {
             8u32,
             8u32,
             100u32,
-            ENVELOPE_LENGTH as u32,
         ),
     );
 }
@@ -206,7 +219,7 @@ fn expect(
         &public_account,
         &public_amount,
         &None,
-        &BytesN::from_array(&setup.env, &[0; 32]),
+        &ShieldedCollateralVault::empty_binding(&setup.env),
         &EXPIRY,
     );
     setup.verifier.set_expected(&digest);
@@ -220,18 +233,15 @@ fn expect_liquidity(
     public_amount: i128,
     binding: &LiquidityBinding,
 ) {
-    let binding_digest: BytesN<32> = setup
-        .env
-        .crypto()
-        .sha256(&binding.clone().to_xdr(&setup.env))
-        .into();
+    let operation_binding =
+        ShieldedCollateralVault::liquidity_operation_binding(&setup.env, binding);
     let digest = setup.vault.context_digest(
         &action,
         action_id,
         &None,
         &public_amount,
         &Some(liquidity_vault.clone()),
-        &binding_digest,
+        &operation_binding,
         &EXPIRY,
     );
     setup.verifier.set_expected(&digest);
@@ -271,7 +281,7 @@ fn deposit_moves_exact_usdc_and_persists_recovery_outputs() {
     );
     let first = setup.vault.output(&0).unwrap();
     assert_eq!(first.commitment, field(&setup.env, 11));
-    assert_eq!(first.encrypted_output.len(), ENVELOPE_LENGTH as u32);
+    assert_eq!(first.encrypted_output.len(), OUTPUT_ENVELOPE_LENGTH);
     assert_eq!(
         setup.vault.output(&1).unwrap().commitment,
         field(&setup.env, 12)
@@ -681,7 +691,7 @@ fn accept_test_order(
         .vault
         .epoch(market, &registration.current_epoch)
         .unwrap();
-    let encrypted_order = envelope(&setup.env, action_byte);
+    let encrypted_order = order_ciphertext(&setup.env, action_byte);
     let ciphertext_hash: BytesN<32> = setup.env.crypto().sha256(&encrypted_order).into();
     let position_commitment = field(&setup.env, commitments[1]);
     let binding = OrderBinding {
@@ -700,11 +710,7 @@ fn accept_test_order(
         committee_config_hash: epoch.committee_config_hash,
         ciphertext_hash,
     };
-    let binding_digest: BytesN<32> = setup
-        .env
-        .crypto()
-        .sha256(&binding.to_xdr(&setup.env))
-        .into();
+    let operation_binding = ShieldedCollateralVault::order_operation_binding(&setup.env, &binding);
     let action_id = id(&setup.env, action_byte);
     let digest = setup.vault.context_digest(
         &ProofAction::Order,
@@ -712,7 +718,7 @@ fn accept_test_order(
         &None,
         &0,
         &Some(market.clone()),
-        &binding_digest,
+        &operation_binding,
         &epoch.refund_at,
     );
     setup.verifier.set_expected(&digest);
@@ -911,18 +917,15 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
         outcome: SettlementState::Pending,
         quote: batch.quote.clone(),
     };
-    let change_binding_digest: BytesN<32> = setup
-        .env
-        .crypto()
-        .sha256(&change_binding.to_xdr(&setup.env))
-        .into();
+    let change_operation_binding =
+        ShieldedCollateralVault::allocation_operation_binding(&setup.env, &change_binding);
     let change_digest = setup.vault.context_digest(
         &ProofAction::ExecutionChange,
         &change_action,
         &None,
         &0,
         &Some(market_address.clone()),
-        &change_binding_digest,
+        &change_operation_binding,
         &change_expiry,
     );
     setup.verifier.set_expected(&change_digest);
@@ -973,7 +976,10 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
         &None,
         &399_003,
         &None,
-        &setup.vault.info().treasury_key,
+        &ShieldedCollateralVault::treasury_operation_binding(
+            &setup.env,
+            &setup.vault.info().treasury_key,
+        ),
         &terminal_expiry,
     );
     setup.verifier.set_expected(&treasury_digest);
@@ -995,18 +1001,15 @@ fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
         outcome: SettlementState::Yes,
         quote: batch.quote,
     };
-    let claim_binding_digest: BytesN<32> = setup
-        .env
-        .crypto()
-        .sha256(&claim_binding.to_xdr(&setup.env))
-        .into();
+    let claim_operation_binding =
+        ShieldedCollateralVault::allocation_operation_binding(&setup.env, &claim_binding);
     let claim_digest = setup.vault.context_digest(
         &ProofAction::Claim,
         &claim_action,
         &None,
         &0,
         &Some(market_address.clone()),
-        &claim_binding_digest,
+        &claim_operation_binding,
         &terminal_expiry,
     );
     setup.verifier.set_expected(&claim_digest);
@@ -1046,7 +1049,7 @@ fn a_full_epoch_rejects_the_next_order_before_consuming_its_notes() {
             &0,
             &id(&setup.env, 80),
             &field(&setup.env, 801),
-            &envelope(&setup.env, 80),
+            &order_ciphertext(&setup.env, 80),
             &transition(
                 &setup.env,
                 current_root,
@@ -1092,18 +1095,14 @@ fn short_epoch_never_moves_price_and_every_order_reaches_private_refund() {
         accepted_root: refundable.accepted_root,
         position_commitment: order.position_commitment,
     };
-    let binding_digest: BytesN<32> = setup
-        .env
-        .crypto()
-        .sha256(&binding.to_xdr(&setup.env))
-        .into();
+    let operation_binding = ShieldedCollateralVault::refund_operation_binding(&setup.env, &binding);
     let digest = setup.vault.context_digest(
         &ProofAction::Refund,
         &action_id,
         &None,
         &0,
         &Some(market_address.clone()),
-        &binding_digest,
+        &operation_binding,
         &action_expiry,
     );
     setup.verifier.set_expected(&digest);

@@ -34,17 +34,80 @@ fn id(env: &Env, byte: u8) -> BytesN<32> {
     BytesN::from_array(env, &[byte; 32])
 }
 
+fn circuit(index: u32) -> ProofCircuit {
+    match index {
+        0 => ProofCircuit::Deposit,
+        1 => ProofCircuit::Transfer,
+        2 => ProofCircuit::Withdraw,
+        3 => ProofCircuit::Order,
+        4 => ProofCircuit::Claim,
+        5 => ProofCircuit::Refund,
+        6 => ProofCircuit::LiquidityFund,
+        7 => ProofCircuit::LiquidityExit,
+        8 => ProofCircuit::LiquidityRedeem,
+        9 => ProofCircuit::ExecutionChange,
+        10 => ProofCircuit::Treasury,
+        11 => ProofCircuit::ExitRequest,
+        12 => ProofCircuit::ExitCancel,
+        13 => ProofCircuit::ExitMatch,
+        14 => ProofCircuit::Batch,
+        _ => panic!("invalid circuit"),
+    }
+}
+
 fn action_statement(env: &Env) -> ProofStatement {
     ProofStatement {
         action: ProofAction::Deposit,
-        context_digest: id(env, 1),
+        context_digest: U256::from_u32(env, 1),
         membership_root: U256::from_u32(env, 2),
         append_root: U256::from_u32(env, 3),
         new_root: U256::from_u32(env, 4),
         input_nullifiers: Vec::new(env),
         output_commitments: Vec::from_array(env, [U256::from_u32(env, 5), U256::from_u32(env, 6)]),
+        output_envelope_hashes: Vec::from_array(
+            env,
+            [U256::from_u32(env, 7), U256::from_u32(env, 8)],
+        ),
         first_leaf_index: 7,
         public_amount: 8,
+    }
+}
+
+fn exit_match_statement(env: &Env) -> ProofStatement {
+    ProofStatement {
+        action: ProofAction::ExitMatch,
+        context_digest: U256::from_u32(env, 1),
+        membership_root: U256::from_u32(env, 2),
+        append_root: U256::from_u32(env, 3),
+        new_root: U256::from_u32(env, 4),
+        input_nullifiers: Vec::from_array(
+            env,
+            [
+                U256::from_u32(env, 5),
+                U256::from_u32(env, 6),
+                U256::from_u32(env, 7),
+            ],
+        ),
+        output_commitments: Vec::from_array(
+            env,
+            [
+                U256::from_u32(env, 8),
+                U256::from_u32(env, 9),
+                U256::from_u32(env, 10),
+                U256::from_u32(env, 11),
+            ],
+        ),
+        output_envelope_hashes: Vec::from_array(
+            env,
+            [
+                U256::from_u32(env, 12),
+                U256::from_u32(env, 13),
+                U256::from_u32(env, 14),
+                U256::from_u32(env, 15),
+            ],
+        ),
+        first_leaf_index: 16,
+        public_amount: 0,
     }
 }
 
@@ -164,31 +227,41 @@ fn setup() -> (
     ProvingKey<Bn254>,
 ) {
     let env = Env::default();
+    env.mock_all_auths();
     let action = action_statement(&env);
+    let exit_match = exit_match_statement(&env);
     let batch = batch_statement(&env);
     let action_inputs = action_public_inputs(&env, &action).unwrap();
+    let exit_match_inputs = action_public_inputs(&env, &exit_match).unwrap();
     let batch_inputs = batch_public_inputs(&env, &batch).unwrap();
     let action_key = build_parameters(&action_inputs, 7);
+    let exit_match_key = build_parameters(&exit_match_inputs, 9);
     let batch_key = build_parameters(&batch_inputs, 11);
     let action_vk = verification_key(&env, &action_key);
+    let exit_match_vk = verification_key(&env, &exit_match_key);
     let batch_vk = verification_key(&env, &batch_key);
-    let keys = Vec::from_array(
-        &env,
-        [
-            CircuitKey {
-                circuit: ProofCircuit::Action,
-                schema_hash: id(&env, 30),
-                verification_key: action_vk,
+    let mut keys = Vec::new(&env);
+    for index in 0..15 {
+        keys.push_back(CircuitKey {
+            circuit: circuit(index),
+            schema_hash: id(&env, 30 + index as u8),
+            verification_key: if index == 14 {
+                batch_vk.clone()
+            } else if index == 13 {
+                exit_match_vk.clone()
+            } else {
+                action_vk.clone()
             },
-            CircuitKey {
-                circuit: ProofCircuit::Batch,
-                schema_hash: id(&env, 31),
-                verification_key: batch_vk,
-            },
-        ],
-    );
+        });
+    }
     let expected_domain = keyset_domain(&env, &keys);
-    let address = env.register(ZkVerifier, (keys,));
+    let controller = Address::generate(&env);
+    let address = env.register(ZkVerifier, (controller.clone(),));
+    let setup_client = ZkVerifierClient::new(&env, &address);
+    for key in keys.iter() {
+        setup_client.add_key(&controller, &key);
+    }
+    assert_eq!(setup_client.finalize(&controller), expected_domain);
     let env_static: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env.clone()));
     let address_static: &'static Address = std::boxed::Box::leak(std::boxed::Box::new(address));
     let client = ZkVerifierClient::new(env_static, address_static);
@@ -199,6 +272,10 @@ fn setup() -> (
 #[test]
 fn verifies_typed_action_and_batch_proofs_and_rejects_statement_changes() {
     let (env, client, action_key, batch_key) = setup();
+    let info = client.info();
+    assert!(info.finalized);
+    assert_eq!(info.circuits, 15);
+    assert_eq!(info.required_circuits, 15);
     let action = action_statement(&env);
     let action_inputs = action_public_inputs(&env, &action).unwrap();
     let action_proof = prove(&env, &action_inputs, &action_key, 13);
@@ -216,11 +293,31 @@ fn verifies_typed_action_and_batch_proofs_and_rejects_statement_changes() {
     let mut changed_batch = batch;
     changed_batch.committee_config_hash = id(&env, 99);
     assert!(!client.verify_batch(&changed_batch, &batch_proof));
+
+    let late_key = CircuitKey {
+        circuit: ProofCircuit::Deposit,
+        schema_hash: id(&env, 100),
+        verification_key: verification_key(&env, &action_key),
+    };
+    assert!(client
+        .try_add_key(&Address::generate(&env), &late_key)
+        .is_err());
 }
 
 #[test]
 #[should_panic]
-fn constructor_rejects_missing_circuits() {
+fn finalize_rejects_missing_circuits() {
     let env = Env::default();
-    env.register(ZkVerifier, (Vec::<CircuitKey>::new(&env),));
+    env.mock_all_auths();
+    let controller = Address::generate(&env);
+    let address = env.register(ZkVerifier, (controller.clone(),));
+    ZkVerifierClient::new(&env, &address).finalize(&controller);
+}
+
+#[test]
+fn domain_is_unavailable_before_finalization() {
+    let env = Env::default();
+    let controller = Address::generate(&env);
+    let address = env.register(ZkVerifier, (controller,));
+    assert!(ZkVerifierClient::new(&env, &address).try_domain().is_err());
 }

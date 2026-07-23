@@ -5,7 +5,14 @@ use soroban_sdk::{
     panic_with_error, token, xdr::ToXdr, Address, Bytes, BytesN, Env, Vec, U256,
 };
 
-pub use privacy_types::{BatchProofStatement, BatchQuote, ProofAction, ProofStatement};
+use privacy_types::{
+    address_limbs, bytes32_limbs, empty_operation_binding, operation_context_digest,
+    output_envelope_hash, set_binding_field, zero_fields, OUTPUT_ENVELOPE_LENGTH,
+};
+pub use privacy_types::{
+    BatchProofStatement, BatchQuote, BindingKind, OperationBinding, OperationContext, ProofAction,
+    ProofStatement,
+};
 
 #[cfg(test)]
 mod test;
@@ -15,8 +22,7 @@ const MIN_TREE_LEVELS: u32 = 8;
 const MAX_TREE_LEVELS: u32 = 31;
 const MIN_ROOT_HISTORY: u32 = 8;
 const MAX_ROOT_HISTORY: u32 = 128;
-const MIN_ENVELOPE_LENGTH: u32 = 96;
-const MAX_ENVELOPE_LENGTH: u32 = 512;
+const ORDER_CIPHERTEXT_LENGTH: u32 = 128;
 const MAX_PROOF_LENGTH: u32 = 512;
 const MAX_PRIVATE_BATCH_SIZE: u32 = 64;
 const MAX_ACTION_LIFETIME: u64 = 86_400;
@@ -28,22 +34,6 @@ const BN254_SCALAR_MODULUS: [u8; 32] = [
     48, 100, 78, 114, 225, 49, 160, 41, 184, 80, 69, 182, 129, 129, 88, 93, 40, 51, 232, 72, 121,
     185, 112, 145, 67, 225, 245, 147, 240, 0, 0, 1,
 ];
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TransitionContext {
-    pub network_domain: BytesN<32>,
-    pub vault: Address,
-    pub token: Address,
-    pub verifier_domain: BytesN<32>,
-    pub action: ProofAction,
-    pub action_id: BytesN<32>,
-    pub public_account: Option<Address>,
-    pub public_amount: i128,
-    pub market: Option<Address>,
-    pub binding: BytesN<32>,
-    pub expiry: u64,
-}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -330,7 +320,8 @@ pub struct VaultInfo {
     pub levels: u32,
     pub root_history_size: u32,
     pub max_root_age: u32,
-    pub envelope_length: u32,
+    pub output_envelope_length: u32,
+    pub order_ciphertext_length: u32,
     pub next_leaf_index: u32,
     pub current_root: U256,
     pub shielded_liabilities: i128,
@@ -362,7 +353,6 @@ enum DataKey {
     Levels,
     RootHistorySize,
     MaxRootAge,
-    EnvelopeLength,
     NextLeafIndex,
     CurrentRoot,
     CurrentRootSlot,
@@ -590,7 +580,6 @@ impl ShieldedCollateralVault {
         levels: u32,
         root_history_size: u32,
         max_root_age: u32,
-        envelope_length: u32,
     ) {
         let decimals = token::Client::new(&env, &token).decimals();
         let deployed_verifier_domain = ProofVerifierClient::new(&env, &verifier).domain();
@@ -600,8 +589,6 @@ impl ShieldedCollateralVault {
             || root_history_size < MIN_ROOT_HISTORY
             || root_history_size > MAX_ROOT_HISTORY
             || max_root_age == 0
-            || envelope_length < MIN_ENVELOPE_LENGTH
-            || envelope_length > MAX_ENVELOPE_LENGTH
             || Self::is_zero_bytes(&network_domain)
             || Self::is_zero_bytes(&verifier_domain)
             || deployed_verifier_domain != verifier_domain
@@ -623,7 +610,6 @@ impl ShieldedCollateralVault {
         instance.set(&DataKey::Levels, &levels);
         instance.set(&DataKey::RootHistorySize, &root_history_size);
         instance.set(&DataKey::MaxRootAge, &max_root_age);
-        instance.set(&DataKey::EnvelopeLength, &envelope_length);
         instance.set(&DataKey::NextLeafIndex, &0u32);
         instance.set(&DataKey::CurrentRoot, &genesis_root);
         instance.set(&DataKey::CurrentRootSlot, &0u32);
@@ -650,7 +636,8 @@ impl ShieldedCollateralVault {
             levels: instance.get(&DataKey::Levels).unwrap(),
             root_history_size: instance.get(&DataKey::RootHistorySize).unwrap(),
             max_root_age: instance.get(&DataKey::MaxRootAge).unwrap(),
-            envelope_length: instance.get(&DataKey::EnvelopeLength).unwrap(),
+            output_envelope_length: OUTPUT_ENVELOPE_LENGTH,
+            order_ciphertext_length: ORDER_CIPHERTEXT_LENGTH,
             next_leaf_index: instance.get(&DataKey::NextLeafIndex).unwrap_or(0),
             current_root: instance.get(&DataKey::CurrentRoot).unwrap(),
             shielded_liabilities: instance.get(&DataKey::Liabilities).unwrap_or(0),
@@ -668,12 +655,12 @@ impl ShieldedCollateralVault {
         public_account: Option<Address>,
         public_amount: i128,
         market: Option<Address>,
-        binding: BytesN<32>,
+        binding: OperationBinding,
         expiry: u64,
-    ) -> BytesN<32> {
+    ) -> U256 {
         Self::bump_instance(&env);
         let instance = env.storage().instance();
-        let context = TransitionContext {
+        let context = OperationContext {
             network_domain: instance.get(&DataKey::NetworkDomain).unwrap(),
             vault: env.current_contract_address(),
             token: instance.get(&DataKey::Token).unwrap(),
@@ -686,7 +673,8 @@ impl ShieldedCollateralVault {
             binding,
             expiry,
         };
-        env.crypto().sha256(&context.to_xdr(&env)).into()
+        operation_context_digest(&env, &context)
+            .unwrap_or_else(|_| panic_with_error!(&env, Error::InvalidProofStatement))
     }
 
     pub fn register_market(
@@ -982,7 +970,7 @@ impl ShieldedCollateralVault {
             expected_assets: amount,
             expected_version,
         };
-        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(&env)).into();
+        let operation_binding = Self::liquidity_operation_binding(&env, &binding);
         Self::execute_transition(
             &env,
             ProofAction::LiquidityFund,
@@ -990,7 +978,7 @@ impl ShieldedCollateralVault {
             None,
             -amount,
             Some(liquidity_vault.clone()),
-            binding_digest,
+            operation_binding,
             expiry,
             transition,
             2,
@@ -1110,7 +1098,7 @@ impl ShieldedCollateralVault {
             panic_with_error!(&env, Error::StaleState);
         }
         let vault_info = Self::info(env.clone());
-        if encrypted_order.len() != vault_info.envelope_length
+        if encrypted_order.len() != vault_info.order_ciphertext_length
             || Self::all_zero_bytes(&encrypted_order)
             || !Self::canonical_nonzero_field(&env, &position_commitment)
             || transition.output_commitments.len() != 2
@@ -1135,7 +1123,7 @@ impl ShieldedCollateralVault {
             committee_config_hash: epoch.committee_config_hash.clone(),
             ciphertext_hash: ciphertext_hash.clone(),
         };
-        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(&env)).into();
+        let operation_binding = Self::order_operation_binding(&env, &binding);
         Self::execute_transition(
             &env,
             ProofAction::Order,
@@ -1143,7 +1131,7 @@ impl ShieldedCollateralVault {
             None,
             0,
             Some(market.clone()),
-            binding_digest,
+            operation_binding,
             epoch.refund_at,
             transition,
             2,
@@ -1496,7 +1484,7 @@ impl ShieldedCollateralVault {
             accepted_root: epoch.accepted_root,
             position_commitment: order.position_commitment.clone(),
         };
-        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(&env)).into();
+        let operation_binding = Self::refund_operation_binding(&env, &binding);
         Self::execute_transition(
             &env,
             ProofAction::Refund,
@@ -1504,7 +1492,7 @@ impl ShieldedCollateralVault {
             None,
             0,
             Some(market),
-            binding_digest,
+            operation_binding,
             action_expiry,
             transition,
             1,
@@ -1543,7 +1531,7 @@ impl ShieldedCollateralVault {
             outcome: SettlementState::Pending,
             quote: batch.quote,
         };
-        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(&env)).into();
+        let operation_binding = Self::allocation_operation_binding(&env, &binding);
         Self::execute_transition(
             &env,
             ProofAction::ExecutionChange,
@@ -1551,7 +1539,7 @@ impl ShieldedCollateralVault {
             None,
             0,
             Some(market),
-            binding_digest,
+            operation_binding,
             action_expiry,
             transition,
             1,
@@ -1592,7 +1580,7 @@ impl ShieldedCollateralVault {
             outcome,
             quote: batch.quote,
         };
-        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(&env)).into();
+        let operation_binding = Self::allocation_operation_binding(&env, &binding);
         let action = if outcome == SettlementState::Void {
             ProofAction::Refund
         } else {
@@ -1605,7 +1593,7 @@ impl ShieldedCollateralVault {
             None,
             0,
             Some(market),
-            binding_digest,
+            operation_binding,
             action_expiry,
             transition,
             1,
@@ -1754,7 +1742,7 @@ impl ShieldedCollateralVault {
             None,
             amount,
             None,
-            treasury_key,
+            Self::treasury_operation_binding(&env, &treasury_key),
             expiry,
             transition,
             0,
@@ -1883,7 +1871,7 @@ impl ShieldedCollateralVault {
         public_account: Option<Address>,
         public_amount: i128,
         market: Option<Address>,
-        binding: BytesN<32>,
+        binding: OperationBinding,
         expiry: u64,
         transition: PrivateTransition,
         expected_nullifiers: u32,
@@ -1955,9 +1943,11 @@ impl ShieldedCollateralVault {
             if !Self::canonical_nonzero_field(env, &commitment) {
                 panic_with_error!(env, Error::InvalidProofStatement);
             }
-            if encrypted.len() != info.envelope_length {
+            if encrypted.len() != info.output_envelope_length {
                 panic_with_error!(env, Error::InvalidEnvelope);
             }
+            output_envelope_hash(env, &encrypted)
+                .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidEnvelope));
             if env
                 .storage()
                 .persistent()
@@ -1986,6 +1976,15 @@ impl ShieldedCollateralVault {
             new_root: transition.new_root.clone(),
             input_nullifiers: transition.input_nullifiers.clone(),
             output_commitments: transition.output_commitments.clone(),
+            output_envelope_hashes: Vec::from_array(
+                env,
+                [
+                    output_envelope_hash(env, &transition.encrypted_outputs.get(0).unwrap())
+                        .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidEnvelope)),
+                    output_envelope_hash(env, &transition.encrypted_outputs.get(1).unwrap())
+                        .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidEnvelope)),
+                ],
+            ),
             first_leaf_index: next_leaf_index,
             public_amount,
         };
@@ -2297,7 +2296,7 @@ impl ShieldedCollateralVault {
             expected_assets,
             expected_version,
         };
-        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(env)).into();
+        let operation_binding = Self::liquidity_operation_binding(env, &binding);
         Self::execute_transition(
             env,
             action,
@@ -2305,7 +2304,7 @@ impl ShieldedCollateralVault {
             None,
             expected_assets,
             Some(liquidity_vault.clone()),
-            binding_digest,
+            operation_binding,
             expiry,
             transition,
             2,
@@ -2385,8 +2384,275 @@ impl ShieldedCollateralVault {
             .set(&DataKey::Liabilities, &updated);
     }
 
-    fn empty_binding(env: &Env) -> BytesN<32> {
-        BytesN::from_array(env, &[0; 32])
+    fn empty_binding(env: &Env) -> OperationBinding {
+        empty_operation_binding(env)
+    }
+
+    fn liquidity_operation_binding(env: &Env, binding: &LiquidityBinding) -> OperationBinding {
+        let mut fields = zero_fields(env);
+        let (vault_high, vault_low) = address_limbs(env, &binding.liquidity_vault);
+        Self::set_operation_field(env, &mut fields, 0, vault_high);
+        Self::set_operation_field(env, &mut fields, 1, vault_low);
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            2,
+            U256::from_be_bytes(env, &Bytes::from(binding.share_commitment.clone())),
+        );
+        Self::set_operation_field(env, &mut fields, 3, Self::binding_i128(env, binding.shares));
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            4,
+            Self::binding_i128(env, binding.expected_assets),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            5,
+            U256::from_u128(env, binding.expected_version as u128),
+        );
+        OperationBinding {
+            kind: BindingKind::Liquidity,
+            fields,
+        }
+    }
+
+    fn order_operation_binding(env: &Env, binding: &OrderBinding) -> OperationBinding {
+        let mut fields = zero_fields(env);
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            0,
+            U256::from_u128(env, binding.epoch as u128),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            1,
+            U256::from_u128(env, binding.market_state_version as u128),
+        );
+        Self::set_operation_field(env, &mut fields, 2, binding.position_commitment.clone());
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            3,
+            Self::binding_i128(env, binding.lot_size),
+        );
+        Self::set_operation_field(env, &mut fields, 4, U256::from_u32(env, binding.fee_bps));
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            5,
+            U256::from_u32(env, binding.fixed_batch_size),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            6,
+            U256::from_u32(env, binding.minimum_side_count),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            7,
+            Self::binding_i128(env, binding.maximum_price_movement),
+        );
+        let (rules_high, rules_low) = bytes32_limbs(env, &binding.rules_hash);
+        Self::set_operation_field(env, &mut fields, 8, rules_high);
+        Self::set_operation_field(env, &mut fields, 9, rules_low);
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            10,
+            U256::from_u128(env, binding.refund_at as u128),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            11,
+            U256::from_u128(env, binding.committee_epoch as u128),
+        );
+        let (committee_high, committee_low) = bytes32_limbs(env, &binding.committee_config_hash);
+        Self::set_operation_field(env, &mut fields, 12, committee_high);
+        Self::set_operation_field(env, &mut fields, 13, committee_low);
+        let (ciphertext_high, ciphertext_low) = bytes32_limbs(env, &binding.ciphertext_hash);
+        Self::set_operation_field(env, &mut fields, 14, ciphertext_high);
+        Self::set_operation_field(env, &mut fields, 15, ciphertext_low);
+        OperationBinding {
+            kind: BindingKind::Order,
+            fields,
+        }
+    }
+
+    fn refund_operation_binding(env: &Env, binding: &RefundBinding) -> OperationBinding {
+        let mut fields = zero_fields(env);
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            0,
+            U256::from_u128(env, binding.epoch as u128),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            1,
+            U256::from_u128(env, binding.sequence as u128),
+        );
+        let (root_high, root_low) = bytes32_limbs(env, &binding.accepted_root);
+        Self::set_operation_field(env, &mut fields, 2, root_high);
+        Self::set_operation_field(env, &mut fields, 3, root_low);
+        Self::set_operation_field(env, &mut fields, 4, binding.position_commitment.clone());
+        OperationBinding {
+            kind: BindingKind::Refund,
+            fields,
+        }
+    }
+
+    fn allocation_operation_binding(env: &Env, binding: &AllocationBinding) -> OperationBinding {
+        let mut fields = zero_fields(env);
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            0,
+            U256::from_u128(env, binding.epoch as u128),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            1,
+            U256::from_u128(env, binding.sequence as u128),
+        );
+        Self::set_operation_field(env, &mut fields, 2, binding.allocation_root.clone());
+        Self::set_operation_field(env, &mut fields, 3, binding.position_commitment.clone());
+        let outcome = match binding.outcome {
+            SettlementState::Pending => 0,
+            SettlementState::Yes => 1,
+            SettlementState::No => 2,
+            SettlementState::Void => 3,
+        };
+        Self::set_operation_field(env, &mut fields, 4, U256::from_u32(env, outcome));
+        let quote = &binding.quote;
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            5,
+            U256::from_u128(env, quote.state_version as u128),
+        );
+        Self::set_operation_field(env, &mut fields, 6, U256::from_u32(env, quote.batch_size));
+        Self::set_operation_field(env, &mut fields, 7, U256::from_u32(env, quote.yes_count));
+        Self::set_operation_field(env, &mut fields, 8, U256::from_u32(env, quote.no_count));
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            9,
+            Self::binding_i128(env, quote.pre_yes_price),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            10,
+            Self::binding_i128(env, quote.post_yes_price),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            11,
+            Self::binding_i128(env, quote.yes_price),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            12,
+            Self::binding_i128(env, quote.no_price),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            13,
+            Self::binding_i128(env, quote.aggregate_market_charge),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            14,
+            Self::binding_i128(env, quote.yes_market_cost),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            15,
+            Self::binding_i128(env, quote.no_market_cost),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            16,
+            Self::binding_i128(env, quote.yes_charge_per_position),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            17,
+            Self::binding_i128(env, quote.no_charge_per_position),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            18,
+            Self::binding_i128(env, quote.rounding_contribution),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            19,
+            Self::binding_i128(env, quote.fee_per_position),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            20,
+            Self::binding_i128(env, quote.fee_escrow),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            21,
+            Self::binding_i128(env, quote.conditional_lp_fee),
+        );
+        Self::set_operation_field(
+            env,
+            &mut fields,
+            22,
+            Self::binding_i128(env, quote.conditional_protocol_fee),
+        );
+        OperationBinding {
+            kind: BindingKind::Allocation,
+            fields,
+        }
+    }
+
+    fn treasury_operation_binding(env: &Env, treasury_key: &BytesN<32>) -> OperationBinding {
+        let mut fields = zero_fields(env);
+        let (high, low) = bytes32_limbs(env, treasury_key);
+        Self::set_operation_field(env, &mut fields, 0, high);
+        Self::set_operation_field(env, &mut fields, 1, low);
+        OperationBinding {
+            kind: BindingKind::Treasury,
+            fields,
+        }
+    }
+
+    fn set_operation_field(env: &Env, fields: &mut Vec<U256>, index: u32, value: U256) {
+        set_binding_field(fields, index, value)
+            .unwrap_or_else(|_| panic_with_error!(env, Error::InvalidProofStatement));
+    }
+
+    fn binding_i128(env: &Env, value: i128) -> U256 {
+        if value < 0 {
+            panic_with_error!(env, Error::InvalidProofStatement);
+        }
+        U256::from_u128(env, value as u128)
     }
 
     fn assert_backing(env: &Env) {

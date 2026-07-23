@@ -9,6 +9,7 @@ crate-type = ["rlib"]
 doctest = false
 
 [dependencies]
+soroban-poseidon = "26.0.0"
 soroban-sdk = { workspace = true }
 
 [dev-dependencies]
