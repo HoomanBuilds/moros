@@ -71,6 +71,38 @@ export type EncryptedPrivateAllocation = {
   envelope: string[];
 };
 
+export type PrivateLiquidityExit = {
+  market: string;
+  liquidityVault: string;
+  exitId: string;
+  status: string;
+  intent?: {
+    shares_remaining: string;
+    minimum_payment_remaining: string;
+    destination: string;
+    payment_destination: {
+      commitment: string;
+      spend_public_key: string;
+      viewing_public_key_x: string;
+      viewing_public_key_y: string;
+      note_id: string;
+      blinding: string;
+    };
+    expiry: string;
+    status: string;
+  };
+  snapshot?: {
+    state_version: string;
+    equity_if_yes: string;
+    equity_if_no: string;
+    conditional_lp_fees: string;
+    updated_at: string;
+  };
+  stateVersion?: string;
+  checkedAt: string;
+  error?: string;
+};
+
 const PRIVATE_SERVICE =
   process.env.NEXT_PUBLIC_PRIVATE_SERVICE_URL || COMMITTEE_URL;
 
@@ -186,6 +218,67 @@ export async function getPrivateAllocation(
     throw new Error("Private allocation response is incompatible");
   }
   return allocation;
+}
+
+export async function getPrivateLiquidityExits({
+  market,
+  liquidityVault,
+  status,
+  offset = 0,
+  limit = 200,
+}: {
+  market?: string;
+  liquidityVault?: string;
+  status?: string;
+  offset?: number;
+  limit?: number;
+} = {}): Promise<PrivateLiquidityExit[]> {
+  const query = new URLSearchParams({
+    offset: String(offset),
+    limit: String(limit),
+  });
+  if (market) query.set("market", market);
+  if (liquidityVault) query.set("liquidityVault", liquidityVault);
+  if (status) query.set("status", status);
+  const response = await fetch(
+    privateServiceUrl(`/private/exits?${query.toString()}`),
+    { cache: "no-store" },
+  );
+  if (!response.ok) throw new Error(await errorMessage(response));
+  const result = await response.json() as {
+    exits?: PrivateLiquidityExit[];
+    total?: number;
+  };
+  if (
+    !Array.isArray(result.exits) ||
+    result.exits.some((entry) =>
+      !/^C[A-Z2-7]{55}$/u.test(entry.market) ||
+      !/^C[A-Z2-7]{55}$/u.test(entry.liquidityVault) ||
+      !/^[0-9a-f]{64}$/u.test(entry.exitId) ||
+      typeof entry.status !== "string"
+    )
+  ) {
+    throw new Error("Private liquidity exit response is incompatible");
+  }
+  return result.exits;
+}
+
+export async function registerPrivateLiquidityExit({
+  market,
+  liquidityVault,
+  exitId,
+}: {
+  market: string;
+  liquidityVault: string;
+  exitId: string;
+}): Promise<PrivateLiquidityExit> {
+  const response = await fetch(privateServiceUrl("/private/register-exit"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ market, liquidityVault, exitId }),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json() as Promise<PrivateLiquidityExit>;
 }
 
 export async function relayPrivateCall(

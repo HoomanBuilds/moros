@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowRightLeft,
   CircleAlert,
   Droplets,
   LockKeyhole,
@@ -16,13 +17,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  cancelLiquidityExit,
   fundMarketLiquidity,
+  getLiquidityExitQuote,
   getOwnedLiquidityShares,
+  getPrivateLiquidityExitOffers,
   getLiquidityVaultInfo,
+  matchLiquidityExit,
+  requestLiquidityExit,
   shieldUsdc,
   withdrawLiquidity,
   type LiquidityVaultInfo,
   type OwnedLiquidityShare,
+  type PrivateLiquidityExitOffer,
 } from "@/lib/private/actions";
 import { openPrivateWallet } from "@/lib/private/wallet";
 import {
@@ -50,6 +57,11 @@ type CardState = {
   busy: boolean;
 };
 
+type ExitForm = {
+  minimumPayment: string;
+  expiry: string;
+};
+
 function phaseName(value: LiquidityVaultInfo["phase"]): string {
   return typeof value === "string" ? value : value.tag;
 }
@@ -63,6 +75,13 @@ function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function localDateTimeValue(timestamp: number): string {
+  const date = new Date(timestamp);
+  return new Date(timestamp - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+}
+
 export default function LiquidityPage() {
   const address = useWalletAddress();
   const [markets, setMarkets] = useState<RegistryMarket[]>([]);
@@ -70,11 +89,14 @@ export default function LiquidityPage() {
   const [cards, setCards] = useState<Record<string, CardState>>({});
   const [privateBalance, setPrivateBalance] = useState<bigint | null>(null);
   const [ownedShares, setOwnedShares] = useState<OwnedLiquidityShare[]>([]);
+  const [exitOffers, setExitOffers] = useState<PrivateLiquidityExitOffer[]>([]);
+  const [exitForms, setExitForms] = useState<Record<string, ExitForm>>({});
   const [collateral, setCollateral] = useState<CollateralAccountState | null>(null);
   const [loading, setLoading] = useState(true);
   const [unlocking, setUnlocking] = useState(false);
   const [trustlineBusy, setTrustlineBusy] = useState(false);
   const [pageError, setPageError] = useState("");
+  const [nowSeconds, setNowSeconds] = useState(0);
 
   const loadMarkets = useCallback(async () => {
     setLoading(true);
@@ -95,6 +117,7 @@ export default function LiquidityPage() {
         setCollateral(null);
         setPrivateBalance(null);
         setOwnedShares([]);
+        setExitOffers([]);
       }
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Funding rounds could not be loaded");
@@ -107,10 +130,25 @@ export default function LiquidityPage() {
     void loadMarkets();
   }, [loadMarkets]);
 
+  useEffect(() => {
+    const update = () => setNowSeconds(Math.floor(Date.now() / 1_000));
+    update();
+    const timer = window.setInterval(update, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const activeMarkets = useMemo(() => markets.filter((market) => {
     const info = vaults[market.marketId];
     return !info || ["Funding", "Ready"].includes(phaseName(info.phase));
   }), [markets, vaults]);
+  const ownedOpenExits = useMemo(() => exitOffers.filter((offer) =>
+    offer.owned && offer.status === "Open"
+  ), [exitOffers]);
+  const availableExitOffers = useMemo(() => exitOffers.filter((offer) =>
+    !offer.owned &&
+    offer.status === "Open" &&
+    offer.expiry >= BigInt(nowSeconds)
+  ), [exitOffers, nowSeconds]);
 
   function updateCard(marketId: string, update: Partial<CardState>) {
     setCards((current) => ({
@@ -130,14 +168,19 @@ export default function LiquidityPage() {
     setUnlocking(true);
     setPageError("");
     try {
-      const wallet = await openPrivateWallet(address);
-      setPrivateBalance(wallet.balance);
-      setOwnedShares(await getOwnedLiquidityShares(
-        address,
-        markets.flatMap((market) =>
-          market.liquidityVaultId ? [market.liquidityVaultId] : []
+      const [wallet, shares, offers] = await Promise.all([
+        openPrivateWallet(address),
+        getOwnedLiquidityShares(
+          address,
+          markets.flatMap((market) =>
+            market.liquidityVaultId ? [market.liquidityVaultId] : []
+          ),
         ),
-      ));
+        getPrivateLiquidityExitOffers(address),
+      ]);
+      setPrivateBalance(wallet.balance);
+      setOwnedShares(shares);
+      setExitOffers(offers);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Private balance could not be unlocked");
     } finally {
@@ -168,6 +211,24 @@ export default function LiquidityPage() {
       if (wallet.balance > priorBalance) return wallet.balance;
     }
     throw new Error("Deposit confirmed, but the private indexer has not published the new note yet");
+  }
+
+  async function refreshPrivateLiquidityState() {
+    if (!address) throw new Error("Connect a wallet first");
+    const [wallet, shares, offers] = await Promise.all([
+      openPrivateWallet(address),
+      getOwnedLiquidityShares(
+        address,
+        markets.flatMap((entry) =>
+          entry.liquidityVaultId ? [entry.liquidityVaultId] : []
+        ),
+      ),
+      getPrivateLiquidityExitOffers(address),
+    ]);
+    setPrivateBalance(wallet.balance);
+    setOwnedShares(shares);
+    setExitOffers(offers);
+    return { wallet, shares, offers };
   }
 
   async function shield(market: RegistryMarket) {
@@ -277,6 +338,184 @@ export default function LiquidityPage() {
     }
   }
 
+  async function prepareExit(
+    market: RegistryMarket,
+    share: OwnedLiquidityShare,
+  ) {
+    if (!address || !market.liquidityVaultId) return;
+    const key = `lp:${share.commitment}`;
+    updateCard(key, { busy: true, error: "", status: "Reading current LP scenario value" });
+    try {
+      const quote = await getLiquidityExitQuote({
+        address,
+        market: market.marketId,
+        liquidityVaultId: market.liquidityVaultId,
+        shares: share.shares,
+      });
+      const latestExpiry = (market.settlementTime ?? Date.now() + 86_400_000) - 60_000;
+      const suggestedExpiry = Math.min(
+        Date.now() + 86_400_000,
+        latestExpiry,
+      );
+      if (suggestedExpiry <= Date.now() + 60_000) {
+        throw new Error("This market is too close to expiry for a new LP exit offer");
+      }
+      setExitForms((current) => ({
+        ...current,
+        [key]: {
+          minimumPayment: formatTokenAmount(
+            quote.floor,
+            NETWORK.collateral.decimals,
+            NETWORK.collateral.decimals,
+          ),
+          expiry: localDateTimeValue(suggestedExpiry),
+        },
+      }));
+      updateCard(key, {
+        status: `Current scenario range is ${formatTokenAmount(quote.floor, NETWORK.collateral.decimals, 4)} to ${formatTokenAmount(quote.ceiling, NETWORK.collateral.decimals, 4)} USDC`,
+      });
+    } catch (error) {
+      updateCard(key, {
+        error: error instanceof Error ? error.message : "LP exit terms could not be prepared",
+        status: "",
+      });
+    } finally {
+      updateCard(key, { busy: false });
+    }
+  }
+
+  async function createExitOffer(
+    market: RegistryMarket,
+    share: OwnedLiquidityShare,
+  ) {
+    if (!address || !market.liquidityVaultId) return;
+    const key = `lp:${share.commitment}`;
+    const form = exitForms[key];
+    if (!form) return;
+    updateCard(key, { busy: true, error: "", status: "Preparing private LP exit" });
+    try {
+      const minimumPayment = parseTokenAmount(
+        form.minimumPayment,
+        NETWORK.collateral.decimals,
+      );
+      const parsedExpiry = Date.parse(form.expiry);
+      if (!Number.isFinite(parsedExpiry)) throw new Error("Choose a valid exit expiry");
+      const result = await requestLiquidityExit({
+        address,
+        market: market.marketId,
+        liquidityVaultId: market.liquidityVaultId,
+        shareCommitment: share.commitment,
+        shares: share.shares,
+        minimumPayment,
+        exitExpiry: BigInt(Math.floor(parsedExpiry / 1_000)),
+        onStatus: (status) => updateCard(key, { status }),
+      });
+      updateCard(key, {
+        status: result.registrationPending
+          ? `Exit ${result.exitId.slice(0, 10)} is on-chain. Public offer indexing is retrying.`
+          : "Private LP exit offer is open",
+      });
+      setExitForms((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      for (let attempt = 0; attempt < 6; attempt++) {
+        await wait(2_000);
+        const refreshed = await refreshPrivateLiquidityState();
+        if (refreshed.offers.some((offer) =>
+          offer.exitId === result.exitId && offer.owned
+        )) break;
+      }
+    } catch (error) {
+      updateCard(key, {
+        error: error instanceof Error ? error.message : "Private LP exit failed",
+        status: "",
+      });
+    } finally {
+      updateCard(key, { busy: false });
+    }
+  }
+
+  async function cancelExitOffer(offer: PrivateLiquidityExitOffer) {
+    if (!address) return;
+    const key = `exit:${offer.exitId}`;
+    updateCard(key, { busy: true, error: "", status: "Preparing private cancellation" });
+    try {
+      await cancelLiquidityExit({
+        address,
+        market: offer.market,
+        liquidityVaultId: offer.liquidityVaultId,
+        exitId: offer.exitId,
+        onStatus: (status) => updateCard(key, { status }),
+      });
+      updateCard(key, { status: "LP shares returned to the private wallet" });
+      await wait(2_000);
+      await refreshPrivateLiquidityState();
+    } catch (error) {
+      updateCard(key, {
+        error: error instanceof Error ? error.message : "Private exit cancellation failed",
+        status: "",
+      });
+    } finally {
+      updateCard(key, { busy: false });
+    }
+  }
+
+  async function takeExitOffer(offer: PrivateLiquidityExitOffer) {
+    if (!address) return;
+    const key = `offer:${offer.exitId}`;
+    updateCard(key, { busy: true, error: "", status: "Verifying current market risk" });
+    try {
+      const result = await matchLiquidityExit({
+        address,
+        market: offer.market,
+        liquidityVaultId: offer.liquidityVaultId,
+        exitId: offer.exitId,
+        onStatus: (status) => updateCard(key, { status }),
+      });
+      updateCard(key, {
+        status: `Acquired ${formatTokenAmount(result.shares, NETWORK.collateral.decimals, 4)} LP shares`,
+      });
+      await wait(2_000);
+      await refreshPrivateLiquidityState();
+    } catch (error) {
+      updateCard(key, {
+        error: error instanceof Error ? error.message : "Private LP replacement failed",
+        status: "",
+      });
+    } finally {
+      updateCard(key, { busy: false });
+    }
+  }
+
+  async function shieldForExitOffer(offer: PrivateLiquidityExitOffer) {
+    if (!address || privateBalance === null) return;
+    const key = `offer:${offer.exitId}`;
+    const amount = offer.minimumPayment - privateBalance;
+    if (amount <= 0n) return;
+    updateCard(key, { busy: true, error: "", status: "Preparing private USDC" });
+    try {
+      if (!collateral?.hasTrustline) throw new Error("Enable USDC before shielding funds");
+      if (collateral.balanceAtomic < amount) {
+        throw new Error("Wallet USDC balance is too low for this LP replacement");
+      }
+      await shieldUsdc(address, amount, (status) => updateCard(key, { status }));
+      updateCard(key, { status: "Waiting for the private note index" });
+      await refreshPrivateBalance(privateBalance);
+      await refreshPrivateLiquidityState();
+      setCollateral(await getCollateralAccountState(address, NETWORK.collateral));
+      updateCard(key, { status: "Private USDC is ready for this offer" });
+    } catch (error) {
+      updateCard(key, {
+        error: error instanceof Error ? error.message : "USDC deposit failed",
+        status: "",
+      });
+    } finally {
+      updateCard(key, { busy: false });
+    }
+  }
+
   return (
     <div className="space-y-8 pb-12">
       <PageHeader
@@ -357,6 +596,12 @@ export default function LiquidityPage() {
               const withdrawable = ["Funding", "Ready", "Cancelled", "Settled"].includes(phase);
               const cardKey = `lp:${share.commitment}`;
               const card = cards[cardKey];
+              const exitForm = exitForms[cardKey];
+              const hasOpenExit = exitOffers.some((offer) =>
+                offer.owned &&
+                offer.status === "Open" &&
+                offer.liquidityVaultId === share.liquidityVaultId
+              );
               return (
                 <Panel key={share.commitment.toString()} className="p-5">
                   <div className="flex items-start justify-between gap-3">
@@ -388,6 +633,196 @@ export default function LiquidityPage() {
                         : "Redeem LP shares"}
                     </Button>
                   )}
+                  {phase === "Active" && !hasOpenExit && !exitForm && (
+                    <Button
+                      className="mt-4"
+                      size="sm"
+                      variant="outline"
+                      disabled={card?.busy}
+                      onClick={() => void prepareExit(market, share)}
+                    >
+                      {card?.busy && <Spinner />}
+                      Prepare private exit
+                    </Button>
+                  )}
+                  {phase === "Active" && exitForm && (
+                    <div className="mt-4 space-y-3 rounded-lg border border-white/[0.08] bg-black/10 p-3">
+                      <div>
+                        <label className="text-[11px] text-foreground/55">
+                          Minimum private USDC payment
+                        </label>
+                        <Input
+                          className="mt-1 h-10 font-mono"
+                          inputMode="decimal"
+                          value={exitForm.minimumPayment}
+                          disabled={card?.busy}
+                          onChange={(event) => setExitForms((current) => ({
+                            ...current,
+                            [cardKey]: {
+                              ...current[cardKey],
+                              minimumPayment: event.target.value,
+                            },
+                          }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-foreground/55">
+                          Offer expiry in your local time
+                        </label>
+                        <Input
+                          className="mt-1 h-10 font-mono"
+                          type="datetime-local"
+                          value={exitForm.expiry}
+                          max={market.settlementTime
+                            ? localDateTimeValue(market.settlementTime - 60_000)
+                            : undefined}
+                          disabled={card?.busy}
+                          onChange={(event) => setExitForms((current) => ({
+                            ...current,
+                            [cardKey]: {
+                              ...current[cardKey],
+                              expiry: event.target.value,
+                            },
+                          }))}
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          disabled={card?.busy}
+                          onClick={() => void createExitOffer(market, share)}
+                        >
+                          {card?.busy && <Spinner />}
+                          Open exit offer
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={card?.busy}
+                          onClick={() => setExitForms((current) => {
+                            const next = { ...current };
+                            delete next[cardKey];
+                            return next;
+                          })}
+                        >
+                          Keep position
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {card?.status && <p className="mt-3 text-xs text-emerald-200">{card.status}</p>}
+                  {card?.error && <p className="mt-3 text-xs text-red-300">{card.error}</p>}
+                </Panel>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {address && privateBalance !== null && ownedOpenExits.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-wider text-foreground/45">
+              Your open LP exits
+            </p>
+            <p className="mt-1 text-sm text-foreground/60">
+              Ownership is proven by the encrypted exit receipt. Your wallet address is not stored with the offer.
+            </p>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {ownedOpenExits.map((offer) => {
+              const market = markets.find((entry) =>
+                entry.marketId === offer.market
+              );
+              const key = `exit:${offer.exitId}`;
+              const card = cards[key];
+              return (
+                <Panel key={offer.exitId} className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">
+                        {market?.title || `${market?.asset || "Market"} LP exit`}
+                      </p>
+                      <p className="mt-1 font-mono text-xs text-foreground/50">
+                        {formatTokenAmount(offer.shares, NETWORK.collateral.decimals, 4)} shares for at least{" "}
+                        {formatTokenAmount(offer.minimumPayment, NETWORK.collateral.decimals, 4)} USDC
+                      </p>
+                    </div>
+                    <Tag>Open</Tag>
+                  </div>
+                  <p className="mt-3 text-xs text-foreground/50">
+                    Expires {new Date(Number(offer.expiry) * 1_000).toLocaleString()}.
+                    A replacement LP must fill the full offer at the current proof-bound market snapshot.
+                  </p>
+                  <Button
+                    className="mt-4"
+                    size="sm"
+                    variant="outline"
+                    disabled={card?.busy}
+                    onClick={() => void cancelExitOffer(offer)}
+                  >
+                    {card?.busy && <Spinner />}
+                    Cancel privately
+                  </Button>
+                  {card?.status && <p className="mt-3 text-xs text-emerald-200">{card.status}</p>}
+                  {card?.error && <p className="mt-3 text-xs text-red-300">{card.error}</p>}
+                </Panel>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {address && privateBalance !== null && availableExitOffers.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-wider text-foreground/45">
+              Available LP replacements
+            </p>
+            <p className="mt-1 text-sm text-foreground/60">
+              Acquire the full private LP position with shielded USDC. The proof rejects changed or stale market state.
+            </p>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {availableExitOffers.map((offer) => {
+              const market = markets.find((entry) =>
+                entry.marketId === offer.market
+              );
+              const key = `offer:${offer.exitId}`;
+              const card = cards[key];
+              const canTake = privateBalance >= offer.minimumPayment;
+              return (
+                <Panel key={offer.exitId} className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">
+                        {market?.title || `${market?.asset || "Market"} LP position`}
+                      </p>
+                      <p className="mt-1 font-mono text-xs text-foreground/50">
+                        {formatTokenAmount(offer.minimumPayment, NETWORK.collateral.decimals, 4)} USDC for{" "}
+                        {formatTokenAmount(offer.shares, NETWORK.collateral.decimals, 4)} shares
+                      </p>
+                    </div>
+                    <ArrowRightLeft className="size-4 text-[#eca8d6]" aria-hidden="true" />
+                  </div>
+                  <p className="mt-3 text-xs text-foreground/50">
+                    Market scenario equity is currently{" "}
+                    {formatTokenAmount(offer.equityFloor, NETWORK.collateral.decimals, 2)} to{" "}
+                    {formatTokenAmount(offer.equityCeiling, NETWORK.collateral.decimals, 2)} USDC for all LP shares.
+                  </p>
+                  <Button
+                    className="mt-4"
+                    size="sm"
+                    disabled={card?.busy || (!canTake && !collateral?.hasTrustline)}
+                    onClick={() => void (
+                      canTake
+                        ? takeExitOffer(offer)
+                        : shieldForExitOffer(offer)
+                    )}
+                  >
+                    {card?.busy && <Spinner />}
+                    {canTake ? "Replace privately" : "Shield more USDC"}
+                  </Button>
                   {card?.status && <p className="mt-3 text-xs text-emerald-200">{card.status}</p>}
                   {card?.error && <p className="mt-3 text-xs text-red-300">{card.error}</p>}
                 </Panel>

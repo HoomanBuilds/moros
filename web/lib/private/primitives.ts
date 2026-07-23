@@ -179,8 +179,49 @@ export function createOutputNote({
   ephemeralSecret: bigint;
   nonce: bigint;
 }): PrivateOutput {
-  const recipientSpendPublicKey = spendPublicKey(spendSecret);
-  const recipientViewingPublicKey = viewingPublicKey(viewingSecret);
+  return createOutputNoteForRecipient({
+    outputIndex,
+    domain,
+    purpose,
+    amount,
+    spendPublicKey: spendPublicKey(spendSecret),
+    viewingPublicKey: viewingPublicKey(viewingSecret),
+    noteId,
+    payloadHash,
+    privateData,
+    blinding,
+    ephemeralSecret,
+    nonce,
+  });
+}
+
+export function createOutputNoteForRecipient({
+  outputIndex,
+  domain,
+  purpose,
+  amount,
+  spendPublicKey: recipientSpendPublicKey,
+  viewingPublicKey: recipientViewingPublicKey,
+  noteId,
+  payloadHash = 0n,
+  privateData = [0n, 0n],
+  blinding,
+  ephemeralSecret,
+  nonce,
+}: {
+  outputIndex: number;
+  domain: bigint;
+  purpose: bigint;
+  amount: bigint;
+  spendPublicKey: bigint;
+  viewingPublicKey: Point;
+  noteId: bigint;
+  payloadHash?: bigint;
+  privateData?: Point;
+  blinding: bigint;
+  ephemeralSecret: bigint;
+  nonce: bigint;
+}): PrivateOutput {
   const ephemeralPublicKey = multiplyPoint(BABYJUB_BASE8, ephemeralSecret);
   const sharedSecret = multiplyPoint(
     multiplyPoint(recipientViewingPublicKey, 8n),
@@ -429,6 +470,36 @@ export function appendPair(
     newRoot: node,
     siblings,
     firstLeafIndex: tree.count,
+  };
+}
+
+export function appendFour(
+  tree: PrivateTree,
+  commitments: [bigint, bigint, bigint, bigint],
+): {
+  appendRoot: bigint;
+  middleRoot: bigint;
+  newRoot: bigint;
+  siblings0: bigint[];
+  siblings1: bigint[];
+  firstLeafIndex: number;
+} {
+  const first = appendPair(tree, [commitments[0], commitments[1]]);
+  const middleTree = merkleTree(
+    [...tree.layers[0], commitments[0], commitments[1]],
+    tree.levels,
+  );
+  if (middleTree.root !== first.newRoot) {
+    throw new Error("Private four-note append failed at the middle root");
+  }
+  const second = appendPair(middleTree, [commitments[2], commitments[3]]);
+  return {
+    appendRoot: first.appendRoot,
+    middleRoot: first.newRoot,
+    newRoot: second.newRoot,
+    siblings0: first.siblings,
+    siblings1: second.siblings,
+    firstLeafIndex: first.firstLeafIndex,
   };
 }
 

@@ -3,9 +3,11 @@ import { poseidon2Hash } from "@zkpassport/poseidon2";
 import depositFixture from "../../../contracts/shielded-collateral-vault/circuits/test/deposit.json";
 import depositNotes from "../../../contracts/shielded-collateral-vault/circuits/test/deposit_notes.json";
 import {
+  appendFour,
   appendPair,
   appendOne,
   createOutputNote,
+  createOutputNoteForRecipient,
   decryptAllocationWitness,
   decryptOutputNote,
   envelopeToFields,
@@ -45,6 +47,21 @@ const recreated = createOutputNote({
 
 assert.equal(recreated.commitment, BigInt(String(first.commitment)));
 assert.equal(recreated.envelopeHash, BigInt(String(first.envelopeHash)));
+const recipientOutput = createOutputNoteForRecipient({
+  outputIndex: 0,
+  domain,
+  purpose: recreated.purpose,
+  amount: recreated.amount,
+  spendPublicKey: recreated.spendPublicKey,
+  viewingPublicKey: recreated.viewingPublicKey,
+  noteId: recreated.noteId,
+  payloadHash: recreated.payloadHash,
+  privateData: recreated.privateData,
+  blinding: recreated.blinding,
+  ephemeralSecret: recreated.ephemeralSecret,
+  nonce: recreated.nonce,
+});
+assert.deepEqual(recipientOutput, recreated);
 
 const envelopeBytes = fieldsToEnvelope(recreated.envelope);
 assert.deepEqual(envelopeToFields(envelopeBytes), recreated.envelope);
@@ -70,6 +87,20 @@ const one = appendOne(empty, commitments[0]);
 const singleTree = merkleTree([commitments[0]], 20);
 assert.equal(one.appendRoot, empty.root);
 assert.equal(one.newRoot, singleTree.root);
+const fourCommitments = [11n, 12n, 13n, 14n] as const;
+const appendedFour = appendFour(
+  empty,
+  [...fourCommitments] as [bigint, bigint, bigint, bigint],
+);
+assert.equal(
+  appendedFour.middleRoot,
+  merkleTree(fourCommitments.slice(0, 2), 20).root,
+);
+assert.equal(
+  appendedFour.newRoot,
+  merkleTree([...fourCommitments], 20).root,
+);
+assert.equal(appendedFour.firstLeafIndex, 0);
 
 const allocationShared = multiplyPoint(viewingPublicKey(19n), 8n * 101n);
 const allocationPlaintext = [

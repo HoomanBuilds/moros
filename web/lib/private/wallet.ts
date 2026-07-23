@@ -56,7 +56,7 @@ function nullifierDomains(purpose: bigint): bigint[] {
   if ([0n, 1n, 6n, 7n].includes(purpose)) return [1n];
   if (purpose === 3n) return [2n];
   if (purpose === 2n) return [3n, 4n];
-  if (purpose === 4n) return [5n];
+  if (purpose === 4n || purpose === 9n) return [5n];
   return [];
 }
 

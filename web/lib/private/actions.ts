@@ -5,7 +5,9 @@ import { unlockPositionBackup } from "@/lib/positions/backup";
 import {
   getPrivateConfig,
   getPrivateAllocation,
+  getPrivateLiquidityExits,
   getPrivateTree,
+  registerPrivateLiquidityExit,
   type PrivateDeploymentConfig,
 } from "./client";
 import {
@@ -16,10 +18,12 @@ import {
 import {
   addPoints,
   addressLimbs,
+  appendFour,
   appendOne,
   appendPair,
   bytes32Limbs,
   createOutputNote,
+  createOutputNoteForRecipient,
   decryptAllocationWitness,
   fieldsToEnvelope,
   hexToBytes,
@@ -61,6 +65,7 @@ type PrivateTransition = {
 };
 
 export type LiquidityVaultInfo = {
+  share_controller: string;
   target_assets: bigint;
   funded_assets: bigint;
   total_shares: bigint;
@@ -83,7 +88,34 @@ type PrivateMarketRegistration = {
   lp_fee_share_bps: number;
   maximum_price_movement: bigint;
   rules_hash: Uint8Array;
+  expiry: bigint;
   finalized: boolean;
+};
+
+type LiquidityExitPaymentDestination = {
+  commitment: Uint8Array;
+  spend_public_key: bigint;
+  viewing_public_key_x: bigint;
+  viewing_public_key_y: bigint;
+  note_id: bigint;
+  blinding: bigint;
+};
+
+type LiquidityExitIntent = {
+  shares_remaining: bigint;
+  minimum_payment_remaining: bigint;
+  destination: Uint8Array;
+  payment_destination: LiquidityExitPaymentDestination;
+  expiry: bigint;
+  status: string | { tag: string };
+};
+
+type LiquidityMarketSnapshot = {
+  state_version: bigint;
+  equity_if_yes: bigint;
+  equity_if_no: bigint;
+  conditional_lp_fees: bigint;
+  updated_at: bigint;
 };
 
 type PrivateEpoch = {
@@ -243,6 +275,43 @@ function expectedActionSignals({
   ];
 }
 
+function expectedFourOutputSignals({
+  action,
+  contextDigest,
+  membershipRoot,
+  appendRoot,
+  newRoot,
+  nullifiers,
+  outputs,
+  firstLeafIndex,
+}: {
+  action: bigint;
+  contextDigest: bigint;
+  membershipRoot: bigint;
+  appendRoot: bigint;
+  newRoot: bigint;
+  nullifiers: [bigint, bigint];
+  outputs: [PrivateOutput, PrivateOutput, PrivateOutput, PrivateOutput];
+  firstLeafIndex: number;
+}): bigint[] {
+  return [
+    action,
+    contextDigest,
+    membershipRoot,
+    appendRoot,
+    newRoot,
+    2n,
+    nullifiers[0],
+    nullifiers[1],
+    0n,
+    ...outputs.map((output) => output.commitment),
+    ...outputs.map((output) => output.envelopeHash),
+    BigInt(firstLeafIndex),
+    0n,
+    0n,
+  ];
+}
+
 function assertSignals(actual: bigint[], expected: bigint[]): void {
   if (
     actual.length !== expected.length ||
@@ -317,6 +386,11 @@ function assertAmount(amount: bigint): void {
   if (amount <= 0n || amount > MAX_NOTE_AMOUNT) {
     throw new Error("Private USDC amount is outside the supported range");
   }
+}
+
+function fieldFromBytes(value: Uint8Array): bigint {
+  const [high, low] = bytes32Limbs(value);
+  return high * (1n << 128n) + low;
 }
 
 function ceilDiv(numerator: bigint, denominator: bigint): bigint {
@@ -823,6 +897,779 @@ export async function withdrawLiquidity({
     },
   );
   return { hash, assets, remainingShares };
+}
+
+export type PrivateLiquidityExitOffer = {
+  market: string;
+  liquidityVaultId: string;
+  exitId: string;
+  status: string;
+  shares: bigint;
+  minimumPayment: bigint;
+  expiry: bigint;
+  equityFloor: bigint;
+  equityCeiling: bigint;
+  stateVersion: bigint;
+  owned: boolean;
+  receiptCommitment?: bigint;
+};
+
+async function liquidityExitState(
+  address: string,
+  market: string,
+  liquidityVaultId: string,
+  exitId: string,
+): Promise<{
+  intent: LiquidityExitIntent;
+  snapshot: LiquidityMarketSnapshot;
+  info: LiquidityVaultInfo;
+  registration: PrivateMarketRegistration;
+}> {
+  const encodedExitId = hexToBytes(exitId);
+  const config = await getPrivateConfig();
+  const [intent, snapshot, info, registration] = await Promise.all([
+    readPrivateContract<LiquidityExitIntent | undefined>(
+      liquidityVaultId,
+      address,
+      "exit_intent",
+      { exit_id: encodedExitId },
+    ),
+    readPrivateContract<LiquidityMarketSnapshot | undefined>(
+      liquidityVaultId,
+      address,
+      "market_snapshot",
+    ),
+    getLiquidityVaultInfo(address, liquidityVaultId),
+    readPrivateContract<PrivateMarketRegistration | undefined>(
+      config.contracts.sharedVault,
+      address,
+      "registration",
+      { market },
+    ),
+  ]);
+  if (
+    !intent ||
+    !snapshot ||
+    !registration ||
+    info.market !== market ||
+    info.share_controller !== config.contracts.sharedVault
+  ) {
+    throw new Error("The private LP exit is not wired to this market");
+  }
+  return { intent, snapshot, info, registration };
+}
+
+export async function getPrivateLiquidityExitOffers(
+  address: string,
+  market?: string,
+): Promise<PrivateLiquidityExitOffer[]> {
+  const [wallet, entries] = await Promise.all([
+    openPrivateWallet(address),
+    getPrivateLiquidityExits({ market }),
+  ]);
+  const vaultFields = new Map<string, Point>();
+  const result: PrivateLiquidityExitOffer[] = [];
+  for (const entry of entries) {
+    if (!entry.intent || !entry.snapshot) continue;
+    if (
+      !/^\d+$/u.test(entry.intent.shares_remaining) ||
+      !/^\d+$/u.test(entry.intent.minimum_payment_remaining) ||
+      !/^\d+$/u.test(entry.intent.expiry) ||
+      !/^\d+$/u.test(entry.stateVersion || "") ||
+      !/^[0-9a-f]{64}$/u.test(entry.intent.destination)
+    ) {
+      throw new Error("Private liquidity exit terms are invalid");
+    }
+    let liquidityFields = vaultFields.get(entry.liquidityVault);
+    if (!liquidityFields) {
+      liquidityFields = await addressLimbs(entry.liquidityVault);
+      vaultFields.set(entry.liquidityVault, liquidityFields);
+    }
+    const exitPayload = poseidon2Hash([
+      1014n,
+      ...liquidityFields,
+      ...bytes32Limbs(hexToBytes(entry.exitId)),
+    ]);
+    const destination = BigInt(`0x${entry.intent.destination}`);
+    const receipt = wallet.notes.find((note) =>
+      note.purpose === 9n &&
+      note.commitment === destination &&
+      note.payloadHash === exitPayload
+    );
+    const equityIfYes = BigInt(entry.snapshot.equity_if_yes);
+    const equityIfNo = BigInt(entry.snapshot.equity_if_no);
+    result.push({
+      market: entry.market,
+      liquidityVaultId: entry.liquidityVault,
+      exitId: entry.exitId,
+      status: entry.status,
+      shares: BigInt(entry.intent.shares_remaining),
+      minimumPayment: BigInt(entry.intent.minimum_payment_remaining),
+      expiry: BigInt(entry.intent.expiry),
+      equityFloor: equityIfYes < equityIfNo ? equityIfYes : equityIfNo,
+      equityCeiling: equityIfYes > equityIfNo ? equityIfYes : equityIfNo,
+      stateVersion: BigInt(entry.stateVersion!),
+      owned: Boolean(receipt),
+      receiptCommitment: receipt?.commitment,
+    });
+  }
+  return result;
+}
+
+export async function getLiquidityExitQuote({
+  address,
+  market,
+  liquidityVaultId,
+  shares,
+}: {
+  address: string;
+  market: string;
+  liquidityVaultId: string;
+  shares: bigint;
+}): Promise<{ floor: bigint; ceiling: bigint }> {
+  assertAmount(shares);
+  const [snapshot, info] = await Promise.all([
+    readPrivateContract<LiquidityMarketSnapshot | undefined>(
+      liquidityVaultId,
+      address,
+      "market_snapshot",
+    ),
+    getLiquidityVaultInfo(address, liquidityVaultId),
+  ]);
+  if (
+    !snapshot ||
+    info.market !== market ||
+    phaseName(info.phase) !== "Active" ||
+    info.total_shares <= 0n
+  ) {
+    throw new Error("The active LP valuation is unavailable");
+  }
+  const equityFloor = snapshot.equity_if_yes < snapshot.equity_if_no
+    ? snapshot.equity_if_yes
+    : snapshot.equity_if_no;
+  const equityCeiling = snapshot.equity_if_yes > snapshot.equity_if_no
+    ? snapshot.equity_if_yes
+    : snapshot.equity_if_no;
+  return {
+    floor: shares * equityFloor / info.total_shares,
+    ceiling: shares * equityCeiling / info.total_shares,
+  };
+}
+
+export async function requestLiquidityExit({
+  address,
+  market,
+  liquidityVaultId,
+  shareCommitment,
+  shares,
+  minimumPayment,
+  exitExpiry,
+  onStatus,
+}: {
+  address: string;
+  market: string;
+  liquidityVaultId: string;
+  shareCommitment: bigint;
+  shares: bigint;
+  minimumPayment: bigint;
+  exitExpiry: bigint;
+  onStatus?: (status: string) => void;
+}): Promise<{
+  hash: string;
+  exitId: string;
+  registrationPending: boolean;
+}> {
+  assertAmount(shares);
+  assertAmount(minimumPayment);
+  onStatus?.("Reading the active LP position");
+  const wallet = await openPrivateWallet(address);
+  const liquidityFields = await addressLimbs(liquidityVaultId);
+  const liquidityPayload = poseidon2Hash([1011n, ...liquidityFields]);
+  const note = wallet.notes.find((candidate) =>
+    candidate.purpose === 3n &&
+    candidate.commitment === shareCommitment &&
+    candidate.payloadHash === liquidityPayload
+  );
+  if (!note || shares > note.amount) {
+    throw new Error("The private LP share note is unavailable");
+  }
+  const [info, registration] = await Promise.all([
+    getLiquidityVaultInfo(address, liquidityVaultId),
+    readPrivateContract<PrivateMarketRegistration | undefined>(
+      wallet.config.contracts.sharedVault,
+      address,
+      "registration",
+      { market },
+    ),
+  ]);
+  const now = BigInt(Math.floor(Date.now() / 1_000));
+  if (
+    !registration ||
+    registration.finalized ||
+    info.market !== market ||
+    info.share_controller !== wallet.config.contracts.sharedVault ||
+    phaseName(info.phase) !== "Active" ||
+    exitExpiry <= now ||
+    exitExpiry > registration.expiry
+  ) {
+    throw new Error("This market is not accepting active LP exit offers");
+  }
+
+  const id = actionId();
+  const exitId = actionId();
+  const expiry = actionExpiry();
+  const baseContext = await operationContextFields({
+    networkDomain: wallet.config.networkDomain,
+    vault: wallet.config.contracts.sharedVault,
+    token: wallet.config.collateral.contract,
+    verifierDomain: wallet.config.verifierDomain,
+    action: 11n,
+    actionId: id,
+    publicAmount: 0n,
+    market,
+    expiry,
+    bindingKind: 6n,
+    bindingFields: Array<bigint>(24).fill(0n),
+  });
+  const domain = privateDomain(wallet.config, baseContext);
+  const paymentDestination = createOutputNote({
+    outputIndex: 0,
+    domain,
+    purpose: 1n,
+    amount: minimumPayment,
+    spendSecret: wallet.keys.noteSpendSecret,
+    viewingSecret: wallet.keys.noteViewingSecret,
+    ...outputSecrets(),
+  });
+  const remainingShares = note.amount - shares;
+  const exitPayload = poseidon2Hash([
+    1014n,
+    ...liquidityFields,
+    ...bytes32Limbs(hexToBytes(exitId)),
+  ]);
+  const outputs: [PrivateOutput, PrivateOutput] = [
+    createOutputNote({
+      outputIndex: 0,
+      domain,
+      purpose: remainingShares === 0n ? 0n : 3n,
+      amount: remainingShares,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      payloadHash: remainingShares === 0n ? 0n : liquidityPayload,
+      ...outputSecrets(),
+    }),
+    createOutputNote({
+      outputIndex: 1,
+      domain,
+      purpose: 9n,
+      amount: shares,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      payloadHash: exitPayload,
+      privateData: [minimumPayment, exitExpiry],
+      ...outputSecrets(),
+    }),
+  ];
+  const bindingFields = Array<bigint>(24).fill(0n);
+  const exitFields = bytes32Limbs(hexToBytes(exitId));
+  const destinationFields = bytes32Limbs(
+    hexToBytes(outputs[1].commitment.toString(16).padStart(64, "0")),
+  );
+  const paymentFields = bytes32Limbs(
+    hexToBytes(paymentDestination.commitment.toString(16).padStart(64, "0")),
+  );
+  [
+    ...liquidityFields,
+    ...exitFields,
+    shares,
+    minimumPayment,
+    ...destinationFields,
+    exitExpiry,
+    info.state_version,
+    ...paymentFields,
+    paymentDestination.spendPublicKey,
+    ...paymentDestination.viewingPublicKey,
+    paymentDestination.noteId,
+    paymentDestination.blinding,
+  ].forEach((value, index) => {
+    bindingFields[index] = value;
+  });
+  const contextFields = await operationContextFields({
+    networkDomain: wallet.config.networkDomain,
+    vault: wallet.config.contracts.sharedVault,
+    token: wallet.config.collateral.contract,
+    verifierDomain: wallet.config.verifierDomain,
+    action: 11n,
+    actionId: id,
+    publicAmount: 0n,
+    market,
+    expiry,
+    bindingKind: 6n,
+    bindingFields,
+  });
+  const appended = appendPair(wallet.tree, [
+    outputs[0].commitment,
+    outputs[1].commitment,
+  ]);
+  const nullifier = noteNullifier(note, note.spendSecret, 2n);
+  const contextDigest = poseidon2Hash(contextFields);
+  const witness = {
+    action: 11n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifierCount: 1n,
+    nullifier0: nullifier,
+    nullifier1: 0n,
+    outputCommitment0: outputs[0].commitment,
+    outputCommitment1: outputs[1].commitment,
+    outputEnvelopeHash0: outputs[0].envelopeHash,
+    outputEnvelopeHash1: outputs[1].envelopeHash,
+    firstLeafIndex: BigInt(appended.firstLeafIndex),
+    publicAmountSign: 0n,
+    publicAmountMagnitude: 0n,
+    contextFields,
+    ...inputFields([note], wallet.tree),
+    ...outputFields(outputs),
+    appendSiblings: appended.siblings,
+  };
+  onStatus?.("Generating the private exit offer proof");
+  const proved = await provePrivateAction(
+    "exit_request",
+    stringifyWitness(witness) as Record<string, unknown>,
+  );
+  assertSignals(proved.publicSignals, expectedActionSignals({
+    action: 11n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifiers: [nullifier],
+    outputs,
+    firstLeafIndex: appended.firstLeafIndex,
+    publicAmount: 0n,
+  }));
+  onStatus?.("Publishing the unlinkable LP exit offer");
+  const hash = await relayPrivateContractCall(
+    wallet.config.contracts.sharedVault,
+    address,
+    "request_liquidity_exit",
+    {
+      market,
+      liquidity_vault: liquidityVaultId,
+      exit_id: hexToBytes(exitId),
+      shares,
+      minimum_payment: minimumPayment,
+      destination: hexToBytes(
+        outputs[1].commitment.toString(16).padStart(64, "0"),
+      ),
+      payment_destination: {
+        commitment: hexToBytes(
+          paymentDestination.commitment.toString(16).padStart(64, "0"),
+        ),
+        spend_public_key: paymentDestination.spendPublicKey,
+        viewing_public_key_x: paymentDestination.viewingPublicKey[0],
+        viewing_public_key_y: paymentDestination.viewingPublicKey[1],
+        note_id: paymentDestination.noteId,
+        blinding: paymentDestination.blinding,
+      },
+      exit_expiry: exitExpiry,
+      expected_version: info.state_version,
+      action_id: hexToBytes(id),
+      action_expiry: expiry,
+      transition: transition(
+        proved.proof,
+        wallet.tree,
+        appended.newRoot,
+        [nullifier],
+        outputs,
+      ),
+    },
+  );
+  let registrationPending = false;
+  try {
+    await registerPrivateLiquidityExit({
+      market,
+      liquidityVault: liquidityVaultId,
+      exitId,
+    });
+  } catch {
+    registrationPending = true;
+  }
+  return { hash, exitId, registrationPending };
+}
+
+export async function cancelLiquidityExit({
+  address,
+  market,
+  liquidityVaultId,
+  exitId,
+  onStatus,
+}: {
+  address: string;
+  market: string;
+  liquidityVaultId: string;
+  exitId: string;
+  onStatus?: (status: string) => void;
+}): Promise<string> {
+  onStatus?.("Reading the private exit receipt");
+  const [wallet, state] = await Promise.all([
+    openPrivateWallet(address),
+    liquidityExitState(address, market, liquidityVaultId, exitId),
+  ]);
+  if (phaseName(state.intent.status) !== "Open") {
+    throw new Error("This LP exit offer is no longer open");
+  }
+  const liquidityFields = await addressLimbs(liquidityVaultId);
+  const exitFields = bytes32Limbs(hexToBytes(exitId));
+  const exitPayload = poseidon2Hash([1014n, ...liquidityFields, ...exitFields]);
+  const destination = fieldFromBytes(state.intent.destination);
+  const receipt = wallet.notes.find((note) =>
+    note.purpose === 9n &&
+    note.commitment === destination &&
+    note.payloadHash === exitPayload &&
+    note.amount === state.intent.shares_remaining
+  );
+  if (!receipt) throw new Error("The private LP exit receipt is unavailable");
+
+  const id = actionId();
+  const expiry = actionExpiry();
+  const bindingFields = Array<bigint>(24).fill(0n);
+  [
+    ...liquidityFields,
+    ...exitFields,
+    state.intent.shares_remaining,
+    state.intent.minimum_payment_remaining,
+    ...bytes32Limbs(state.intent.destination),
+    state.intent.expiry,
+    state.info.state_version,
+  ].forEach((value, index) => {
+    bindingFields[index] = value;
+  });
+  const contextFields = await operationContextFields({
+    networkDomain: wallet.config.networkDomain,
+    vault: wallet.config.contracts.sharedVault,
+    token: wallet.config.collateral.contract,
+    verifierDomain: wallet.config.verifierDomain,
+    action: 12n,
+    actionId: id,
+    publicAmount: 0n,
+    market,
+    expiry,
+    bindingKind: 7n,
+    bindingFields,
+  });
+  const domain = privateDomain(wallet.config, contextFields);
+  const liquidityPayload = poseidon2Hash([1011n, ...liquidityFields]);
+  const outputs: [PrivateOutput, PrivateOutput] = [
+    createOutputNote({
+      outputIndex: 0,
+      domain,
+      purpose: 3n,
+      amount: state.intent.shares_remaining,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      payloadHash: liquidityPayload,
+      ...outputSecrets(),
+    }),
+    createOutputNote({
+      outputIndex: 1,
+      domain,
+      purpose: 0n,
+      amount: 0n,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      ...outputSecrets(),
+    }),
+  ];
+  const appended = appendPair(wallet.tree, [
+    outputs[0].commitment,
+    outputs[1].commitment,
+  ]);
+  const nullifier = noteNullifier(receipt, receipt.spendSecret, 5n);
+  const contextDigest = poseidon2Hash(contextFields);
+  const witness = {
+    action: 12n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifierCount: 1n,
+    nullifier0: nullifier,
+    nullifier1: 0n,
+    outputCommitment0: outputs[0].commitment,
+    outputCommitment1: outputs[1].commitment,
+    outputEnvelopeHash0: outputs[0].envelopeHash,
+    outputEnvelopeHash1: outputs[1].envelopeHash,
+    firstLeafIndex: BigInt(appended.firstLeafIndex),
+    publicAmountSign: 0n,
+    publicAmountMagnitude: 0n,
+    contextFields,
+    ...inputFields([receipt], wallet.tree),
+    ...outputFields(outputs),
+    appendSiblings: appended.siblings,
+  };
+  onStatus?.("Generating the private exit cancellation proof");
+  const proved = await provePrivateAction(
+    "exit_cancel",
+    stringifyWitness(witness) as Record<string, unknown>,
+  );
+  assertSignals(proved.publicSignals, expectedActionSignals({
+    action: 12n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifiers: [nullifier],
+    outputs,
+    firstLeafIndex: appended.firstLeafIndex,
+    publicAmount: 0n,
+  }));
+  onStatus?.("Relaying the private exit cancellation");
+  return relayPrivateContractCall(
+    wallet.config.contracts.sharedVault,
+    address,
+    "cancel_liquidity_exit",
+    {
+      market,
+      liquidity_vault: liquidityVaultId,
+      exit_id: hexToBytes(exitId),
+      expected_version: state.info.state_version,
+      action_id: hexToBytes(id),
+      action_expiry: expiry,
+      transition: transition(
+        proved.proof,
+        wallet.tree,
+        appended.newRoot,
+        [nullifier],
+        outputs,
+      ),
+    },
+  );
+}
+
+export async function matchLiquidityExit({
+  address,
+  market,
+  liquidityVaultId,
+  exitId,
+  onStatus,
+}: {
+  address: string;
+  market: string;
+  liquidityVaultId: string;
+  exitId: string;
+  onStatus?: (status: string) => void;
+}): Promise<{ hash: string; shares: bigint; payment: bigint }> {
+  onStatus?.("Verifying the current LP risk snapshot");
+  const [wallet, state] = await Promise.all([
+    openPrivateWallet(address),
+    liquidityExitState(address, market, liquidityVaultId, exitId),
+  ]);
+  const shares = state.intent.shares_remaining;
+  const payment = state.intent.minimum_payment_remaining;
+  assertAmount(shares);
+  assertAmount(payment);
+  if (
+    phaseName(state.intent.status) !== "Open" ||
+    phaseName(state.info.phase) !== "Active" ||
+    state.registration.finalized ||
+    BigInt(Math.floor(Date.now() / 1_000)) > state.intent.expiry
+  ) {
+    throw new Error("This LP exit offer is no longer fillable");
+  }
+  const inputs = selectFundingInputs(wallet.notes, payment);
+  const inputTotal = inputs[0].amount + inputs[1].amount;
+  const id = actionId();
+  const expiry = actionExpiry();
+  const liquidityFields = await addressLimbs(liquidityVaultId);
+  const liquidityPayload = poseidon2Hash([1011n, ...liquidityFields]);
+  const exitFields = bytes32Limbs(hexToBytes(exitId));
+  const paymentDestination = state.intent.payment_destination;
+  const baseContext = await operationContextFields({
+    networkDomain: wallet.config.networkDomain,
+    vault: wallet.config.contracts.sharedVault,
+    token: wallet.config.collateral.contract,
+    verifierDomain: wallet.config.verifierDomain,
+    action: 13n,
+    actionId: id,
+    publicAmount: 0n,
+    market,
+    expiry,
+    bindingKind: 8n,
+    bindingFields: Array<bigint>(24).fill(0n),
+  });
+  const domain = privateDomain(wallet.config, baseContext);
+  const change = inputTotal - payment;
+  const outputs: [PrivateOutput, PrivateOutput, PrivateOutput, PrivateOutput] = [
+    createOutputNoteForRecipient({
+      outputIndex: 0,
+      domain,
+      purpose: 1n,
+      amount: payment,
+      spendPublicKey: paymentDestination.spend_public_key,
+      viewingPublicKey: [
+        paymentDestination.viewing_public_key_x,
+        paymentDestination.viewing_public_key_y,
+      ],
+      noteId: paymentDestination.note_id,
+      blinding: paymentDestination.blinding,
+      ephemeralSecret: randomPrivateScalar(),
+      nonce: randomPrivateScalar(),
+    }),
+    createOutputNote({
+      outputIndex: 1,
+      domain,
+      purpose: 3n,
+      amount: shares,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      payloadHash: liquidityPayload,
+      ...outputSecrets(),
+    }),
+    createOutputNote({
+      outputIndex: 2,
+      domain,
+      purpose: change === 0n ? 0n : 1n,
+      amount: change,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      ...outputSecrets(),
+    }),
+    createOutputNote({
+      outputIndex: 3,
+      domain,
+      purpose: 0n,
+      amount: 0n,
+      spendSecret: wallet.keys.noteSpendSecret,
+      viewingSecret: wallet.keys.noteViewingSecret,
+      ...outputSecrets(),
+    }),
+  ];
+  if (
+    outputs[0].commitment !==
+      fieldFromBytes(paymentDestination.commitment)
+  ) {
+    throw new Error("The LP seller payment template is invalid");
+  }
+  const maximumStateAge = 300n;
+  const bindingFields = Array<bigint>(24).fill(0n);
+  [
+    ...liquidityFields,
+    ...exitFields,
+    shares,
+    payment,
+    ...bytes32Limbs(paymentDestination.commitment),
+    paymentDestination.spend_public_key,
+    paymentDestination.viewing_public_key_x,
+    paymentDestination.viewing_public_key_y,
+    paymentDestination.note_id,
+    paymentDestination.blinding,
+    state.snapshot.state_version,
+    state.snapshot.equity_if_yes,
+    state.snapshot.equity_if_no,
+    state.snapshot.conditional_lp_fees,
+    state.snapshot.updated_at,
+    maximumStateAge,
+    state.info.state_version,
+    state.registration.expiry,
+  ].forEach((value, index) => {
+    bindingFields[index] = value;
+  });
+  const contextFields = await operationContextFields({
+    networkDomain: wallet.config.networkDomain,
+    vault: wallet.config.contracts.sharedVault,
+    token: wallet.config.collateral.contract,
+    verifierDomain: wallet.config.verifierDomain,
+    action: 13n,
+    actionId: id,
+    publicAmount: 0n,
+    market,
+    expiry,
+    bindingKind: 8n,
+    bindingFields,
+  });
+  const appended = appendFour(wallet.tree, outputs.map((output) =>
+    output.commitment
+  ) as [bigint, bigint, bigint, bigint]);
+  const nullifiers = inputs.map((note) =>
+    noteNullifier(note, note.spendSecret, 1n)
+  ) as [bigint, bigint];
+  const contextDigest = poseidon2Hash(contextFields);
+  const witness = {
+    action: 13n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifierCount: 2n,
+    nullifier0: nullifiers[0],
+    nullifier1: nullifiers[1],
+    nullifier2: 0n,
+    outputCommitment0: outputs[0].commitment,
+    outputCommitment1: outputs[1].commitment,
+    outputCommitment2: outputs[2].commitment,
+    outputCommitment3: outputs[3].commitment,
+    outputEnvelopeHash0: outputs[0].envelopeHash,
+    outputEnvelopeHash1: outputs[1].envelopeHash,
+    outputEnvelopeHash2: outputs[2].envelopeHash,
+    outputEnvelopeHash3: outputs[3].envelopeHash,
+    firstLeafIndex: BigInt(appended.firstLeafIndex),
+    publicAmountSign: 0n,
+    publicAmountMagnitude: 0n,
+    contextFields,
+    ...inputFields(inputs, wallet.tree),
+    ...outputFields(outputs),
+    middleRoot: appended.middleRoot,
+    appendSiblings0: appended.siblings0,
+    appendSiblings1: appended.siblings1,
+  };
+  onStatus?.("Generating the private LP replacement proof");
+  const proved = await provePrivateAction(
+    "exit_match",
+    stringifyWitness(witness) as Record<string, unknown>,
+  );
+  assertSignals(proved.publicSignals, expectedFourOutputSignals({
+    action: 13n,
+    contextDigest,
+    membershipRoot: wallet.tree.root,
+    appendRoot: wallet.tree.root,
+    newRoot: appended.newRoot,
+    nullifiers,
+    outputs,
+    firstLeafIndex: appended.firstLeafIndex,
+  }));
+  onStatus?.("Relaying the private LP replacement");
+  const hash = await relayPrivateContractCall(
+    wallet.config.contracts.sharedVault,
+    address,
+    "match_liquidity_exit",
+    {
+      market,
+      liquidity_vault: liquidityVaultId,
+      exit_id: hexToBytes(exitId),
+      shares,
+      payment,
+      market_state_version: state.snapshot.state_version,
+      equity_if_yes: state.snapshot.equity_if_yes,
+      equity_if_no: state.snapshot.equity_if_no,
+      conditional_lp_fees: state.snapshot.conditional_lp_fees,
+      state_updated_at: state.snapshot.updated_at,
+      maximum_state_age: maximumStateAge,
+      expected_version: state.info.state_version,
+      action_id: hexToBytes(id),
+      action_expiry: expiry,
+      transition: transition(
+        proved.proof,
+        wallet.tree,
+        appended.newRoot,
+        nullifiers,
+        outputs,
+      ),
+    },
+  );
+  return { hash, shares, payment };
 }
 
 async function nextOrderSequence(
