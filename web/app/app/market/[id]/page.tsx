@@ -37,6 +37,7 @@ export default function MarketTerminal() {
     );
   }
   const descriptor = {
+    liquidityVaultId: entry.liquidityVaultId,
     title: entry.title,
     category: entry.category,
     subject: entry.subject,

@@ -14,6 +14,7 @@ const LEGACY_KEY = "umbra.markets.v1";
 let localCreated: MarketEntry[] | null = null;
 let remote: MarketEntry[] = [];
 let refreshComplete = false;
+let refreshInFlight: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
 function loadLocal(): MarketEntry[] {
@@ -88,40 +89,47 @@ export function addMarket(entry: MarketEntry) {
   emit();
 }
 
-export async function refreshMarkets(): Promise<void> {
-  try {
-    remote = (await fetchMarketRegistry()).map((r) => ({
-      marketId: r.marketId,
-      poolId: r.poolId,
-      asset: r.asset || "?",
-      kind: "shielded" as const,
-      collateralCode: r.collateralCode,
-      collateralIssuer: r.collateralIssuer,
-      collateralSac: r.collateralSac,
-      collateralDecimals: r.collateralDecimals,
-      createdAt: r.createdAt,
-      title: r.title,
-      category: r.category,
-      subject: r.subject,
-      bannerUrl: r.bannerUrl,
-      bannerSourceUrl: r.bannerSourceUrl,
-      bannerAttribution: r.bannerAttribution,
-      bannerLicense: r.bannerLicense,
-      bannerLicenseUrl: r.bannerLicenseUrl,
-      resolverType: r.resolverType,
-      resolutionSource: r.resolutionSource,
-      backupResolutionSources: r.backupResolutionSources,
-      resolutionRules: r.resolutionRules,
-      voidRules: r.voidRules,
-      rulesHash: r.rulesHash,
-    }));
-  } catch {
-    remote = [];
-  } finally {
-    refreshComplete = true;
-    snapshot = build();
-    emit();
-  }
+export function refreshMarkets(): Promise<void> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      remote = (await fetchMarketRegistry()).map((r) => ({
+        marketId: r.marketId,
+        poolId: r.poolId,
+        liquidityVaultId: r.liquidityVaultId,
+        asset: r.asset || "?",
+        kind: "shielded" as const,
+        collateralCode: r.collateralCode,
+        collateralIssuer: r.collateralIssuer,
+        collateralSac: r.collateralSac,
+        collateralDecimals: r.collateralDecimals,
+        createdAt: r.createdAt,
+        title: r.title,
+        category: r.category,
+        subject: r.subject,
+        bannerUrl: r.bannerUrl,
+        bannerSourceUrl: r.bannerSourceUrl,
+        bannerAttribution: r.bannerAttribution,
+        bannerLicense: r.bannerLicense,
+        bannerLicenseUrl: r.bannerLicenseUrl,
+        resolverType: r.resolverType,
+        resolutionSource: r.resolutionSource,
+        backupResolutionSources: r.backupResolutionSources,
+        resolutionRules: r.resolutionRules,
+        voidRules: r.voidRules,
+        rulesHash: r.rulesHash,
+      }));
+    } catch {
+      // Keep the last verified registry snapshot during transient network failures.
+    } finally {
+      refreshComplete = true;
+      snapshot = build();
+      emit();
+    }
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
 }
 
 if (typeof window !== "undefined") refreshMarkets();

@@ -3,6 +3,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import { NETWORK, collateralFromRecord, type CollateralAsset } from "@/lib/network";
 
 export type MarketDescriptor = {
+  liquidityVaultId?: string;
   title?: string;
   category?: string;
   subject?: string;

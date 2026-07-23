@@ -40,6 +40,19 @@ export async function getClearingPrice(poolId: string): Promise<bigint> {
 export async function getFeeConfig(poolId: string): Promise<[string, number]> {
   return readContract(poolId, "fee_config");
 }
+export async function getPrivateMarketRegistration(
+  vaultId: string,
+  marketId: string,
+): Promise<{
+  market: string;
+  fee_bps: number;
+  lp_fee_share_bps: number;
+} | null> {
+  const market = nativeToScVal(Address.fromString(marketId), {
+    type: "address",
+  });
+  return readContract(vaultId, "registration", [market]);
+}
 export async function getPoolMarket(poolId: string): Promise<string> {
   return readContract(poolId, "market");
 }

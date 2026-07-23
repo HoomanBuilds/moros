@@ -1,6 +1,7 @@
 export type MarketEntry = {
   marketId: string;
   poolId: string;
+  liquidityVaultId?: string;
   asset: string;
   kind: "shielded";
   collateralCode?: string;

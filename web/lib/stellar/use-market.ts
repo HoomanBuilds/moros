@@ -1,6 +1,6 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
-import { getMarketState, getPriceYes, getOutcome, getMarketInfo, getPoolBalance, getMarketResolver, getEventRulesHash, getFeeConfig } from "./read";
+import { getMarketState, getPriceYes, getOutcome, getMarketInfo, getPoolBalance, getMarketResolver, getEventRulesHash, getFeeConfig, getPrivateMarketRegistration } from "./read";
 import { probFromFixed, fixedToNumber, outcomeLabel, marketQuestion, marketStrike, formatCountdown } from "./derive";
 import { useActiveMarket } from "@/lib/markets/market-context";
 import { NETWORK, type CollateralAsset } from "@/lib/network";
@@ -8,6 +8,7 @@ import { formatTokenAmount } from "./amount";
 import { getMarketMeta } from "@/lib/supabase/markets-meta";
 import type { MarketDescriptor } from "@/lib/markets/market-context";
 import { eventRulesHashHex } from "@/lib/markets/rules";
+import { marketReadPlan } from "@/lib/markets/market-read-plan";
 
 export async function fetchMarket(
   marketId: string,
@@ -15,15 +16,36 @@ export async function fetchMarket(
   collateral: CollateralAsset = NETWORK.collateral,
   fallback: MarketDescriptor = {},
 ) {
-  const [state, priceYes, outcome, info, poolBal, storedMeta, resolverId, feeConfig] = await Promise.all([
+  const readPlan = marketReadPlan({
+    marketId,
+    poolId,
+    liquidityVaultId: fallback.liquidityVaultId,
+  });
+  const economics = readPlan.feeSource === "private-registration"
+    ? Promise.all([
+        getPoolBalance(readPlan.balanceOwner, collateral),
+        getPrivateMarketRegistration(poolId, marketId),
+      ]).then(([poolBalance, registration]) => {
+        if (!registration || registration.market !== marketId) {
+          throw new Error("Private market registration is unavailable");
+        }
+        return { poolBalance, feeBps: registration.fee_bps };
+      })
+    : Promise.all([
+        getPoolBalance(readPlan.balanceOwner, collateral),
+        getFeeConfig(poolId),
+      ]).then(([poolBalance, feeConfig]) => ({
+        poolBalance,
+        feeBps: Number(feeConfig[1]),
+      }));
+  const [state, priceYes, outcome, info, storedMeta, resolverId, marketEconomics] = await Promise.all([
     getMarketState(marketId),
     getPriceYes(marketId),
     getOutcome(marketId),
     getMarketInfo(marketId),
-    getPoolBalance(poolId, collateral),
     getMarketMeta(marketId).catch(() => null),
     getMarketResolver(marketId).catch(() => null),
-    getFeeConfig(poolId),
+    economics,
   ]);
   const meta = {
     title: storedMeta?.title ?? fallback.title,
@@ -72,9 +94,9 @@ export async function fetchMarket(
     question: meta.title || marketQuestion(info),
     asset: info.asset,
     strike: marketStrike(info),
-    poolSize: Number(formatTokenAmount(poolBal, collateral.decimals, 7)),
+    poolSize: Number(formatTokenAmount(marketEconomics.poolBalance, collateral.decimals, 7)),
     collateral,
-    feeBps: Number(feeConfig[1]),
+    feeBps: marketEconomics.feeBps,
     expiry,
     finalizeAfter: Number(info.finalize_after ?? info.expiry),
     secondsLeft,
@@ -91,7 +113,13 @@ export async function fetchMarket(
 export function useMarket() {
   const { marketId, poolId, collateral, descriptor } = useActiveMarket();
   return useQuery({
-    queryKey: ["market", marketId, poolId, collateral.sac],
+    queryKey: [
+      "market",
+      marketId,
+      poolId,
+      descriptor?.liquidityVaultId ?? "legacy",
+      collateral.sac,
+    ],
     refetchInterval: 15000,
     queryFn: () => fetchMarket(marketId, poolId, collateral, descriptor),
   });

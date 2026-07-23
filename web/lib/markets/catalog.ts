@@ -72,7 +72,12 @@ export function useMarketCatalog(): { rows: MarketRow[]; isLoading: boolean } {
   const markets = useMarkets();
   const results = useQueries({
     queries: markets.map((m) => ({
-      queryKey: ["market-row", m.marketId],
+      queryKey: [
+        "market-row",
+        m.marketId,
+        m.poolId,
+        m.liquidityVaultId ?? "legacy",
+      ],
       refetchInterval: 20000,
       retry: 1,
       queryFn: () => fetchRow(m),

@@ -19,6 +19,7 @@ import { MarketListRow } from "./market-row";
 import { MarketCategoryIcon } from "./market-category-icon";
 import { cn } from "@/lib/utils";
 import { MARKET_CATEGORIES, type MarketCategory } from "@/lib/markets/categories";
+import { refreshMarkets } from "@/lib/markets/registry";
 
 const TABS = ["All", "Live", "Favorites", "Closed"] as const;
 type Tab = (typeof TABS)[number];
@@ -32,6 +33,17 @@ export function MarketsSection() {
   const [sort, setSort] = useState<SortId>("ending");
   const [activeOnly, setActiveOnly] = useState(false);
   const [category, setCategory] = useState<"All" | MarketCategory>("All");
+
+  useEffect(() => {
+    const refresh = () => void refreshMarkets();
+    refresh();
+    const timer = window.setInterval(refresh, 10_000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
 
   useEffect(() => {
     const v = localStorage.getItem("moros.marketview") ?? localStorage.getItem("umbra.marketview");
