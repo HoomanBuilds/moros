@@ -1,0 +1,83 @@
+{
+  "network": "testnet",
+  "label": "private-testnet-20260723",
+  "sourceCommit": "bd79a6752f9d0ad7b980cd394496719561206680",
+  "deployedBy": "GANVOL5URROHRSW634VIMFQQH7YTTFZPUMLT4X5QGQO6P76YBFDLN7U5",
+  "collateral": {
+    "code": "USDC",
+    "contract": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+    "decimals": 7
+  },
+  "contracts": {
+    "verifier": "CD6CH45C6FME5GR6SENJMWBOBYT6ECQR46U5B7Q2EN7WSS3CURENGGDU",
+    "resolver": "CDHYIPCE25QZ3WGWBKPJQ37T4ZZBGKPVEUYNTQLGO4CU5ZKDIXZYHJMT",
+    "sharedVault": "CAH77GQ23SXWYRPI7RJ7D2GPTUXHBWKF3653TJTEYEQVRNWM7OUO6LJ4",
+    "factory": "CALD5FKA45KBV2CQZYTDHUZL3HLAV3QQOL4E2SVC4ORESN62KLUSFOO4"
+  },
+  "wasm": {
+    "verifier": "6f4285585622dc83e89cb56393107679cad8ba5c972cbe66d2e666da20e25c01",
+    "resolver": "d3c347efcf39d647090de4b7fffe8e5c48cd66758fc7cebd81016cf207d3c1ee",
+    "sharedVault": "271ab3dce1c3b245262af25d1efca807decee7468c70fe4ce0fae4b221f62055",
+    "factory": "40b8a7448352ddb479d165fca0aa6fcb0ca00399a80de61073e9246dcad0a388",
+    "market": "9dd05888dea33f00c355f8599fdcace7e319e4bd3bab13d2fdd299864e005853",
+    "liquidityVault": "28ab6ba66df7e5512be4050e6000adc0786d8a75a9faf13e331c9907893b8b08"
+  },
+  "networkDomain": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
+  "verifierDomain": "244abf35f32dcd51d9a7b0ae3c5913fb01a9365fe7a8313baedd87c1ab7ac448",
+  "provingManifestSha256": "01c26dc4ca50fc536149218edbc1c58d2a6f7c78ea75436c2c7f9a045d823f97",
+  "privacy": {
+    "treeLevels": 20,
+    "genesisRoot": "2611866331166115416723223527596396580179948542347864251823105860387727173205",
+    "rootHistorySize": 64,
+    "maxRootAge": 2048,
+    "committeeEpoch": 1,
+    "committeeConfigHash": "257c727e4e5415398fef1dedc1e219ca6861cb64bb0402c2018ec98e301b923d",
+    "committeePublicKeyX": "16736998958795795490554008699124902525026211887514779403605560586805325991475",
+    "committeePublicKeyY": "6027365576774264383444323826855823015462719882072040230758880214505255969477",
+    "treasuryKey": "10973638318595376961751947712197117762249540555362242402282800607886953480044",
+    "testnetSingleVmCommittee": true
+  },
+  "marketPolicy": {
+    "allowedAssets": [
+      "BTC",
+      "ETH",
+      "USDT",
+      "XRP",
+      "SOL",
+      "USDC",
+      "ADA",
+      "AVAX",
+      "DOT",
+      "MATIC",
+      "LINK",
+      "DAI",
+      "ATOM",
+      "XLM",
+      "UNI",
+      "EURC",
+      "EUR",
+      "GBP",
+      "CHF",
+      "CAD",
+      "MXN",
+      "ARS",
+      "BRL",
+      "THB",
+      "XAU"
+    ],
+    "liquidityTiers": [
+      "200000000",
+      "500000000",
+      "1000000000"
+    ],
+    "feeMaximumBps": 1000,
+    "lpFeeShareBps": 8000,
+    "fixedBatchSize": 8,
+    "minimumSideCount": 2,
+    "maximumPriceMovement": "1073741824",
+    "minimumFundingWindow": 3600,
+    "minimumOpenWindow": 3600,
+    "maximumMarketDuration": 7776000
+  },
+  "mainnetReady": false
+}

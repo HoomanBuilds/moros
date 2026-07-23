@@ -8,6 +8,8 @@ bundle="$repo/deploy-bundle.tar.gz"
 
 ARTIFACTS=(
   "contracts/shielded-pool/circuits/build/encrypt_order_vk.json"
+  "deployments/private-testnet.json"
+  "circuits/private-build/public"
 )
 
 BINS=(
@@ -120,14 +122,37 @@ User=$USER
 WantedBy=multi-user.target
 UNIT
 
+  unit=/etc/systemd/system/zkmarket-private.service
+  sudo tee "$unit" >/dev/null <<UNIT
+[Unit]
+Description=Moros private market service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$repo
+EnvironmentFile=$here/.env
+Environment=PRIVATE_PORT=8788
+ExecStart=$node_bin $here/private-server.mjs
+Restart=on-failure
+RestartSec=5
+User=$USER
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
   sudo systemctl daemon-reload
   sudo systemctl enable --now zkmarket-member1 zkmarket-member2 zkmarket-member3
   sudo systemctl enable --now zkmarket-server
   sudo systemctl enable --now zkmarket-resolve-keeper
+  sudo systemctl enable --now zkmarket-private
   sudo systemctl restart zkmarket-member1 zkmarket-member2 zkmarket-member3
-  sudo systemctl restart zkmarket-server zkmarket-resolve-keeper
+  sudo systemctl restart zkmarket-server zkmarket-resolve-keeper zkmarket-private
   echo "[service] started. logs: journalctl -u zkmarket-server -f"
   echo "[service] keeper logs: journalctl -u zkmarket-resolve-keeper -f"
+  echo "[service] private logs: journalctl -u zkmarket-private -f"
   echo "[service] NOTE: all 3 members on one VM demonstrates the architecture only;"
   echo "[service] real no-leak trust needs each member on an independently operated host."
   ;;
