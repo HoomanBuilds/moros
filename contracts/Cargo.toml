@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["event-resolver", "lmsr-market", "market-liquidity-vault", "resolver"]
+members = [
+    "event-resolver",
+    "lmsr-market",
+    "market-liquidity-vault",
+    "resolver",
+    "shielded-collateral-vault",
+]
 exclude = ["shielded-pool"]
 
 [workspace.dependencies]

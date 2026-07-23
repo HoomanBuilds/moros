@@ -13,9 +13,11 @@ cargo test                  # native tests via the Soroban test env
 | Crate | Contract | Status |
 |---|---|---|
 | `lmsr-market` | LMSR pricing + market state (YES/NO quantities, cost, price) | in progress |
-| _(next)_ `groth16-verifier` | BLS12-381 Groth16 proof verifier | planned |
-| _(next)_ `shielded-pool` | commitment/nullifier notes, deposit/withdraw | planned |
-| _(next)_ `resolver` | Reflector (SEP-40) outcome resolution | planned |
+| `market-liquidity-vault` | Isolated permissionless LP funding, exits, and terminal redemption | implemented, integration pending |
+| `shielded-collateral-vault` | Shared USDC notes, nullifiers, durable recovery outputs, and private LP routing | implemented, proof artifacts pending |
+| `resolver` | Quorum price resolution with free SEP-40 feeds and optional Pyth verification | implemented |
+| `event-resolver` | Bonded evidence, challenges, committee arbitration, and timeout voids | implemented |
+| `groth16-verifier` | BN254 Groth16 proof verifier with immutable verification keys | planned |
 
 `overflow-checks` is **on** in the release profile (a solvency safeguard). The LMSR
 fixed-point `exp`/`ln` math was validated on testnet before being ported here.

@@ -337,6 +337,98 @@ impl MarketLiquidityVault {
         })
     }
 
+    pub fn fund_received(
+        env: Env,
+        controller: Address,
+        share_commitment: BytesN<32>,
+        amount: i128,
+        prior_unallocated_balance: i128,
+        expected_version: u64,
+    ) -> Result<FundingResult, Error> {
+        Self::require_controller(&env, &controller)?;
+        Self::require_version(&env, expected_version)?;
+        if amount <= 0 || prior_unallocated_balance < 0 {
+            return Err(Error::InvalidAmount);
+        }
+        if env.ledger().timestamp() > Self::get::<u64>(&env, &DataKey::FundingDeadline) {
+            return Err(Error::DeadlinePassed);
+        }
+        if Self::get::<Phase>(&env, &DataKey::Phase) != Phase::Funding {
+            return Err(Error::InvalidPhase);
+        }
+        let commitment_key = DataKey::Commitment(share_commitment.clone());
+        if env.storage().persistent().has(&commitment_key) {
+            return Err(Error::DuplicateCommitment);
+        }
+
+        let target = Self::get::<i128>(&env, &DataKey::Target);
+        let funded = Self::get::<i128>(&env, &DataKey::Funded);
+        let remaining = target.checked_sub(funded).ok_or(Error::Arithmetic)?;
+        if amount > remaining {
+            return Err(Error::FullyFunded);
+        }
+        let token = Self::get::<Address>(&env, &DataKey::Token);
+        let raw_balance = token::Client::new(&env, &token).balance(&env.current_contract_address());
+        let unallocated_after = raw_balance
+            .checked_sub(funded)
+            .ok_or(Error::TransferMismatch)?;
+        if unallocated_after
+            != prior_unallocated_balance
+                .checked_add(amount)
+                .ok_or(Error::Arithmetic)?
+        {
+            return Err(Error::TransferMismatch);
+        }
+
+        let total_shares = Self::get::<i128>(&env, &DataKey::Shares);
+        let shares = amount
+            .checked_mul(
+                total_shares
+                    .checked_add(VIRTUAL_SHARES)
+                    .ok_or(Error::Arithmetic)?,
+            )
+            .ok_or(Error::Arithmetic)?
+            .checked_div(
+                funded
+                    .checked_add(VIRTUAL_ASSETS)
+                    .ok_or(Error::Arithmetic)?,
+            )
+            .ok_or(Error::Arithmetic)?;
+        if shares <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
+        let updated_funded = funded.checked_add(amount).ok_or(Error::Arithmetic)?;
+        let updated_shares = total_shares.checked_add(shares).ok_or(Error::Arithmetic)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::Funded, &updated_funded);
+        env.storage()
+            .instance()
+            .set(&DataKey::Shares, &updated_shares);
+        if updated_funded == target {
+            env.storage().instance().set(&DataKey::Phase, &Phase::Ready);
+        }
+        env.storage().persistent().set(&commitment_key, &shares);
+        Self::bump_key(&env, &commitment_key);
+        let state_version = Self::increment_version(&env)?;
+        Self::bump(&env);
+        LpFunded {
+            proposal_id: Self::get(&env, &DataKey::Proposal),
+            commitment: share_commitment,
+            assets: amount,
+            shares,
+            state_version,
+        }
+        .publish(&env);
+        Ok(FundingResult {
+            accepted_assets: amount,
+            unused_assets: 0,
+            shares_minted: shares,
+            state_version,
+        })
+    }
+
     pub fn unfund(
         env: Env,
         controller: Address,

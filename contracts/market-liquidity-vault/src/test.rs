@@ -130,6 +130,38 @@ fn direct_donations_never_mint_shares_or_increase_accounted_assets() {
 }
 
 #[test]
+fn prefunded_controller_path_preserves_prior_donations() {
+    let env = Env::default();
+    let (client, token, _factory, controller, _market) = setup(&env);
+    let donor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&donor, &9_000_000);
+    TokenClient::new(&env, &token).transfer(&donor, &client.address, &9_000_000);
+
+    TokenClient::new(&env, &token).transfer(&controller, &client.address, &10_000_000);
+    let funded = client.fund_received(&controller, &id(&env, 1), &10_000_000, &9_000_000, &0);
+    assert_eq!(funded.accepted_assets, 10_000_000);
+    assert_eq!(funded.shares_minted, 10_000_000);
+    assert_eq!(client.info().funded_assets, 10_000_000);
+    assert_eq!(client.unallocated_balance(), 9_000_000);
+}
+
+#[test]
+fn prefunded_controller_path_rejects_a_false_donation_baseline() {
+    let env = Env::default();
+    let (client, token, _factory, controller, _market) = setup(&env);
+    let donor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&donor, &9_000_000);
+    TokenClient::new(&env, &token).transfer(&donor, &client.address, &9_000_000);
+    TokenClient::new(&env, &token).transfer(&controller, &client.address, &10_000_000);
+
+    assert!(client
+        .try_fund_received(&controller, &id(&env, 1), &10_000_000, &0, &0)
+        .is_err());
+    assert_eq!(client.info().funded_assets, 0);
+    assert_eq!(client.info().total_shares, 0);
+}
+
+#[test]
 fn expired_underfunded_vault_cancels_and_refunds_without_factory_or_creator() {
     let env = Env::default();
     let (client, _token, _factory, controller, _market) = setup(&env);
