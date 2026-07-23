@@ -12,5 +12,6 @@ doctest = false
 soroban-sdk = { workspace = true }
 
 [dev-dependencies]
+lmsr-market = { path = "../lmsr-market" }
 market-liquidity-vault = { path = "../market-liquidity-vault" }
 soroban-sdk = { workspace = true, features = ["testutils"] }

@@ -16,6 +16,7 @@ const MAX_ROOT_HISTORY: u32 = 128;
 const MIN_ENVELOPE_LENGTH: u32 = 96;
 const MAX_ENVELOPE_LENGTH: u32 = 512;
 const MAX_PROOF_LENGTH: u32 = 512;
+const MAX_PRIVATE_BATCH_SIZE: u32 = 64;
 const MAX_ACTION_LIFETIME: u64 = 86_400;
 const MAX_AMOUNT: i128 = 1_000_000_000_000_000_000;
 const MAX_KEEP_ALIVE_ITEMS: u32 = 16;
@@ -38,6 +39,8 @@ pub enum ProofAction {
     LiquidityFund,
     LiquidityExit,
     LiquidityRedeem,
+    ExecutionChange,
+    Treasury,
 }
 
 #[contracttype]
@@ -64,6 +67,282 @@ pub struct LiquidityBinding {
     pub shares: i128,
     pub expected_assets: i128,
     pub expected_version: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EpochPhase {
+    Collecting,
+    Sealed,
+    Executed,
+    Refundable,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrderStatus {
+    Pending,
+    Executed,
+    Refunded,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MarketOutcome {
+    Yes,
+    No,
+    Void,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MarketSide {
+    Yes,
+    No,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettlementState {
+    Pending,
+    Yes,
+    No,
+    Void,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketInfo {
+    pub asset: soroban_sdk::Symbol,
+    pub threshold: i128,
+    pub expiry: u64,
+    pub finalize_after: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketPrivateConfig {
+    pub batcher: Address,
+    pub liquidity_vault: Address,
+    pub resolver: Address,
+    pub rules_hash: BytesN<32>,
+    pub funding: i128,
+    pub fee_bps: u32,
+    pub lp_fee_share_bps: u32,
+    pub lot_size: i128,
+    pub fixed_batch_size: u32,
+    pub minimum_side_count: u32,
+    pub maximum_price_movement: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchQuote {
+    pub state_version: u64,
+    pub batch_size: u32,
+    pub yes_count: u32,
+    pub no_count: u32,
+    pub pre_yes_price: i128,
+    pub post_yes_price: i128,
+    pub yes_price: i128,
+    pub no_price: i128,
+    pub aggregate_market_charge: i128,
+    pub yes_market_cost: i128,
+    pub no_market_cost: i128,
+    pub yes_charge_per_position: i128,
+    pub no_charge_per_position: i128,
+    pub rounding_contribution: i128,
+    pub fee_per_position: i128,
+    pub fee_escrow: i128,
+    pub conditional_lp_fee: i128,
+    pub conditional_protocol_fee: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketFeeState {
+    pub escrow: i128,
+    pub rounding_receivable: i128,
+    pub conditional_lp_fee: i128,
+    pub conditional_protocol_fee: i128,
+    pub vested: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketRegistration {
+    pub market: Address,
+    pub epoch_duration: u64,
+    pub refund_delay: u64,
+    pub committee_epoch: u64,
+    pub committee_config_hash: BytesN<32>,
+    pub current_epoch: u64,
+    pub expiry: u64,
+    pub finalize_after: u64,
+    pub lot_size: i128,
+    pub fixed_batch_size: u32,
+    pub minimum_side_count: u32,
+    pub fee_bps: u32,
+    pub lp_fee_share_bps: u32,
+    pub maximum_price_movement: i128,
+    pub rules_hash: BytesN<32>,
+    pub finalized: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EpochState {
+    pub market: Address,
+    pub epoch: u64,
+    pub phase: EpochPhase,
+    pub market_state_version: u64,
+    pub accepted_root: BytesN<32>,
+    pub accepted_count: u32,
+    pub first_sequence: u64,
+    pub last_sequence: u64,
+    pub opened_at: u64,
+    pub cutoff: u64,
+    pub refund_at: u64,
+    pub committee_epoch: u64,
+    pub committee_config_hash: BytesN<32>,
+    pub allocation_root: Option<U256>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrderBinding {
+    pub market: Address,
+    pub epoch: u64,
+    pub market_state_version: u64,
+    pub position_commitment: U256,
+    pub lot_size: i128,
+    pub fee_bps: u32,
+    pub fixed_batch_size: u32,
+    pub minimum_side_count: u32,
+    pub maximum_price_movement: i128,
+    pub rules_hash: BytesN<32>,
+    pub refund_at: u64,
+    pub committee_epoch: u64,
+    pub committee_config_hash: BytesN<32>,
+    pub ciphertext_hash: BytesN<32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrderRecord {
+    pub sequence: u64,
+    pub market: Address,
+    pub epoch: u64,
+    pub action_id: BytesN<32>,
+    pub position_commitment: U256,
+    pub ciphertext_hash: BytesN<32>,
+    pub encrypted_order: Bytes,
+    pub accepted_at: u64,
+    pub refund_at: u64,
+    pub status: OrderStatus,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AcceptedLeaf {
+    pub prior_root: BytesN<32>,
+    pub market: Address,
+    pub epoch: u64,
+    pub sequence: u64,
+    pub action_id: BytesN<32>,
+    pub position_commitment: U256,
+    pub ciphertext_hash: BytesN<32>,
+    pub committee_epoch: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EpochRootPreimage {
+    pub network_domain: BytesN<32>,
+    pub vault: Address,
+    pub market: Address,
+    pub epoch: u64,
+    pub market_state_version: u64,
+    pub committee_epoch: u64,
+    pub committee_config_hash: BytesN<32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchProofStatement {
+    pub network_domain: BytesN<32>,
+    pub vault: Address,
+    pub market: Address,
+    pub epoch: u64,
+    pub accepted_root: BytesN<32>,
+    pub accepted_count: u32,
+    pub first_sequence: u64,
+    pub last_sequence: u64,
+    pub committee_epoch: u64,
+    pub committee_config_hash: BytesN<32>,
+    pub aggregate_ciphertext_hash: BytesN<32>,
+    pub decryption_proof_hash: BytesN<32>,
+    pub committee_statement_hash: BytesN<32>,
+    pub allocation_root: U256,
+    pub quote: BatchQuote,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchSubmission {
+    pub yes_count: u32,
+    pub no_count: u32,
+    pub committee_epoch: u64,
+    pub aggregate_ciphertext_hash: BytesN<32>,
+    pub decryption_proof_hash: BytesN<32>,
+    pub committee_statement_hash: BytesN<32>,
+    pub allocation_root: U256,
+    pub proof: Bytes,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchRecord {
+    pub market: Address,
+    pub epoch: u64,
+    pub accepted_root: BytesN<32>,
+    pub allocation_root: U256,
+    pub quote: BatchQuote,
+    pub user_market_charge: i128,
+    pub executed_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketAccounting {
+    pub user_market_charges: i128,
+    pub rounding_advanced: i128,
+    pub fee_escrow: i128,
+    pub conditional_lp_fee: i128,
+    pub conditional_protocol_fee: i128,
+    pub finalized_outcome: SettlementState,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefundBinding {
+    pub market: Address,
+    pub epoch: u64,
+    pub sequence: u64,
+    pub accepted_root: BytesN<32>,
+    pub position_commitment: U256,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllocationBinding {
+    pub market: Address,
+    pub epoch: u64,
+    pub sequence: u64,
+    pub allocation_root: U256,
+    pub position_commitment: U256,
+    pub outcome: SettlementState,
+    pub quote: BatchQuote,
 }
 
 #[contracttype]
@@ -126,6 +405,9 @@ pub struct VaultInfo {
     pub next_leaf_index: u32,
     pub current_root: U256,
     pub shielded_liabilities: i128,
+    pub rounding_reserve: i128,
+    pub rounding_receivable: i128,
+    pub protocol_fees: i128,
     pub deposits_paused: bool,
 }
 
@@ -156,12 +438,21 @@ enum DataKey {
     CurrentRoot,
     CurrentRootSlot,
     Liabilities,
+    RoundingReserve,
+    RoundingReceivable,
+    ProtocolFees,
     DepositsPaused,
     Root(u32),
     Nullifier(U256),
     Commitment(U256),
     Output(u32),
     Action(BytesN<32>),
+    Registration(Address),
+    Epoch(Address, u64),
+    MarketSequence(Address),
+    Order(Address, u64),
+    Batch(Address, u64),
+    MarketAccounting(Address),
 }
 
 #[contracterror]
@@ -188,6 +479,18 @@ pub enum Error {
     DepositsPaused = 18,
     TooManyItems = 19,
     Arithmetic = 20,
+    MarketNotRegistered = 21,
+    DuplicateMarket = 22,
+    InvalidEpoch = 23,
+    InvalidPhase = 24,
+    EpochFull = 25,
+    TooEarly = 26,
+    StaleState = 27,
+    InvalidBatch = 28,
+    OrderNotFound = 29,
+    InvalidOrder = 30,
+    AlreadyFinalized = 31,
+    InsufficientRoundingReserve = 32,
 }
 
 #[contractevent(topics = ["shielded_output"], data_format = "vec")]
@@ -216,9 +519,68 @@ pub struct VaultTransition {
     pub new_root: U256,
 }
 
+#[contractevent(topics = ["market_registered"], data_format = "vec")]
+pub struct MarketRegistered {
+    #[topic]
+    pub market: Address,
+    pub epoch: u64,
+    pub cutoff: u64,
+    pub refund_at: u64,
+}
+
+#[contractevent(topics = ["private_order"], data_format = "vec")]
+pub struct PrivateOrderAccepted {
+    #[topic]
+    pub market: Address,
+    pub epoch: u64,
+    pub sequence: u64,
+    pub accepted_count: u32,
+    pub accepted_root: BytesN<32>,
+}
+
+#[contractevent(topics = ["epoch_sealed"], data_format = "vec")]
+pub struct EpochSealed {
+    #[topic]
+    pub market: Address,
+    pub epoch: u64,
+    pub accepted_count: u32,
+    pub accepted_root: BytesN<32>,
+    pub refund_at: u64,
+}
+
+#[contractevent(topics = ["epoch_executed"], data_format = "vec")]
+pub struct EpochExecuted {
+    #[topic]
+    pub market: Address,
+    pub epoch: u64,
+    pub accepted_count: u32,
+    pub allocation_root: U256,
+    pub market_charge: i128,
+    pub fee_escrow: i128,
+}
+
+#[contractevent(topics = ["epoch_refundable"], data_format = "vec")]
+pub struct EpochRefundable {
+    #[topic]
+    pub market: Address,
+    pub epoch: u64,
+    pub accepted_count: u32,
+}
+
+#[contractevent(topics = ["market_finalized"], data_format = "vec")]
+pub struct PrivateMarketFinalized {
+    #[topic]
+    pub market: Address,
+    pub outcome: MarketOutcome,
+    pub payout_received: i128,
+    pub lp_fee: i128,
+    pub protocol_fee: i128,
+}
+
 #[contractclient(crate_path = "soroban_sdk", name = "ProofVerifierClient")]
 pub trait ProofVerifier {
     fn verify(env: Env, statement: ProofStatement, proof: Bytes) -> bool;
+    fn verify_batch(env: Env, statement: BatchProofStatement, proof: Bytes) -> bool;
 }
 
 #[contractclient(crate_path = "soroban_sdk", name = "LiquidityVaultClient")]
@@ -237,6 +599,46 @@ pub trait LiquidityVault {
     fn redeem_terminal(env: Env, controller: Address, shares: i128, expected_version: u64) -> i128;
 
     fn unallocated_balance(env: Env) -> i128;
+}
+
+#[contractclient(crate_path = "soroban_sdk", name = "MarketClient")]
+pub trait Market {
+    fn private_config(env: Env) -> Option<MarketPrivateConfig>;
+    fn market_info(env: Env) -> MarketInfo;
+    fn state_version(env: Env) -> u64;
+    fn outcome(env: Env) -> Option<MarketOutcome>;
+    fn quote_private_batch(
+        env: Env,
+        expected_version: u64,
+        yes_count: u32,
+        no_count: u32,
+    ) -> BatchQuote;
+    fn apply_private_batch(
+        env: Env,
+        batcher: Address,
+        expected_version: u64,
+        yes_count: u32,
+        no_count: u32,
+    ) -> BatchQuote;
+    fn apply_private_batch_received(
+        env: Env,
+        batcher: Address,
+        expected_version: u64,
+        yes_count: u32,
+        no_count: u32,
+        prior_unallocated_balance: i128,
+    ) -> BatchQuote;
+    fn fee_state(env: Env) -> MarketFeeState;
+    fn unallocated_balance(env: Env) -> i128;
+    fn record_vested_fees(
+        env: Env,
+        batcher: Address,
+        lp_fee: i128,
+        prior_unallocated_balance: i128,
+        expected_version: u64,
+    ) -> MarketFeeState;
+    fn redeem(env: Env, trader: Address, side: MarketSide) -> i128;
+    fn settle_liquidity(env: Env) -> i128;
 }
 
 #[contract]
@@ -294,6 +696,9 @@ impl ShieldedCollateralVault {
         instance.set(&DataKey::CurrentRoot, &genesis_root);
         instance.set(&DataKey::CurrentRootSlot, &0u32);
         instance.set(&DataKey::Liabilities, &0i128);
+        instance.set(&DataKey::RoundingReserve, &0i128);
+        instance.set(&DataKey::RoundingReceivable, &0i128);
+        instance.set(&DataKey::ProtocolFees, &0i128);
         instance.set(&DataKey::DepositsPaused, &false);
         Self::store_root(&env, 0, &genesis_root);
         Self::bump_instance(&env);
@@ -317,6 +722,9 @@ impl ShieldedCollateralVault {
             next_leaf_index: instance.get(&DataKey::NextLeafIndex).unwrap_or(0),
             current_root: instance.get(&DataKey::CurrentRoot).unwrap(),
             shielded_liabilities: instance.get(&DataKey::Liabilities).unwrap_or(0),
+            rounding_reserve: instance.get(&DataKey::RoundingReserve).unwrap_or(0),
+            rounding_receivable: instance.get(&DataKey::RoundingReceivable).unwrap_or(0),
+            protocol_fees: instance.get(&DataKey::ProtocolFees).unwrap_or(0),
             deposits_paused: instance.get(&DataKey::DepositsPaused).unwrap_or(false),
         }
     }
@@ -347,6 +755,145 @@ impl ShieldedCollateralVault {
             expiry,
         };
         env.crypto().sha256(&context.to_xdr(&env)).into()
+    }
+
+    pub fn register_market(
+        env: Env,
+        factory: Address,
+        market: Address,
+        epoch_duration: u64,
+        refund_delay: u64,
+        committee_epoch: u64,
+        committee_config_hash: BytesN<32>,
+    ) {
+        let configured_factory: Address = env.storage().instance().get(&DataKey::Factory).unwrap();
+        if factory != configured_factory {
+            panic_with_error!(&env, Error::InvalidConfiguration);
+        }
+        factory.require_auth();
+        let registration_key = DataKey::Registration(market.clone());
+        if env.storage().persistent().has(&registration_key) {
+            panic_with_error!(&env, Error::DuplicateMarket);
+        }
+        if epoch_duration == 0
+            || refund_delay == 0
+            || committee_epoch == 0
+            || Self::is_zero_bytes(&committee_config_hash)
+            || epoch_duration
+                .checked_add(refund_delay)
+                .is_none_or(|duration| duration > MAX_ACTION_LIFETIME)
+        {
+            panic_with_error!(&env, Error::InvalidConfiguration);
+        }
+        let client = MarketClient::new(&env, &market);
+        let private = client
+            .private_config()
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidConfiguration));
+        let info = client.market_info();
+        if private.batcher != env.current_contract_address()
+            || private.fixed_batch_size < 8
+            || private.fixed_batch_size > MAX_PRIVATE_BATCH_SIZE
+            || private.minimum_side_count < 2
+            || private
+                .minimum_side_count
+                .checked_mul(2)
+                .is_none_or(|count| count > private.fixed_batch_size)
+            || env.ledger().timestamp() >= info.expiry
+            || info
+                .expiry
+                .checked_add(refund_delay)
+                .is_none_or(|refund_at| refund_at > info.finalize_after)
+        {
+            panic_with_error!(&env, Error::InvalidConfiguration);
+        }
+        let registration = MarketRegistration {
+            market: market.clone(),
+            epoch_duration,
+            refund_delay,
+            committee_epoch,
+            committee_config_hash,
+            current_epoch: 0,
+            expiry: info.expiry,
+            finalize_after: info.finalize_after,
+            lot_size: private.lot_size,
+            fixed_batch_size: private.fixed_batch_size,
+            minimum_side_count: private.minimum_side_count,
+            fee_bps: private.fee_bps,
+            lp_fee_share_bps: private.lp_fee_share_bps,
+            maximum_price_movement: private.maximum_price_movement,
+            rules_hash: private.rules_hash,
+            finalized: false,
+        };
+        let epoch = Self::new_epoch(&env, &registration, 0, client.state_version());
+        env.storage()
+            .persistent()
+            .set(&registration_key, &registration);
+        let epoch_key = DataKey::Epoch(market.clone(), 0);
+        env.storage().persistent().set(&epoch_key, &epoch);
+        let accounting_key = DataKey::MarketAccounting(market.clone());
+        env.storage().persistent().set(
+            &accounting_key,
+            &MarketAccounting {
+                user_market_charges: 0,
+                rounding_advanced: 0,
+                fee_escrow: 0,
+                conditional_lp_fee: 0,
+                conditional_protocol_fee: 0,
+                finalized_outcome: SettlementState::Pending,
+            },
+        );
+        Self::bump_persistent(&env, &registration_key);
+        Self::bump_persistent(&env, &epoch_key);
+        Self::bump_persistent(&env, &accounting_key);
+        MarketRegistered {
+            market,
+            epoch: 0,
+            cutoff: epoch.cutoff,
+            refund_at: epoch.refund_at,
+        }
+        .publish(&env);
+    }
+
+    pub fn fund_rounding_reserve(env: Env, from: Address, amount: i128) {
+        from.require_auth();
+        Self::validate_amount(&env, amount);
+        let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token);
+        let before = client.balance(&env.current_contract_address());
+        client.transfer(&from, &env.current_contract_address(), &amount);
+        let after = client.balance(&env.current_contract_address());
+        if after.checked_sub(before) != Some(amount) {
+            panic_with_error!(&env, Error::TransferMismatch);
+        }
+        Self::increase_instance_total(&env, DataKey::RoundingReserve, amount);
+        Self::assert_backing(&env);
+    }
+
+    pub fn withdraw_rounding_reserve(
+        env: Env,
+        governance: Address,
+        recipient: Address,
+        amount: i128,
+    ) {
+        let configured: Address = env.storage().instance().get(&DataKey::Governance).unwrap();
+        if governance != configured {
+            panic_with_error!(&env, Error::InvalidConfiguration);
+        }
+        governance.require_auth();
+        Self::validate_amount(&env, amount);
+        Self::decrease_instance_total(
+            &env,
+            DataKey::RoundingReserve,
+            amount,
+            Error::InsufficientRoundingReserve,
+        );
+        let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        token::Client::new(&env, &token).transfer(
+            &env.current_contract_address(),
+            &recipient,
+            &amount,
+        );
+        Self::assert_backing(&env);
     }
 
     pub fn deposit(
@@ -598,6 +1145,743 @@ impl ShieldedCollateralVault {
         )
     }
 
+    pub fn accept_order(
+        env: Env,
+        market: Address,
+        epoch_number: u64,
+        action_id: BytesN<32>,
+        position_commitment: U256,
+        encrypted_order: Bytes,
+        transition: PrivateTransition,
+    ) -> OrderRecord {
+        let registration = Self::market_registration(&env, &market);
+        if registration.finalized || registration.current_epoch != epoch_number {
+            panic_with_error!(&env, Error::InvalidEpoch);
+        }
+        let epoch_key = DataKey::Epoch(market.clone(), epoch_number);
+        let mut epoch: EpochState = env
+            .storage()
+            .persistent()
+            .get(&epoch_key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidEpoch));
+        if epoch.phase != EpochPhase::Collecting {
+            panic_with_error!(&env, Error::InvalidPhase);
+        }
+        if env.ledger().timestamp() >= epoch.cutoff {
+            panic_with_error!(&env, Error::TooEarly);
+        }
+        if epoch.accepted_count >= registration.fixed_batch_size {
+            panic_with_error!(&env, Error::EpochFull);
+        }
+        let client = MarketClient::new(&env, &market);
+        if client.outcome().is_some() || client.state_version() != epoch.market_state_version {
+            panic_with_error!(&env, Error::StaleState);
+        }
+        let vault_info = Self::info(env.clone());
+        if encrypted_order.len() != vault_info.envelope_length
+            || Self::all_zero_bytes(&encrypted_order)
+            || !Self::canonical_nonzero_field(&env, &position_commitment)
+            || transition.output_commitments.len() != 2
+            || transition.output_commitments.get(1) != Some(position_commitment.clone())
+        {
+            panic_with_error!(&env, Error::InvalidOrder);
+        }
+        let ciphertext_hash: BytesN<32> = env.crypto().sha256(&encrypted_order).into();
+        let binding = OrderBinding {
+            market: market.clone(),
+            epoch: epoch_number,
+            market_state_version: epoch.market_state_version,
+            position_commitment: position_commitment.clone(),
+            lot_size: registration.lot_size,
+            fee_bps: registration.fee_bps,
+            fixed_batch_size: registration.fixed_batch_size,
+            minimum_side_count: registration.minimum_side_count,
+            maximum_price_movement: registration.maximum_price_movement,
+            rules_hash: registration.rules_hash,
+            refund_at: epoch.refund_at,
+            committee_epoch: epoch.committee_epoch,
+            committee_config_hash: epoch.committee_config_hash.clone(),
+            ciphertext_hash: ciphertext_hash.clone(),
+        };
+        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(&env)).into();
+        Self::execute_transition(
+            &env,
+            ProofAction::Order,
+            action_id.clone(),
+            None,
+            0,
+            Some(market.clone()),
+            binding_digest,
+            epoch.refund_at,
+            transition,
+            2,
+        );
+
+        let sequence_key = DataKey::MarketSequence(market.clone());
+        let sequence = env
+            .storage()
+            .persistent()
+            .get::<_, u64>(&sequence_key)
+            .unwrap_or(0)
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+        env.storage().persistent().set(&sequence_key, &sequence);
+        Self::bump_persistent(&env, &sequence_key);
+        let leaf = AcceptedLeaf {
+            prior_root: epoch.accepted_root,
+            market: market.clone(),
+            epoch: epoch_number,
+            sequence,
+            action_id: action_id.clone(),
+            position_commitment: position_commitment.clone(),
+            ciphertext_hash: ciphertext_hash.clone(),
+            committee_epoch: epoch.committee_epoch,
+        };
+        let accepted_root: BytesN<32> = env.crypto().sha256(&leaf.to_xdr(&env)).into();
+        let record = OrderRecord {
+            sequence,
+            market: market.clone(),
+            epoch: epoch_number,
+            action_id,
+            position_commitment,
+            ciphertext_hash,
+            encrypted_order,
+            accepted_at: env.ledger().timestamp(),
+            refund_at: epoch.refund_at,
+            status: OrderStatus::Pending,
+        };
+        let order_key = DataKey::Order(market.clone(), sequence);
+        env.storage().persistent().set(&order_key, &record);
+        Self::bump_persistent(&env, &order_key);
+        epoch.accepted_count = epoch
+            .accepted_count
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+        if epoch.accepted_count == 1 {
+            epoch.first_sequence = sequence;
+        }
+        epoch.last_sequence = sequence;
+        epoch.accepted_root = accepted_root.clone();
+        env.storage().persistent().set(&epoch_key, &epoch);
+        Self::bump_persistent(&env, &epoch_key);
+        PrivateOrderAccepted {
+            market,
+            epoch: epoch_number,
+            sequence,
+            accepted_count: epoch.accepted_count,
+            accepted_root,
+        }
+        .publish(&env);
+        record
+    }
+
+    pub fn seal_epoch(env: Env, market: Address, epoch_number: u64) -> EpochState {
+        let registration = Self::market_registration(&env, &market);
+        if registration.current_epoch != epoch_number {
+            panic_with_error!(&env, Error::InvalidEpoch);
+        }
+        let key = DataKey::Epoch(market.clone(), epoch_number);
+        let mut epoch: EpochState = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidEpoch));
+        if epoch.phase != EpochPhase::Collecting {
+            panic_with_error!(&env, Error::InvalidPhase);
+        }
+        if env.ledger().timestamp() < epoch.cutoff
+            && epoch.accepted_count < registration.fixed_batch_size
+        {
+            panic_with_error!(&env, Error::TooEarly);
+        }
+        epoch.phase = EpochPhase::Sealed;
+        env.storage().persistent().set(&key, &epoch);
+        Self::bump_persistent(&env, &key);
+        EpochSealed {
+            market,
+            epoch: epoch_number,
+            accepted_count: epoch.accepted_count,
+            accepted_root: epoch.accepted_root.clone(),
+            refund_at: epoch.refund_at,
+        }
+        .publish(&env);
+        epoch
+    }
+
+    pub fn make_epoch_refundable(env: Env, market: Address, epoch_number: u64) -> EpochState {
+        let key = DataKey::Epoch(market.clone(), epoch_number);
+        let mut epoch: EpochState = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidEpoch));
+        if epoch.phase == EpochPhase::Collecting && env.ledger().timestamp() >= epoch.cutoff {
+            epoch.phase = EpochPhase::Sealed;
+        }
+        if epoch.phase != EpochPhase::Sealed {
+            panic_with_error!(&env, Error::InvalidPhase);
+        }
+        if env.ledger().timestamp() < epoch.refund_at {
+            panic_with_error!(&env, Error::TooEarly);
+        }
+        epoch.phase = EpochPhase::Refundable;
+        env.storage().persistent().set(&key, &epoch);
+        Self::bump_persistent(&env, &key);
+        EpochRefundable {
+            market,
+            epoch: epoch_number,
+            accepted_count: epoch.accepted_count,
+        }
+        .publish(&env);
+        epoch
+    }
+
+    pub fn submit_batch(
+        env: Env,
+        market: Address,
+        epoch_number: u64,
+        submission: BatchSubmission,
+    ) -> BatchRecord {
+        let registration = Self::market_registration(&env, &market);
+        if registration.current_epoch != epoch_number
+            || submission.committee_epoch != registration.committee_epoch
+            || submission.proof.is_empty()
+            || submission.proof.len() > MAX_PROOF_LENGTH
+            || Self::is_zero_bytes(&submission.aggregate_ciphertext_hash)
+            || Self::is_zero_bytes(&submission.decryption_proof_hash)
+            || Self::is_zero_bytes(&submission.committee_statement_hash)
+            || !Self::canonical_nonzero_field(&env, &submission.allocation_root)
+        {
+            panic_with_error!(&env, Error::InvalidBatch);
+        }
+        let epoch_key = DataKey::Epoch(market.clone(), epoch_number);
+        let mut epoch: EpochState = env
+            .storage()
+            .persistent()
+            .get(&epoch_key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidEpoch));
+        if epoch.phase != EpochPhase::Sealed {
+            panic_with_error!(&env, Error::InvalidPhase);
+        }
+        let sequence_count = epoch
+            .last_sequence
+            .checked_sub(epoch.first_sequence)
+            .and_then(|distance| distance.checked_add(1))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidBatch));
+        if env.ledger().timestamp() >= epoch.refund_at
+            || epoch.accepted_count != registration.fixed_batch_size
+            || sequence_count != u64::from(epoch.accepted_count)
+            || submission
+                .yes_count
+                .checked_add(submission.no_count)
+                .is_none_or(|count| count != epoch.accepted_count)
+            || submission.yes_count < registration.minimum_side_count
+            || submission.no_count < registration.minimum_side_count
+        {
+            panic_with_error!(&env, Error::InvalidBatch);
+        }
+        let client = MarketClient::new(&env, &market);
+        if client.state_version() != epoch.market_state_version || client.outcome().is_some() {
+            panic_with_error!(&env, Error::StaleState);
+        }
+        let quote = client.quote_private_batch(
+            &epoch.market_state_version,
+            &submission.yes_count,
+            &submission.no_count,
+        );
+        let statement = BatchProofStatement {
+            network_domain: env
+                .storage()
+                .instance()
+                .get(&DataKey::NetworkDomain)
+                .unwrap(),
+            vault: env.current_contract_address(),
+            market: market.clone(),
+            epoch: epoch_number,
+            accepted_root: epoch.accepted_root.clone(),
+            accepted_count: epoch.accepted_count,
+            first_sequence: epoch.first_sequence,
+            last_sequence: epoch.last_sequence,
+            committee_epoch: epoch.committee_epoch,
+            committee_config_hash: epoch.committee_config_hash.clone(),
+            aggregate_ciphertext_hash: submission.aggregate_ciphertext_hash,
+            decryption_proof_hash: submission.decryption_proof_hash,
+            committee_statement_hash: submission.committee_statement_hash,
+            allocation_root: submission.allocation_root.clone(),
+            quote: quote.clone(),
+        };
+        let verifier: Address = env.storage().instance().get(&DataKey::Verifier).unwrap();
+        if !ProofVerifierClient::new(&env, &verifier).verify_batch(&statement, &submission.proof) {
+            panic_with_error!(&env, Error::InvalidProof);
+        }
+        let reserve: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::RoundingReserve)
+            .unwrap_or(0);
+        if reserve < quote.rounding_contribution {
+            panic_with_error!(&env, Error::InsufficientRoundingReserve);
+        }
+        let prior_unallocated = client.unallocated_balance();
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        token::Client::new(&env, &token_addr).transfer(
+            &env.current_contract_address(),
+            &market,
+            &quote.aggregate_market_charge,
+        );
+        let applied = client.apply_private_batch_received(
+            &env.current_contract_address(),
+            &epoch.market_state_version,
+            &submission.yes_count,
+            &submission.no_count,
+            &prior_unallocated,
+        );
+        if applied != quote {
+            panic_with_error!(&env, Error::InvalidBatch);
+        }
+        let user_market_charge = quote
+            .aggregate_market_charge
+            .checked_sub(quote.rounding_contribution)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+        Self::decrease_liabilities(&env, user_market_charge);
+        Self::decrease_instance_total(
+            &env,
+            DataKey::RoundingReserve,
+            quote.rounding_contribution,
+            Error::InsufficientRoundingReserve,
+        );
+        Self::increase_instance_total(
+            &env,
+            DataKey::RoundingReceivable,
+            quote.rounding_contribution,
+        );
+        Self::increase_market_accounting(&env, &market, &quote, user_market_charge);
+
+        let record = BatchRecord {
+            market: market.clone(),
+            epoch: epoch_number,
+            accepted_root: epoch.accepted_root.clone(),
+            allocation_root: submission.allocation_root.clone(),
+            quote: quote.clone(),
+            user_market_charge,
+            executed_at: env.ledger().timestamp(),
+        };
+        let batch_key = DataKey::Batch(market.clone(), epoch_number);
+        env.storage().persistent().set(&batch_key, &record);
+        Self::bump_persistent(&env, &batch_key);
+        for sequence in epoch.first_sequence..=epoch.last_sequence {
+            let order_key = DataKey::Order(market.clone(), sequence);
+            let mut order: OrderRecord = env
+                .storage()
+                .persistent()
+                .get(&order_key)
+                .unwrap_or_else(|| panic_with_error!(&env, Error::OrderNotFound));
+            if order.epoch != epoch_number || order.status != OrderStatus::Pending {
+                panic_with_error!(&env, Error::InvalidOrder);
+            }
+            order.status = OrderStatus::Executed;
+            env.storage().persistent().set(&order_key, &order);
+            Self::bump_persistent(&env, &order_key);
+        }
+        epoch.phase = EpochPhase::Executed;
+        epoch.allocation_root = Some(submission.allocation_root.clone());
+        env.storage().persistent().set(&epoch_key, &epoch);
+        Self::bump_persistent(&env, &epoch_key);
+        EpochExecuted {
+            market,
+            epoch: epoch_number,
+            accepted_count: epoch.accepted_count,
+            allocation_root: submission.allocation_root,
+            market_charge: quote.aggregate_market_charge,
+            fee_escrow: quote.fee_escrow,
+        }
+        .publish(&env);
+        Self::assert_backing(&env);
+        record
+    }
+
+    pub fn open_next_epoch(env: Env, market: Address, prior_epoch: u64) -> EpochState {
+        let registration_key = DataKey::Registration(market.clone());
+        let mut registration = Self::market_registration(&env, &market);
+        if registration.finalized
+            || registration.current_epoch != prior_epoch
+            || env.ledger().timestamp() >= registration.expiry
+        {
+            panic_with_error!(&env, Error::InvalidEpoch);
+        }
+        let prior_key = DataKey::Epoch(market.clone(), prior_epoch);
+        let prior: EpochState = env
+            .storage()
+            .persistent()
+            .get(&prior_key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidEpoch));
+        if prior.phase != EpochPhase::Executed && prior.phase != EpochPhase::Refundable {
+            panic_with_error!(&env, Error::InvalidPhase);
+        }
+        let next_number = prior_epoch
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
+        let market_version = MarketClient::new(&env, &market).state_version();
+        let next = Self::new_epoch(&env, &registration, next_number, market_version);
+        registration.current_epoch = next_number;
+        env.storage()
+            .persistent()
+            .set(&registration_key, &registration);
+        let next_key = DataKey::Epoch(market, next_number);
+        env.storage().persistent().set(&next_key, &next);
+        Self::bump_persistent(&env, &registration_key);
+        Self::bump_persistent(&env, &next_key);
+        next
+    }
+
+    pub fn refund_order(
+        env: Env,
+        market: Address,
+        epoch_number: u64,
+        sequence: u64,
+        action_id: BytesN<32>,
+        action_expiry: u64,
+        transition: PrivateTransition,
+    ) {
+        Self::validate_expiry(&env, action_expiry);
+        let epoch = Self::epoch_state(&env, &market, epoch_number);
+        if epoch.phase != EpochPhase::Refundable {
+            panic_with_error!(&env, Error::InvalidPhase);
+        }
+        let order_key = DataKey::Order(market.clone(), sequence);
+        let mut order: OrderRecord = env
+            .storage()
+            .persistent()
+            .get(&order_key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::OrderNotFound));
+        if order.epoch != epoch_number || order.status != OrderStatus::Pending {
+            panic_with_error!(&env, Error::InvalidOrder);
+        }
+        let binding = RefundBinding {
+            market: market.clone(),
+            epoch: epoch_number,
+            sequence,
+            accepted_root: epoch.accepted_root,
+            position_commitment: order.position_commitment.clone(),
+        };
+        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(&env)).into();
+        Self::execute_transition(
+            &env,
+            ProofAction::Refund,
+            action_id,
+            None,
+            0,
+            Some(market),
+            binding_digest,
+            action_expiry,
+            transition,
+            1,
+        );
+        order.status = OrderStatus::Refunded;
+        env.storage().persistent().set(&order_key, &order);
+        Self::bump_persistent(&env, &order_key);
+        Self::assert_backing(&env);
+    }
+
+    pub fn recover_execution_change(
+        env: Env,
+        market: Address,
+        epoch_number: u64,
+        sequence: u64,
+        action_id: BytesN<32>,
+        action_expiry: u64,
+        transition: PrivateTransition,
+    ) {
+        Self::validate_expiry(&env, action_expiry);
+        let epoch = Self::epoch_state(&env, &market, epoch_number);
+        if epoch.phase != EpochPhase::Executed {
+            panic_with_error!(&env, Error::InvalidPhase);
+        }
+        let order = Self::order_record(&env, &market, sequence);
+        if order.epoch != epoch_number || order.status != OrderStatus::Executed {
+            panic_with_error!(&env, Error::InvalidOrder);
+        }
+        let batch = Self::batch_record(&env, &market, epoch_number);
+        let binding = AllocationBinding {
+            market: market.clone(),
+            epoch: epoch_number,
+            sequence,
+            allocation_root: batch.allocation_root,
+            position_commitment: order.position_commitment,
+            outcome: SettlementState::Pending,
+            quote: batch.quote,
+        };
+        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(&env)).into();
+        Self::execute_transition(
+            &env,
+            ProofAction::ExecutionChange,
+            action_id,
+            None,
+            0,
+            Some(market),
+            binding_digest,
+            action_expiry,
+            transition,
+            1,
+        );
+        Self::assert_backing(&env);
+    }
+
+    pub fn claim_position(
+        env: Env,
+        market: Address,
+        epoch_number: u64,
+        sequence: u64,
+        action_id: BytesN<32>,
+        action_expiry: u64,
+        transition: PrivateTransition,
+    ) {
+        Self::validate_expiry(&env, action_expiry);
+        let epoch = Self::epoch_state(&env, &market, epoch_number);
+        if epoch.phase != EpochPhase::Executed {
+            panic_with_error!(&env, Error::InvalidPhase);
+        }
+        let order = Self::order_record(&env, &market, sequence);
+        if order.epoch != epoch_number || order.status != OrderStatus::Executed {
+            panic_with_error!(&env, Error::InvalidOrder);
+        }
+        let accounting = Self::market_accounting(&env, &market);
+        let outcome = accounting.finalized_outcome;
+        if outcome == SettlementState::Pending {
+            panic_with_error!(&env, Error::TooEarly);
+        }
+        let batch = Self::batch_record(&env, &market, epoch_number);
+        let binding = AllocationBinding {
+            market: market.clone(),
+            epoch: epoch_number,
+            sequence,
+            allocation_root: batch.allocation_root,
+            position_commitment: order.position_commitment,
+            outcome,
+            quote: batch.quote,
+        };
+        let binding_digest: BytesN<32> = env.crypto().sha256(&binding.to_xdr(&env)).into();
+        let action = if outcome == SettlementState::Void {
+            ProofAction::Refund
+        } else {
+            ProofAction::Claim
+        };
+        Self::execute_transition(
+            &env,
+            action,
+            action_id,
+            None,
+            0,
+            Some(market),
+            binding_digest,
+            action_expiry,
+            transition,
+            1,
+        );
+        Self::assert_backing(&env);
+    }
+
+    pub fn finalize_market(env: Env, market: Address) -> MarketAccounting {
+        let registration_key = DataKey::Registration(market.clone());
+        let mut registration = Self::market_registration(&env, &market);
+        if registration.finalized {
+            panic_with_error!(&env, Error::AlreadyFinalized);
+        }
+        let client = MarketClient::new(&env, &market);
+        let outcome = client
+            .outcome()
+            .unwrap_or_else(|| panic_with_error!(&env, Error::TooEarly));
+        let accounting_key = DataKey::MarketAccounting(market.clone());
+        let mut accounting = Self::market_accounting(&env, &market);
+        if accounting.finalized_outcome != SettlementState::Pending {
+            panic_with_error!(&env, Error::AlreadyFinalized);
+        }
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let token_client = token::Client::new(&env, &token_addr);
+        let current = env.current_contract_address();
+        let mut payout_received = 0;
+        let mut lp_fee = 0;
+        let mut protocol_fee = 0;
+
+        match outcome {
+            MarketOutcome::Yes | MarketOutcome::No => {
+                let before = token_client.balance(&current);
+                client.redeem(&current, &MarketSide::Yes);
+                client.redeem(&current, &MarketSide::No);
+                let after = token_client.balance(&current);
+                payout_received = after
+                    .checked_sub(before)
+                    .unwrap_or_else(|| panic_with_error!(&env, Error::TransferMismatch));
+                Self::increase_liabilities(&env, payout_received);
+
+                let fee_state = client.fee_state();
+                if fee_state.escrow != accounting.fee_escrow
+                    || fee_state.rounding_receivable != accounting.rounding_advanced
+                    || fee_state.conditional_lp_fee != accounting.conditional_lp_fee
+                    || fee_state.conditional_protocol_fee != accounting.conditional_protocol_fee
+                    || fee_state.vested
+                    || accounting
+                        .rounding_advanced
+                        .checked_add(accounting.conditional_lp_fee)
+                        .and_then(|value| value.checked_add(accounting.conditional_protocol_fee))
+                        != Some(accounting.fee_escrow)
+                {
+                    panic_with_error!(&env, Error::InvalidBatch);
+                }
+                lp_fee = accounting.conditional_lp_fee;
+                protocol_fee = accounting.conditional_protocol_fee;
+                let prior_unallocated = client.unallocated_balance();
+                if lp_fee > 0 {
+                    token_client.transfer(&current, &market, &lp_fee);
+                }
+                let vested = client.record_vested_fees(
+                    &current,
+                    &lp_fee,
+                    &prior_unallocated,
+                    &client.state_version(),
+                );
+                if !vested.vested {
+                    panic_with_error!(&env, Error::InvalidBatch);
+                }
+                Self::decrease_liabilities(&env, accounting.fee_escrow);
+                Self::decrease_instance_total(
+                    &env,
+                    DataKey::RoundingReceivable,
+                    accounting.rounding_advanced,
+                    Error::InvalidBatch,
+                );
+                Self::increase_instance_total(
+                    &env,
+                    DataKey::RoundingReserve,
+                    accounting.rounding_advanced,
+                );
+                Self::increase_instance_total(&env, DataKey::ProtocolFees, protocol_fee);
+                client.settle_liquidity();
+            }
+            MarketOutcome::Void => {
+                Self::increase_liabilities(&env, accounting.user_market_charges);
+                Self::decrease_instance_total(
+                    &env,
+                    DataKey::RoundingReceivable,
+                    accounting.rounding_advanced,
+                    Error::InvalidBatch,
+                );
+                Self::increase_instance_total(
+                    &env,
+                    DataKey::RoundingReserve,
+                    accounting.rounding_advanced,
+                );
+            }
+        }
+        accounting.finalized_outcome = match outcome {
+            MarketOutcome::Yes => SettlementState::Yes,
+            MarketOutcome::No => SettlementState::No,
+            MarketOutcome::Void => SettlementState::Void,
+        };
+        registration.finalized = true;
+        env.storage().persistent().set(&accounting_key, &accounting);
+        env.storage()
+            .persistent()
+            .set(&registration_key, &registration);
+        Self::bump_persistent(&env, &accounting_key);
+        Self::bump_persistent(&env, &registration_key);
+        PrivateMarketFinalized {
+            market,
+            outcome,
+            payout_received,
+            lp_fee,
+            protocol_fee,
+        }
+        .publish(&env);
+        Self::assert_backing(&env);
+        accounting
+    }
+
+    pub fn shield_protocol_fees(
+        env: Env,
+        amount: i128,
+        action_id: BytesN<32>,
+        expiry: u64,
+        transition: PrivateTransition,
+    ) {
+        Self::validate_amount(&env, amount);
+        Self::validate_expiry(&env, expiry);
+        let available: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProtocolFees)
+            .unwrap_or(0);
+        if available < amount {
+            panic_with_error!(&env, Error::InsufficientBacking);
+        }
+        let treasury_key: BytesN<32> = env.storage().instance().get(&DataKey::TreasuryKey).unwrap();
+        Self::execute_transition(
+            &env,
+            ProofAction::Treasury,
+            action_id,
+            None,
+            amount,
+            None,
+            treasury_key,
+            expiry,
+            transition,
+            0,
+        );
+        Self::decrease_instance_total(
+            &env,
+            DataKey::ProtocolFees,
+            amount,
+            Error::InsufficientBacking,
+        );
+        Self::increase_liabilities(&env, amount);
+        Self::assert_backing(&env);
+    }
+
+    pub fn registration(env: Env, market: Address) -> Option<MarketRegistration> {
+        let key = DataKey::Registration(market);
+        let value = env.storage().persistent().get(&key);
+        if value.is_some() {
+            Self::bump_persistent(&env, &key);
+        }
+        value
+    }
+
+    pub fn epoch(env: Env, market: Address, epoch_number: u64) -> Option<EpochState> {
+        let key = DataKey::Epoch(market, epoch_number);
+        let value = env.storage().persistent().get(&key);
+        if value.is_some() {
+            Self::bump_persistent(&env, &key);
+        }
+        value
+    }
+
+    pub fn order(env: Env, market: Address, sequence: u64) -> Option<OrderRecord> {
+        let key = DataKey::Order(market, sequence);
+        let value = env.storage().persistent().get(&key);
+        if value.is_some() {
+            Self::bump_persistent(&env, &key);
+        }
+        value
+    }
+
+    pub fn batch(env: Env, market: Address, epoch_number: u64) -> Option<BatchRecord> {
+        let key = DataKey::Batch(market, epoch_number);
+        let value = env.storage().persistent().get(&key);
+        if value.is_some() {
+            Self::bump_persistent(&env, &key);
+        }
+        value
+    }
+
+    pub fn accounting(env: Env, market: Address) -> Option<MarketAccounting> {
+        let key = DataKey::MarketAccounting(market);
+        let value = env.storage().persistent().get(&key);
+        if value.is_some() {
+            Self::bump_persistent(&env, &key);
+        }
+        value
+    }
+
     pub fn set_deposits_paused(env: Env, governance: Address, paused: bool) {
         let configured: Address = env.storage().instance().get(&DataKey::Governance).unwrap();
         if governance != configured {
@@ -635,12 +1919,9 @@ impl ShieldedCollateralVault {
     pub fn unallocated_balance(env: Env) -> i128 {
         let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let balance = token::Client::new(&env, &token).balance(&env.current_contract_address());
-        let liabilities: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::Liabilities)
-            .unwrap_or(0);
-        balance.checked_sub(liabilities).unwrap_or(0)
+        balance
+            .checked_sub(Self::accounted_balance(&env))
+            .unwrap_or(0)
     }
 
     pub fn keep_alive(env: Env, nullifiers: Vec<U256>, output_indexes: Vec<u32>) {
@@ -881,6 +2162,177 @@ impl ShieldedCollateralVault {
         Self::bump_persistent(env, &key);
     }
 
+    fn market_registration(env: &Env, market: &Address) -> MarketRegistration {
+        let key = DataKey::Registration(market.clone());
+        let registration = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotRegistered));
+        Self::bump_persistent(env, &key);
+        registration
+    }
+
+    fn epoch_state(env: &Env, market: &Address, epoch: u64) -> EpochState {
+        let key = DataKey::Epoch(market.clone(), epoch);
+        let state = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(env, Error::InvalidEpoch));
+        Self::bump_persistent(env, &key);
+        state
+    }
+
+    fn order_record(env: &Env, market: &Address, sequence: u64) -> OrderRecord {
+        let key = DataKey::Order(market.clone(), sequence);
+        let record = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(env, Error::OrderNotFound));
+        Self::bump_persistent(env, &key);
+        record
+    }
+
+    fn batch_record(env: &Env, market: &Address, epoch: u64) -> BatchRecord {
+        let key = DataKey::Batch(market.clone(), epoch);
+        let record = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(env, Error::InvalidBatch));
+        Self::bump_persistent(env, &key);
+        record
+    }
+
+    fn market_accounting(env: &Env, market: &Address) -> MarketAccounting {
+        let key = DataKey::MarketAccounting(market.clone());
+        let accounting = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotRegistered));
+        Self::bump_persistent(env, &key);
+        accounting
+    }
+
+    fn new_epoch(
+        env: &Env,
+        registration: &MarketRegistration,
+        epoch: u64,
+        market_state_version: u64,
+    ) -> EpochState {
+        let now = env.ledger().timestamp();
+        let cutoff = now
+            .checked_add(registration.epoch_duration)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic))
+            .min(registration.expiry);
+        let refund_at = cutoff
+            .checked_add(registration.refund_delay)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        if cutoff <= now || refund_at > registration.finalize_after {
+            panic_with_error!(env, Error::InvalidEpoch);
+        }
+        let preimage = EpochRootPreimage {
+            network_domain: env
+                .storage()
+                .instance()
+                .get(&DataKey::NetworkDomain)
+                .unwrap(),
+            vault: env.current_contract_address(),
+            market: registration.market.clone(),
+            epoch,
+            market_state_version,
+            committee_epoch: registration.committee_epoch,
+            committee_config_hash: registration.committee_config_hash.clone(),
+        };
+        let accepted_root: BytesN<32> = env.crypto().sha256(&preimage.to_xdr(env)).into();
+        EpochState {
+            market: registration.market.clone(),
+            epoch,
+            phase: EpochPhase::Collecting,
+            market_state_version,
+            accepted_root,
+            accepted_count: 0,
+            first_sequence: 0,
+            last_sequence: 0,
+            opened_at: now,
+            cutoff,
+            refund_at,
+            committee_epoch: registration.committee_epoch,
+            committee_config_hash: registration.committee_config_hash.clone(),
+            allocation_root: None,
+        }
+    }
+
+    fn increase_market_accounting(
+        env: &Env,
+        market: &Address,
+        quote: &BatchQuote,
+        user_market_charge: i128,
+    ) {
+        let key = DataKey::MarketAccounting(market.clone());
+        let mut accounting = Self::market_accounting(env, market);
+        if accounting.finalized_outcome != SettlementState::Pending {
+            panic_with_error!(env, Error::AlreadyFinalized);
+        }
+        accounting.user_market_charges = accounting
+            .user_market_charges
+            .checked_add(user_market_charge)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        accounting.rounding_advanced = accounting
+            .rounding_advanced
+            .checked_add(quote.rounding_contribution)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        accounting.fee_escrow = accounting
+            .fee_escrow
+            .checked_add(quote.fee_escrow)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        accounting.conditional_lp_fee = accounting
+            .conditional_lp_fee
+            .checked_add(quote.conditional_lp_fee)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        accounting.conditional_protocol_fee = accounting
+            .conditional_protocol_fee
+            .checked_add(quote.conditional_protocol_fee)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        env.storage().persistent().set(&key, &accounting);
+        Self::bump_persistent(env, &key);
+    }
+
+    fn increase_instance_total(env: &Env, key: DataKey, amount: i128) {
+        if amount < 0 {
+            panic_with_error!(env, Error::Arithmetic);
+        }
+        let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
+        let updated = current
+            .checked_add(amount)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        env.storage().instance().set(&key, &updated);
+    }
+
+    fn decrease_instance_total(env: &Env, key: DataKey, amount: i128, error: Error) {
+        if amount < 0 {
+            panic_with_error!(env, Error::Arithmetic);
+        }
+        let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
+        let updated = current
+            .checked_sub(amount)
+            .filter(|value| *value >= 0)
+            .unwrap_or_else(|| panic_with_error!(env, error));
+        env.storage().instance().set(&key, &updated);
+    }
+
+    fn all_zero_bytes(value: &Bytes) -> bool {
+        for index in 0..value.len() {
+            if value.get(index).unwrap_or(0) != 0 {
+                return false;
+            }
+        }
+        true
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn receive_liquidity(
         env: &Env,
@@ -1008,14 +2460,32 @@ impl ShieldedCollateralVault {
     fn assert_backing(env: &Env) {
         let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let balance = token::Client::new(env, &token).balance(&env.current_contract_address());
+        let accounted = Self::accounted_balance(env);
+        if balance < accounted {
+            panic_with_error!(env, Error::InsufficientBacking);
+        }
+    }
+
+    fn accounted_balance(env: &Env) -> i128 {
         let liabilities: i128 = env
             .storage()
             .instance()
             .get(&DataKey::Liabilities)
             .unwrap_or(0);
-        if balance < liabilities {
-            panic_with_error!(env, Error::InsufficientBacking);
-        }
+        let rounding_reserve: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::RoundingReserve)
+            .unwrap_or(0);
+        let protocol_fees: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProtocolFees)
+            .unwrap_or(0);
+        liabilities
+            .checked_add(rounding_reserve)
+            .and_then(|value| value.checked_add(protocol_fees))
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic))
     }
 
     fn bump_instance(env: &Env) {

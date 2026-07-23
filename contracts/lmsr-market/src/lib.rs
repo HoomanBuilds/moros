@@ -8,6 +8,8 @@ use soroban_sdk::{
     panic_with_error, token, Address, BytesN, Env, Symbol,
 };
 
+const MAX_PRIVATE_BATCH_SIZE: u32 = 64;
+
 /// Which outcome a trade is on.
 #[contracttype]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -514,6 +516,7 @@ impl LmsrMarket {
             || config.lot_size <= 0
             || config.lot_size > MAX_Q
             || config.fixed_batch_size < 8
+            || config.fixed_batch_size > MAX_PRIVATE_BATCH_SIZE
             || config.minimum_side_count < 2
             || config
                 .minimum_side_count
@@ -1098,15 +1101,6 @@ impl LmsrMarket {
             return Err(Error::Unauthorized);
         }
         let quote = Self::quote_private_batch(env.clone(), expected_version, yes_count, no_count)?;
-        let config = Self::private_config(env.clone()).ok_or(Error::NotInitialized)?;
-        let delta_yes = config
-            .lot_size
-            .checked_mul(i128::from(yes_count))
-            .ok_or(Error::InvalidParams)?;
-        let delta_no = config
-            .lot_size
-            .checked_mul(i128::from(no_count))
-            .ok_or(Error::InvalidParams)?;
         let token_addr: Address = env
             .storage()
             .instance()
@@ -1117,47 +1111,50 @@ impl LmsrMarket {
             &env.current_contract_address(),
             &quote.aggregate_market_charge,
         );
-        Self::increase_accounted_balance(&env, quote.aggregate_market_charge)?;
+        Self::apply_private_quote(&env, &batcher, quote)
+    }
 
-        let (q_yes, q_no, _) = Self::state(&env)?;
-        let next_yes = q_yes.checked_add(delta_yes).ok_or(Error::InvalidParams)?;
-        let next_no = q_no.checked_add(delta_no).ok_or(Error::InvalidParams)?;
-        env.storage().instance().set(&DataKey::QYes, &next_yes);
-        env.storage().instance().set(&DataKey::QNo, &next_no);
-        Self::credit_shares(&env, &batcher, delta_yes, delta_no);
-        Self::increase_total(
-            &env,
-            DataKey::BatchCollateral,
-            quote.aggregate_market_charge,
-        )?;
-        Self::increase_total(&env, DataKey::FeeEscrow, quote.fee_escrow)?;
-        Self::increase_total(
-            &env,
-            DataKey::RoundingReceivable,
-            quote.rounding_contribution,
-        )?;
-        Self::increase_total(&env, DataKey::ConditionalLpFee, quote.conditional_lp_fee)?;
-        Self::increase_total(
-            &env,
-            DataKey::ConditionalProtocolFee,
-            quote.conditional_protocol_fee,
-        )?;
-        let state_version = Self::increment_state_version(&env)?;
-        PrivateBatch {
-            state_version,
-            yes_count,
-            no_count,
-            yes_price: quote.yes_price,
-            no_price: quote.no_price,
-            yes_charge_per_position: quote.yes_charge_per_position,
-            no_charge_per_position: quote.no_charge_per_position,
-            market_charge: quote.aggregate_market_charge,
-            rounding_contribution: quote.rounding_contribution,
-            fee_escrow: quote.fee_escrow,
+    pub fn apply_private_batch_received(
+        env: Env,
+        batcher: Address,
+        expected_version: u64,
+        yes_count: u32,
+        no_count: u32,
+        prior_unallocated_balance: i128,
+    ) -> Result<BatchQuote, Error> {
+        batcher.require_auth();
+        let configured: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Batcher)
+            .ok_or(Error::NotInitialized)?;
+        if batcher != configured {
+            return Err(Error::Unauthorized);
         }
-        .publish(&env);
-        Self::bump(&env);
-        Ok(quote)
+        if prior_unallocated_balance < 0 {
+            return Err(Error::InvalidParams);
+        }
+        let quote = Self::quote_private_batch(env.clone(), expected_version, yes_count, no_count)?;
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        let raw = token::Client::new(&env, &token_addr).balance(&env.current_contract_address());
+        let accounted: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AccountedBalance)
+            .ok_or(Error::NotInitialized)?;
+        if raw
+            != accounted
+                .checked_add(prior_unallocated_balance)
+                .and_then(|value| value.checked_add(quote.aggregate_market_charge))
+                .ok_or(Error::InvalidParams)?
+        {
+            return Err(Error::Undersolvent);
+        }
+        Self::apply_private_quote(&env, &batcher, quote)
     }
 
     pub fn quote_batch(env: Env, dqyes: i128, dqno: i128) -> Result<i128, Error> {
@@ -1585,6 +1582,58 @@ impl LmsrMarket {
             &current.checked_add(amount).ok_or(Error::InvalidParams)?,
         );
         Ok(())
+    }
+
+    fn apply_private_quote(
+        env: &Env,
+        batcher: &Address,
+        quote: BatchQuote,
+    ) -> Result<BatchQuote, Error> {
+        let config = Self::private_config(env.clone()).ok_or(Error::NotInitialized)?;
+        let delta_yes = config
+            .lot_size
+            .checked_mul(i128::from(quote.yes_count))
+            .ok_or(Error::InvalidParams)?;
+        let delta_no = config
+            .lot_size
+            .checked_mul(i128::from(quote.no_count))
+            .ok_or(Error::InvalidParams)?;
+        Self::increase_accounted_balance(env, quote.aggregate_market_charge)?;
+        let (q_yes, q_no, _) = Self::state(env)?;
+        let next_yes = q_yes.checked_add(delta_yes).ok_or(Error::InvalidParams)?;
+        let next_no = q_no.checked_add(delta_no).ok_or(Error::InvalidParams)?;
+        env.storage().instance().set(&DataKey::QYes, &next_yes);
+        env.storage().instance().set(&DataKey::QNo, &next_no);
+        Self::credit_shares(env, batcher, delta_yes, delta_no);
+        Self::increase_total(env, DataKey::BatchCollateral, quote.aggregate_market_charge)?;
+        Self::increase_total(env, DataKey::FeeEscrow, quote.fee_escrow)?;
+        Self::increase_total(
+            env,
+            DataKey::RoundingReceivable,
+            quote.rounding_contribution,
+        )?;
+        Self::increase_total(env, DataKey::ConditionalLpFee, quote.conditional_lp_fee)?;
+        Self::increase_total(
+            env,
+            DataKey::ConditionalProtocolFee,
+            quote.conditional_protocol_fee,
+        )?;
+        let state_version = Self::increment_state_version(env)?;
+        PrivateBatch {
+            state_version,
+            yes_count: quote.yes_count,
+            no_count: quote.no_count,
+            yes_price: quote.yes_price,
+            no_price: quote.no_price,
+            yes_charge_per_position: quote.yes_charge_per_position,
+            no_charge_per_position: quote.no_charge_per_position,
+            market_charge: quote.aggregate_market_charge,
+            rounding_contribution: quote.rounding_contribution,
+            fee_escrow: quote.fee_escrow,
+        }
+        .publish(env);
+        Self::bump(env);
+        Ok(quote)
     }
 
     fn increment_state_version(env: &Env) -> Result<u64, Error> {

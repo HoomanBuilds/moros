@@ -2,23 +2,30 @@
 extern crate std;
 
 use crate::{
-    LiquidityBinding, PrivateTransition, ProofAction, ProofStatement, ShieldedCollateralVault,
-    ShieldedCollateralVaultClient,
+    AllocationBinding, BatchProofStatement, BatchQuote, BatchSubmission, EpochPhase,
+    LiquidityBinding, OrderBinding, OrderStatus, PrivateTransition, ProofAction, ProofStatement,
+    SettlementState, ShieldedCollateralVault, ShieldedCollateralVaultClient,
+};
+use lmsr_market::{
+    BatchQuote as LmsrBatchQuote, LmsrMarket, LmsrMarketClient, Outcome, PrivateMarketConfig,
 };
 use market_liquidity_vault::{MarketLiquidityVault, MarketLiquidityVaultClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
 use soroban_sdk::{
-    contract, contractimpl, contracttype, xdr::ToXdr, Address, Bytes, BytesN, Env, Vec, U256,
+    contract, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, Bytes, BytesN, Env,
+    Vec, U256,
 };
 
 const ENVELOPE_LENGTH: usize = 96;
 const EXPIRY: u64 = 50_000;
+const S: i128 = 1i128 << 32;
 
 #[contracttype]
 #[derive(Clone)]
 enum VerifierKey {
     Expected,
+    ExpectedBatch,
 }
 
 #[contract]
@@ -36,6 +43,19 @@ impl MockVerifier {
         let expected: Option<BytesN<32>> = env.storage().instance().get(&VerifierKey::Expected);
         expected == Some(statement.context_digest)
             && proof == Bytes::from_array(&env, &[7, 11, 13, 17])
+    }
+
+    pub fn set_expected_batch(env: Env, digest: BytesN<32>) {
+        env.storage()
+            .instance()
+            .set(&VerifierKey::ExpectedBatch, &digest);
+    }
+
+    pub fn verify_batch(env: Env, statement: BatchProofStatement, proof: Bytes) -> bool {
+        let expected: Option<BytesN<32>> =
+            env.storage().instance().get(&VerifierKey::ExpectedBatch);
+        let digest: BytesN<32> = env.crypto().sha256(&statement.to_xdr(&env)).into();
+        expected == Some(digest) && proof == Bytes::from_array(&env, &[19, 23, 29, 31])
     }
 }
 
@@ -88,6 +108,7 @@ struct Setup {
     vault: ShieldedCollateralVaultClient<'static>,
     verifier: MockVerifierClient<'static>,
     token: Address,
+    factory: Address,
     governance: Address,
     user: Address,
 }
@@ -110,7 +131,7 @@ fn setup() -> Setup {
         ShieldedCollateralVault,
         (
             token.clone(),
-            factory,
+            factory.clone(),
             governance.clone(),
             verifier_address.clone(),
             id(&env, 1),
@@ -135,6 +156,7 @@ fn setup() -> Setup {
         vault: ShieldedCollateralVaultClient::new(env_static, vault_address_static),
         verifier: MockVerifierClient::new(env_static, verifier_address_static),
         token,
+        factory,
         governance,
         user,
     }
@@ -550,4 +572,562 @@ fn private_lp_funding_and_unfunding_keep_ownership_in_shielded_notes() {
     assert_eq!(liquidity_vault.info().funded_assets, 150_000_000);
     assert_eq!(liquidity_vault.info().total_shares, 150_000_000);
     assert_eq!(setup.vault.info().shielded_liabilities, 350_000_000);
+}
+
+fn setup_private_market(setup: &Setup) -> (Address, Address, Address) {
+    let resolver = Address::generate(&setup.env);
+    let market_address = setup.env.register(
+        LmsrMarket,
+        (
+            setup.factory.clone(),
+            setup.token.clone(),
+            20i128 * S,
+            symbol_short!("XLM"),
+            2_500_000_000_000i128,
+            11_000u64,
+            300u64,
+        ),
+    );
+    let liquidity_address = setup.env.register(
+        MarketLiquidityVault,
+        (
+            setup.token.clone(),
+            setup.factory.clone(),
+            setup.vault.address.clone(),
+            id(&setup.env, 90),
+            200_000_000i128,
+            10_500u64,
+            10_700u64,
+            7u32,
+        ),
+    );
+    let liquidity = MarketLiquidityVaultClient::new(&setup.env, &liquidity_address);
+    StellarAssetClient::new(&setup.env, &setup.token).mint(&setup.vault.address, &200_000_000);
+    liquidity.fund(&setup.vault.address, &id(&setup.env, 91), &200_000_000, &0);
+    liquidity.activate(&setup.factory, &market_address, &1);
+    LmsrMarketClient::new(&setup.env, &market_address).activate_private(
+        &setup.factory,
+        &PrivateMarketConfig {
+            batcher: setup.vault.address.clone(),
+            liquidity_vault: liquidity_address.clone(),
+            resolver: resolver.clone(),
+            rules_hash: id(&setup.env, 92),
+            funding: 200_000_000,
+            fee_bps: 400,
+            lp_fee_share_bps: 5_000,
+            lot_size: S,
+            fixed_batch_size: 8,
+            minimum_side_count: 2,
+            maximum_price_movement: S / 4,
+        },
+    );
+    setup.vault.register_market(
+        &setup.factory,
+        &market_address,
+        &60,
+        &120,
+        &1,
+        &id(&setup.env, 93),
+    );
+    let reserve_funder = Address::generate(&setup.env);
+    StellarAssetClient::new(&setup.env, &setup.token).mint(&reserve_funder, &10_000_000);
+    setup
+        .vault
+        .fund_rounding_reserve(&reserve_funder, &10_000_000);
+    (market_address, liquidity_address, resolver)
+}
+
+fn accept_test_order(
+    setup: &Setup,
+    market: &Address,
+    action_byte: u8,
+    root: u32,
+    nullifiers: [u32; 2],
+    commitments: [u32; 2],
+) {
+    let registration = setup.vault.registration(market).unwrap();
+    let epoch = setup
+        .vault
+        .epoch(market, &registration.current_epoch)
+        .unwrap();
+    let encrypted_order = envelope(&setup.env, action_byte);
+    let ciphertext_hash: BytesN<32> = setup.env.crypto().sha256(&encrypted_order).into();
+    let position_commitment = field(&setup.env, commitments[1]);
+    let binding = OrderBinding {
+        market: market.clone(),
+        epoch: epoch.epoch,
+        market_state_version: epoch.market_state_version,
+        position_commitment: position_commitment.clone(),
+        lot_size: registration.lot_size,
+        fee_bps: registration.fee_bps,
+        fixed_batch_size: registration.fixed_batch_size,
+        minimum_side_count: registration.minimum_side_count,
+        maximum_price_movement: registration.maximum_price_movement,
+        rules_hash: registration.rules_hash,
+        refund_at: epoch.refund_at,
+        committee_epoch: epoch.committee_epoch,
+        committee_config_hash: epoch.committee_config_hash,
+        ciphertext_hash,
+    };
+    let binding_digest: BytesN<32> = setup
+        .env
+        .crypto()
+        .sha256(&binding.to_xdr(&setup.env))
+        .into();
+    let action_id = id(&setup.env, action_byte);
+    let digest = setup.vault.context_digest(
+        &ProofAction::Order,
+        &action_id,
+        &None,
+        &0,
+        &Some(market.clone()),
+        &binding_digest,
+        &epoch.refund_at,
+    );
+    setup.verifier.set_expected(&digest);
+    let append = setup.vault.info().current_root.to_u128().unwrap() as u32;
+    setup.vault.accept_order(
+        market,
+        &epoch.epoch,
+        &action_id,
+        &position_commitment,
+        &encrypted_order,
+        &transition(&setup.env, append, append, root, &nullifiers, commitments),
+    );
+}
+
+fn batch_quote(value: LmsrBatchQuote) -> BatchQuote {
+    BatchQuote {
+        state_version: value.state_version,
+        batch_size: value.batch_size,
+        yes_count: value.yes_count,
+        no_count: value.no_count,
+        pre_yes_price: value.pre_yes_price,
+        post_yes_price: value.post_yes_price,
+        yes_price: value.yes_price,
+        no_price: value.no_price,
+        aggregate_market_charge: value.aggregate_market_charge,
+        yes_market_cost: value.yes_market_cost,
+        no_market_cost: value.no_market_cost,
+        yes_charge_per_position: value.yes_charge_per_position,
+        no_charge_per_position: value.no_charge_per_position,
+        rounding_contribution: value.rounding_contribution,
+        fee_per_position: value.fee_per_position,
+        fee_escrow: value.fee_escrow,
+        conditional_lp_fee: value.conditional_lp_fee,
+        conditional_protocol_fee: value.conditional_protocol_fee,
+    }
+}
+
+fn valid_submission(
+    setup: &Setup,
+    market: &Address,
+    yes_count: u32,
+    no_count: u32,
+) -> BatchSubmission {
+    let epoch = setup.vault.epoch(market, &0).unwrap();
+    let submission = BatchSubmission {
+        yes_count,
+        no_count,
+        committee_epoch: epoch.committee_epoch,
+        aggregate_ciphertext_hash: id(&setup.env, 100),
+        decryption_proof_hash: id(&setup.env, 101),
+        committee_statement_hash: id(&setup.env, 102),
+        allocation_root: field(&setup.env, 200),
+        proof: Bytes::from_array(&setup.env, &[19, 23, 29, 31]),
+    };
+    let statement = batch_statement(setup, market, &epoch, &submission, yes_count, no_count);
+    expect_batch_statement(setup, &statement);
+    submission
+}
+
+fn batch_statement(
+    setup: &Setup,
+    market: &Address,
+    epoch: &crate::EpochState,
+    submission: &BatchSubmission,
+    yes_count: u32,
+    no_count: u32,
+) -> BatchProofStatement {
+    BatchProofStatement {
+        network_domain: setup.vault.info().network_domain,
+        vault: setup.vault.address.clone(),
+        market: market.clone(),
+        epoch: epoch.epoch,
+        accepted_root: epoch.accepted_root.clone(),
+        accepted_count: epoch.accepted_count,
+        first_sequence: epoch.first_sequence,
+        last_sequence: epoch.last_sequence,
+        committee_epoch: epoch.committee_epoch,
+        committee_config_hash: epoch.committee_config_hash.clone(),
+        aggregate_ciphertext_hash: submission.aggregate_ciphertext_hash.clone(),
+        decryption_proof_hash: submission.decryption_proof_hash.clone(),
+        committee_statement_hash: submission.committee_statement_hash.clone(),
+        allocation_root: submission.allocation_root.clone(),
+        quote: batch_quote(
+            LmsrMarketClient::new(&setup.env, market).quote_private_batch(
+                &epoch.market_state_version,
+                &yes_count,
+                &no_count,
+            ),
+        ),
+    }
+}
+
+fn expect_batch_statement(setup: &Setup, statement: &BatchProofStatement) {
+    let digest: BytesN<32> = setup
+        .env
+        .crypto()
+        .sha256(&statement.to_xdr(&setup.env))
+        .into();
+    setup.verifier.set_expected_batch(&digest);
+}
+
+#[test]
+fn complete_epoch_executes_once_with_mandatory_proof_and_exact_accounting() {
+    let setup = setup();
+    let (market_address, liquidity_address, resolver) = setup_private_market(&setup);
+    deposit(&setup, 10, 2, [11, 12], 100_000_000);
+    for index in 0..8u32 {
+        accept_test_order(
+            &setup,
+            &market_address,
+            20 + index as u8,
+            3 + index,
+            [100 + index * 2, 101 + index * 2],
+            [200 + index * 2, 201 + index * 2],
+        );
+    }
+    let sealed = setup.vault.seal_epoch(&market_address, &0);
+    assert_eq!(sealed.phase, EpochPhase::Sealed);
+    assert_eq!(sealed.accepted_count, 8);
+
+    let submission = valid_submission(&setup, &market_address, 2, 6);
+    setup.env.set_auths(&[]);
+    let mut invalid = submission.clone();
+    invalid.proof = Bytes::from_array(&setup.env, &[1]);
+    assert!(setup
+        .vault
+        .try_submit_batch(&market_address, &0, &invalid)
+        .is_err());
+    assert_eq!(
+        LmsrMarketClient::new(&setup.env, &market_address).state_version(),
+        0
+    );
+
+    let epoch = setup.vault.epoch(&market_address, &0).unwrap();
+    let mut wrong_committee = batch_statement(&setup, &market_address, &epoch, &submission, 2, 6);
+    wrong_committee.committee_config_hash = id(&setup.env, 94);
+    expect_batch_statement(&setup, &wrong_committee);
+    assert!(setup
+        .vault
+        .try_submit_batch(&market_address, &0, &submission)
+        .is_err());
+    let submission = valid_submission(&setup, &market_address, 2, 6);
+    let batch = setup.vault.submit_batch(&market_address, &0, &submission);
+    assert_eq!(batch.quote.aggregate_market_charge, 40_998_338);
+    assert_eq!(batch.quote.rounding_contribution, 2);
+    assert_eq!(batch.quote.fee_escrow, 798_008);
+    assert_eq!(batch.user_market_charge, 40_998_336);
+    assert_eq!(
+        setup.vault.epoch(&market_address, &0).unwrap().phase,
+        EpochPhase::Executed
+    );
+    for sequence in 1..=8 {
+        assert_eq!(
+            setup
+                .vault
+                .order(&market_address, &sequence)
+                .unwrap()
+                .status,
+            OrderStatus::Executed
+        );
+    }
+    let info = setup.vault.info();
+    assert_eq!(info.shielded_liabilities, 59_001_664);
+    assert_eq!(info.rounding_reserve, 9_999_998);
+    assert_eq!(info.rounding_receivable, 2);
+    assert_eq!(setup.vault.unallocated_balance(), 0);
+    let accounting = setup.vault.accounting(&market_address).unwrap();
+    assert_eq!(accounting.user_market_charges, 40_998_336);
+    assert_eq!(accounting.fee_escrow, 798_008);
+    let next_epoch = setup.vault.open_next_epoch(&market_address, &0);
+    assert_eq!(next_epoch.epoch, 1);
+    assert_eq!(
+        next_epoch.market_state_version,
+        LmsrMarketClient::new(&setup.env, &market_address).state_version()
+    );
+    assert_eq!(next_epoch.accepted_count, 0);
+    assert_eq!(next_epoch.committee_config_hash, id(&setup.env, 93));
+    assert_eq!(
+        setup
+            .vault
+            .registration(&market_address)
+            .unwrap()
+            .current_epoch,
+        1
+    );
+
+    let change_action = id(&setup.env, 50);
+    let change_expiry = 10_500u64;
+    let first_order = setup.vault.order(&market_address, &1).unwrap();
+    let change_binding = AllocationBinding {
+        market: market_address.clone(),
+        epoch: 0,
+        sequence: 1,
+        allocation_root: batch.allocation_root.clone(),
+        position_commitment: first_order.position_commitment.clone(),
+        outcome: SettlementState::Pending,
+        quote: batch.quote.clone(),
+    };
+    let change_binding_digest: BytesN<32> = setup
+        .env
+        .crypto()
+        .sha256(&change_binding.to_xdr(&setup.env))
+        .into();
+    let change_digest = setup.vault.context_digest(
+        &ProofAction::ExecutionChange,
+        &change_action,
+        &None,
+        &0,
+        &Some(market_address.clone()),
+        &change_binding_digest,
+        &change_expiry,
+    );
+    setup.verifier.set_expected(&change_digest);
+    setup.vault.recover_execution_change(
+        &market_address,
+        &0,
+        &1,
+        &change_action,
+        &change_expiry,
+        &transition(&setup.env, 10, 10, 11, &[500], [501, 502]),
+    );
+    assert!(setup
+        .vault
+        .try_recover_execution_change(
+            &market_address,
+            &0,
+            &1,
+            &id(&setup.env, 51),
+            &change_expiry,
+            &transition(&setup.env, 11, 11, 12, &[500], [503, 504]),
+        )
+        .is_err());
+
+    setup
+        .env
+        .ledger()
+        .with_mut(|ledger| ledger.timestamp = 11_301);
+    setup.env.mock_all_auths();
+    LmsrMarketClient::new(&setup.env, &market_address).resolve(&resolver, &Outcome::Yes);
+    setup.env.set_auths(&[]);
+    let finalized = setup.vault.finalize_market(&market_address);
+    assert_eq!(finalized.finalized_outcome, SettlementState::Yes);
+    assert_eq!(setup.vault.info().rounding_reserve, 10_000_000);
+    assert_eq!(setup.vault.info().rounding_receivable, 0);
+    assert_eq!(setup.vault.info().protocol_fees, 399_003);
+    assert_eq!(
+        MarketLiquidityVaultClient::new(&setup.env, &liquidity_address)
+            .info()
+            .terminal_assets,
+        221_397_341
+    );
+
+    let treasury_action = id(&setup.env, 60);
+    let terminal_expiry = 11_500u64;
+    let treasury_digest = setup.vault.context_digest(
+        &ProofAction::Treasury,
+        &treasury_action,
+        &None,
+        &399_003,
+        &None,
+        &setup.vault.info().treasury_key,
+        &terminal_expiry,
+    );
+    setup.verifier.set_expected(&treasury_digest);
+    setup.vault.shield_protocol_fees(
+        &399_003,
+        &treasury_action,
+        &terminal_expiry,
+        &transition(&setup.env, 11, 11, 12, &[], [601, 602]),
+    );
+    assert_eq!(setup.vault.info().protocol_fees, 0);
+
+    let claim_action = id(&setup.env, 61);
+    let claim_binding = AllocationBinding {
+        market: market_address.clone(),
+        epoch: 0,
+        sequence: 1,
+        allocation_root: batch.allocation_root,
+        position_commitment: first_order.position_commitment,
+        outcome: SettlementState::Yes,
+        quote: batch.quote,
+    };
+    let claim_binding_digest: BytesN<32> = setup
+        .env
+        .crypto()
+        .sha256(&claim_binding.to_xdr(&setup.env))
+        .into();
+    let claim_digest = setup.vault.context_digest(
+        &ProofAction::Claim,
+        &claim_action,
+        &None,
+        &0,
+        &Some(market_address.clone()),
+        &claim_binding_digest,
+        &terminal_expiry,
+    );
+    setup.verifier.set_expected(&claim_digest);
+    setup.vault.claim_position(
+        &market_address,
+        &0,
+        &1,
+        &claim_action,
+        &terminal_expiry,
+        &transition(&setup.env, 12, 12, 13, &[700], [701, 702]),
+    );
+}
+
+#[test]
+fn a_full_epoch_rejects_the_next_order_before_consuming_its_notes() {
+    let setup = setup();
+    let (market_address, _liquidity_address, _resolver) = setup_private_market(&setup);
+    deposit(&setup, 10, 2, [11, 12], 100_000_000);
+    for index in 0..8u32 {
+        accept_test_order(
+            &setup,
+            &market_address,
+            20 + index as u8,
+            3 + index,
+            [100 + index * 2, 101 + index * 2],
+            [200 + index * 2, 201 + index * 2],
+        );
+    }
+
+    let current_root = setup.vault.info().current_root.to_u128().unwrap() as u32;
+    let rejected_nullifier = field(&setup.env, 999);
+    let next_output_index = setup.vault.info().next_leaf_index;
+    assert!(setup
+        .vault
+        .try_accept_order(
+            &market_address,
+            &0,
+            &id(&setup.env, 80),
+            &field(&setup.env, 801),
+            &envelope(&setup.env, 80),
+            &transition(
+                &setup.env,
+                current_root,
+                current_root,
+                99,
+                &[999, 1_000],
+                [800, 801],
+            ),
+        )
+        .is_err());
+    assert!(!setup.vault.is_spent(&rejected_nullifier));
+    assert_eq!(setup.vault.output(&next_output_index), None);
+    assert_eq!(
+        setup.vault.info().current_root,
+        field(&setup.env, current_root)
+    );
+}
+
+#[test]
+fn short_epoch_never_moves_price_and_every_order_reaches_private_refund() {
+    let setup = setup();
+    let (market_address, _liquidity_address, _resolver) = setup_private_market(&setup);
+    deposit(&setup, 10, 2, [11, 12], 25_000_000);
+    accept_test_order(&setup, &market_address, 20, 3, [100, 101], [200, 201]);
+    setup
+        .env
+        .ledger()
+        .with_mut(|ledger| ledger.timestamp = 10_181);
+    let refundable = setup.vault.make_epoch_refundable(&market_address, &0);
+    assert_eq!(refundable.phase, EpochPhase::Refundable);
+    assert_eq!(
+        LmsrMarketClient::new(&setup.env, &market_address).get_state(),
+        (0, 0, 20 * S)
+    );
+
+    let action_id = id(&setup.env, 40);
+    let action_expiry = 10_500u64;
+    let order = setup.vault.order(&market_address, &1).unwrap();
+    let binding = crate::RefundBinding {
+        market: market_address.clone(),
+        epoch: 0,
+        sequence: 1,
+        accepted_root: refundable.accepted_root,
+        position_commitment: order.position_commitment,
+    };
+    let binding_digest: BytesN<32> = setup
+        .env
+        .crypto()
+        .sha256(&binding.to_xdr(&setup.env))
+        .into();
+    let digest = setup.vault.context_digest(
+        &ProofAction::Refund,
+        &action_id,
+        &None,
+        &0,
+        &Some(market_address.clone()),
+        &binding_digest,
+        &action_expiry,
+    );
+    setup.verifier.set_expected(&digest);
+    setup.vault.refund_order(
+        &market_address,
+        &0,
+        &1,
+        &action_id,
+        &action_expiry,
+        &transition(&setup.env, 3, 3, 4, &[300], [301, 302]),
+    );
+    assert_eq!(
+        setup.vault.order(&market_address, &1).unwrap().status,
+        OrderStatus::Refunded
+    );
+    assert_eq!(setup.vault.info().shielded_liabilities, 25_000_000);
+}
+
+#[test]
+fn void_restores_user_charges_fees_rounding_and_lp_principal_without_platform_revenue() {
+    let setup = setup();
+    let (market_address, liquidity_address, resolver) = setup_private_market(&setup);
+    deposit(&setup, 10, 2, [11, 12], 100_000_000);
+    for index in 0..8u32 {
+        accept_test_order(
+            &setup,
+            &market_address,
+            20 + index as u8,
+            3 + index,
+            [100 + index * 2, 101 + index * 2],
+            [200 + index * 2, 201 + index * 2],
+        );
+    }
+    setup.vault.seal_epoch(&market_address, &0);
+    let submission = valid_submission(&setup, &market_address, 2, 6);
+    setup.vault.submit_batch(&market_address, &0, &submission);
+    setup
+        .env
+        .ledger()
+        .with_mut(|ledger| ledger.timestamp = 11_301);
+    LmsrMarketClient::new(&setup.env, &market_address).void(&resolver);
+    setup.env.set_auths(&[]);
+    let accounting = setup.vault.finalize_market(&market_address);
+
+    assert_eq!(accounting.finalized_outcome, SettlementState::Void);
+    let info = setup.vault.info();
+    assert_eq!(info.shielded_liabilities, 100_000_000);
+    assert_eq!(info.rounding_reserve, 10_000_000);
+    assert_eq!(info.rounding_receivable, 0);
+    assert_eq!(info.protocol_fees, 0);
+    assert_eq!(setup.vault.unallocated_balance(), 0);
+    assert_eq!(
+        MarketLiquidityVaultClient::new(&setup.env, &liquidity_address)
+            .info()
+            .terminal_assets,
+        200_000_000
+    );
 }

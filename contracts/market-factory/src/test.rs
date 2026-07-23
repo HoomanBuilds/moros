@@ -31,6 +31,10 @@ fn config(env: &Env, collateral: Address) -> FactoryConfig {
         minimum_open_window: 600,
         maximum_market_duration: 1_000_000,
         batch_grace: 300,
+        epoch_duration: 60,
+        refund_delay: 120,
+        committee_epoch: 1,
+        committee_config_hash: id(env, 4),
         maximum_fee_bps: 500,
         lp_fee_share_bps: 5_000,
         fixed_batch_size: 8,
@@ -175,6 +179,19 @@ fn constructor_rejects_duplicate_capabilities() {
         .address();
     let mut bad = config(&env, collateral);
     bad.allowed_assets = Vec::from_array(&env, [symbol_short!("BTC"), symbol_short!("BTC")]);
+    env.register(MarketFactory, (bad,));
+}
+
+#[test]
+#[should_panic]
+fn constructor_rejects_an_unbounded_private_batch() {
+    let env = Env::default();
+    let token_admin = Address::generate(&env);
+    let collateral = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+    let mut bad = config(&env, collateral);
+    bad.fixed_batch_size = 65;
     env.register(MarketFactory, (bad,));
 }
 

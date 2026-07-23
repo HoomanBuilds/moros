@@ -10,6 +10,7 @@ mod test;
 
 const MAX_ALLOWED_ASSETS: u32 = 64;
 const MAX_LIQUIDITY_TIERS: u32 = 8;
+const MAX_PRIVATE_BATCH_SIZE: u32 = 64;
 const MAX_USDC_AMOUNT: i128 = 1_000_000_000_000_000_000;
 const MAX_LOT_SIZE: i128 = 1i128 << 60;
 const FIXED_SCALE: i128 = 1i128 << 32;
@@ -54,6 +55,10 @@ pub struct FactoryConfig {
     pub minimum_open_window: u64,
     pub maximum_market_duration: u64,
     pub batch_grace: u64,
+    pub epoch_duration: u64,
+    pub refund_delay: u64,
+    pub committee_epoch: u64,
+    pub committee_config_hash: BytesN<32>,
     pub maximum_fee_bps: u32,
     pub lp_fee_share_bps: u32,
     pub fixed_batch_size: u32,
@@ -89,6 +94,10 @@ pub struct ProposalPreimage {
     pub market_wasm_hash: BytesN<32>,
     pub liquidity_wasm_hash: BytesN<32>,
     pub batch_grace: u64,
+    pub epoch_duration: u64,
+    pub refund_delay: u64,
+    pub committee_epoch: u64,
+    pub committee_config_hash: BytesN<32>,
     pub lp_fee_share_bps: u32,
     pub fixed_batch_size: u32,
     pub minimum_side_count: u32,
@@ -167,6 +176,19 @@ pub trait Market {
     fn collateral(env: Env) -> Address;
     fn private_config(env: Env) -> Option<PrivateMarketConfig>;
     fn resolver(env: Env) -> Option<Address>;
+}
+
+#[contractclient(crate_path = "soroban_sdk", name = "SharedVaultClient")]
+pub trait SharedVault {
+    fn register_market(
+        env: Env,
+        factory: Address,
+        market: Address,
+        epoch_duration: u64,
+        refund_delay: u64,
+        committee_epoch: u64,
+        committee_config_hash: BytesN<32>,
+    );
 }
 
 #[contracttype]
@@ -249,9 +271,19 @@ impl MarketFactory {
             || config.maximum_market_duration <= config.minimum_open_window
             || config.batch_grace > config.minimum_open_window
             || config.batch_grace > 86_400
+            || config.epoch_duration == 0
+            || config.refund_delay == 0
+            || config.refund_delay > config.batch_grace
+            || config
+                .epoch_duration
+                .checked_add(config.refund_delay)
+                .is_none_or(|duration| duration > 86_400)
+            || config.committee_epoch == 0
+            || Self::is_zero(&config.committee_config_hash)
             || config.maximum_fee_bps > 1_000
             || config.lp_fee_share_bps > 10_000
             || config.fixed_batch_size < 8
+            || config.fixed_batch_size > MAX_PRIVATE_BATCH_SIZE
             || config.minimum_side_count < 2
             || config
                 .minimum_side_count
@@ -521,12 +553,20 @@ impl MarketFactory {
         let market_client = MarketClient::new(&env, &market);
         market_client.activate_private(&env.current_contract_address(), &private_config);
         if market_client.collateral() != config.collateral
-            || market_client.batcher() != Some(config.shared_vault)
+            || market_client.batcher() != Some(config.shared_vault.clone())
             || market_client.resolver() != Some(config.resolver)
             || market_client.private_config() != Some(private_config)
         {
             panic_with_error!(&env, Error::DeploymentMismatch);
         }
+        SharedVaultClient::new(&env, &config.shared_vault).register_market(
+            &env.current_contract_address(),
+            &market,
+            &config.epoch_duration,
+            &config.refund_delay,
+            &config.committee_epoch,
+            &config.committee_config_hash,
+        );
 
         proposal.market = Some(market.clone());
         proposal.phase = ProposalPhase::Active;
@@ -733,6 +773,10 @@ impl MarketFactory {
             market_wasm_hash: config.market_wasm_hash.clone(),
             liquidity_wasm_hash: config.liquidity_wasm_hash.clone(),
             batch_grace: config.batch_grace,
+            epoch_duration: config.epoch_duration,
+            refund_delay: config.refund_delay,
+            committee_epoch: config.committee_epoch,
+            committee_config_hash: config.committee_config_hash.clone(),
             lp_fee_share_bps: config.lp_fee_share_bps,
             fixed_batch_size: config.fixed_batch_size,
             minimum_side_count: config.minimum_side_count,
