@@ -336,6 +336,7 @@ function packageArtifacts() {
   rmSync(publicRoot, { recursive: true, force: true });
   mkdirSync(publicRoot, { recursive: true });
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  manifest.setup_manifest_sha256 = sha256File(manifestPath);
   for (const circuit of CIRCUITS) {
     const paths = circuitPaths(circuit);
     const destination = resolve(publicRoot, circuit.name);
@@ -344,6 +345,14 @@ function packageArtifacts() {
     cpSync(paths.zkey, resolve(destination, `${circuit.name}.zkey`));
     cpSync(paths.vkey, resolve(destination, `${circuit.name}.vk.json`));
   }
+  manifest.circuits = manifest.circuits.map((entry) => ({
+    ...entry,
+    artifacts: {
+      wasm: `${entry.name}/${entry.name}.wasm`,
+      proving_key: `${entry.name}/${entry.name}.zkey`,
+      verification_key: `${entry.name}/${entry.name}.vk.json`,
+    },
+  }));
   writeFileSync(
     resolve(publicRoot, "manifest.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,

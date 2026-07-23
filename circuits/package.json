@@ -6,6 +6,7 @@
     "build:private": "node private/build.mjs compile",
     "fetch:private-ptau": "node private/fetch-ptau.mjs",
     "setup:private": "node private/build.mjs all",
+    "package:private": "node private/build.mjs package",
     "test:private-artifacts": "node private/test.mjs",
     "test:shielded-vault": "node ../contracts/shielded-collateral-vault/circuits/test/run.mjs"
   },
