@@ -1156,6 +1156,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pooled-liquidity-vault"
+version = "0.1.0"
+dependencies = [
+ "market-liquidity-vault",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
