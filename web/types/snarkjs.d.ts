@@ -5,6 +5,11 @@ declare module "snarkjs" {
       wasmFile: string,
       zkeyFile: string,
     ): Promise<{ proof: unknown; publicSignals: string[] }>;
+    verify(
+      verificationKey: Record<string, unknown>,
+      publicSignals: string[],
+      proof: unknown,
+    ): Promise<boolean>;
   };
 
   export const wtns: {

@@ -28,7 +28,17 @@ export type PrivateArchiveKeys = {
   bucketId: string;
   verificationKey: string;
   context: string;
+  noteSpendSecret: bigint;
+  noteViewingSecret: bigint;
 };
+
+function privateScalar(bytes: Uint8Array): bigint {
+  const hex = [...bytes]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  const value = BigInt(`0x${hex}`) % ((1n << 248n) - 1n);
+  return value + 1n;
+}
 
 function signatureMaterial(signature: string): Uint8Array {
   try {
@@ -61,7 +71,7 @@ async function deriveBits(
       info: toArrayBuffer(utf8("Moros private activity archive keys")),
     },
     source,
-    768,
+    1_280,
   );
   return new Uint8Array(bits);
 }
@@ -98,6 +108,8 @@ export async function derivePrivateArchiveKeys(
     bucketId,
     verificationKey: signingKey.publicKey(),
     context,
+    noteSpendSecret: privateScalar(material.slice(96, 128)),
+    noteViewingSecret: privateScalar(material.slice(128, 160)),
   };
 }
 

@@ -552,6 +552,7 @@ async function main() {
       factory: ids.factory,
     },
     wasm: state.wasm,
+    networkDomain: networkDomain(PASSPHRASE).toString("hex"),
     verifierDomain: state.verifierDomain,
     provingManifestSha256: sha256(
       readFileSync(MANIFEST_PATH),
