@@ -55,8 +55,10 @@ pub struct FactoryConfig {
     pub maximum_market_duration: u64,
     pub batch_grace: u64,
     pub maximum_fee_bps: u32,
+    pub lp_fee_share_bps: u32,
     pub fixed_batch_size: u32,
     pub minimum_side_count: u32,
+    pub maximum_price_movement: i128,
 }
 
 #[contracttype]
@@ -86,6 +88,11 @@ pub struct ProposalPreimage {
     pub resolver: Address,
     pub market_wasm_hash: BytesN<32>,
     pub liquidity_wasm_hash: BytesN<32>,
+    pub batch_grace: u64,
+    pub lp_fee_share_bps: u32,
+    pub fixed_batch_size: u32,
+    pub minimum_side_count: u32,
+    pub maximum_price_movement: i128,
     pub request: ProposalRequest,
 }
 
@@ -139,9 +146,11 @@ pub struct PrivateMarketConfig {
     pub rules_hash: BytesN<32>,
     pub funding: i128,
     pub fee_bps: u32,
+    pub lp_fee_share_bps: u32,
     pub lot_size: i128,
     pub fixed_batch_size: u32,
     pub minimum_side_count: u32,
+    pub maximum_price_movement: i128,
 }
 
 #[contractclient(crate_path = "soroban_sdk", name = "LiquidityVaultClient")]
@@ -241,12 +250,15 @@ impl MarketFactory {
             || config.batch_grace > config.minimum_open_window
             || config.batch_grace > 86_400
             || config.maximum_fee_bps > 1_000
+            || config.lp_fee_share_bps > 10_000
             || config.fixed_batch_size < 8
             || config.minimum_side_count < 2
             || config
                 .minimum_side_count
                 .checked_mul(2)
                 .is_none_or(|count| count > config.fixed_batch_size)
+            || config.maximum_price_movement <= 0
+            || config.maximum_price_movement > FIXED_SCALE
         {
             panic_with_error!(&env, Error::InvalidConfiguration);
         }
@@ -500,9 +512,11 @@ impl MarketFactory {
             rules_hash: proposal.rules_hash.clone(),
             funding: moved_assets,
             fee_bps: proposal.fee_bps,
+            lp_fee_share_bps: config.lp_fee_share_bps,
             lot_size: proposal.lot_size,
             fixed_batch_size: config.fixed_batch_size,
             minimum_side_count: config.minimum_side_count,
+            maximum_price_movement: config.maximum_price_movement,
         };
         let market_client = MarketClient::new(&env, &market);
         market_client.activate_private(&env.current_contract_address(), &private_config);
@@ -718,6 +732,11 @@ impl MarketFactory {
             resolver: config.resolver.clone(),
             market_wasm_hash: config.market_wasm_hash.clone(),
             liquidity_wasm_hash: config.liquidity_wasm_hash.clone(),
+            batch_grace: config.batch_grace,
+            lp_fee_share_bps: config.lp_fee_share_bps,
+            fixed_batch_size: config.fixed_batch_size,
+            minimum_side_count: config.minimum_side_count,
+            maximum_price_movement: config.maximum_price_movement,
             request,
         };
         env.crypto().sha256(&preimage.to_xdr(env)).into()

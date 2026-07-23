@@ -53,9 +53,44 @@ pub struct PrivateMarketConfig {
     pub rules_hash: BytesN<32>,
     pub funding: i128,
     pub fee_bps: u32,
+    pub lp_fee_share_bps: u32,
     pub lot_size: i128,
     pub fixed_batch_size: u32,
     pub minimum_side_count: u32,
+    pub maximum_price_movement: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchQuote {
+    pub state_version: u64,
+    pub batch_size: u32,
+    pub yes_count: u32,
+    pub no_count: u32,
+    pub pre_yes_price: i128,
+    pub post_yes_price: i128,
+    pub yes_price: i128,
+    pub no_price: i128,
+    pub aggregate_market_charge: i128,
+    pub yes_market_cost: i128,
+    pub no_market_cost: i128,
+    pub yes_charge_per_position: i128,
+    pub no_charge_per_position: i128,
+    pub rounding_contribution: i128,
+    pub fee_per_position: i128,
+    pub fee_escrow: i128,
+    pub conditional_lp_fee: i128,
+    pub conditional_protocol_fee: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeState {
+    pub escrow: i128,
+    pub rounding_receivable: i128,
+    pub conditional_lp_fee: i128,
+    pub conditional_protocol_fee: i128,
+    pub vested: bool,
 }
 
 #[contracttype]
@@ -101,9 +136,17 @@ enum DataKey {
     LiquidityVault,
     RulesHash,
     FeeBps,
+    LpFeeShareBps,
     LotSize,
     FixedBatchSize,
     MinimumSideCount,
+    MaximumPriceMovement,
+    StateVersion,
+    FeeEscrow,
+    RoundingReceivable,
+    ConditionalLpFee,
+    ConditionalProtocolFee,
+    FeesVested,
     PrivateConfigured,
     LiquiditySettled,
     Refund(Address),
@@ -130,6 +173,7 @@ pub enum Error {
     ResolverLocked = 11,
     ConfigurationLocked = 12,
     AlreadySettled = 13,
+    StaleState = 14,
 }
 
 #[contractevent(topics = ["created"], data_format = "vec")]
@@ -192,6 +236,20 @@ pub struct Batch {
     pub net: i128,
 }
 
+#[contractevent(topics = ["private_batch"], data_format = "vec")]
+pub struct PrivateBatch {
+    pub state_version: u64,
+    pub yes_count: u32,
+    pub no_count: u32,
+    pub yes_price: i128,
+    pub no_price: i128,
+    pub yes_charge_per_position: i128,
+    pub no_charge_per_position: i128,
+    pub market_charge: i128,
+    pub rounding_contribution: i128,
+    pub fee_escrow: i128,
+}
+
 #[contractevent(topics = ["redeem"], data_format = "vec")]
 pub struct Redeem {
     #[topic]
@@ -207,7 +265,11 @@ pub struct PrivateActivated {
     pub resolver: Address,
     pub funding: i128,
     pub fee_bps: u32,
+    pub lp_fee_share_bps: u32,
     pub lot_size: i128,
+    pub fixed_batch_size: u32,
+    pub minimum_side_count: u32,
+    pub maximum_price_movement: i128,
 }
 
 #[contractevent(topics = ["liquidity_settled"], data_format = "vec")]
@@ -215,6 +277,14 @@ pub struct LiquiditySettled {
     pub liquidity_vault: Address,
     pub assets: i128,
     pub outcome: Outcome,
+}
+
+#[contractevent(topics = ["fees_vested"], data_format = "vec")]
+pub struct FeesVested {
+    pub lp_fee: i128,
+    pub protocol_fee: i128,
+    pub rounding_reimbursement: i128,
+    pub state_version: u64,
 }
 
 #[contract]
@@ -307,6 +377,12 @@ impl LmsrMarket {
         s.set(&DataKey::Decimals, &decimals);
         s.set(&DataKey::Funding, &0i128);
         s.set(&DataKey::BatchCollateral, &0i128);
+        s.set(&DataKey::StateVersion, &0u64);
+        s.set(&DataKey::FeeEscrow, &0i128);
+        s.set(&DataKey::RoundingReceivable, &0i128);
+        s.set(&DataKey::ConditionalLpFee, &0i128);
+        s.set(&DataKey::ConditionalProtocolFee, &0i128);
+        s.set(&DataKey::FeesVested, &false);
         Created {
             asset,
             threshold,
@@ -360,6 +436,24 @@ impl LmsrMarket {
         Ok(Self::to_atomic(&env, math::initial_loss_bound(b), true))
     }
 
+    pub fn state_version(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::StateVersion)
+            .unwrap_or(0)
+    }
+
+    pub fn fee_state(env: Env) -> FeeState {
+        let storage = env.storage().instance();
+        FeeState {
+            escrow: storage.get(&DataKey::FeeEscrow).unwrap_or(0),
+            rounding_receivable: storage.get(&DataKey::RoundingReceivable).unwrap_or(0),
+            conditional_lp_fee: storage.get(&DataKey::ConditionalLpFee).unwrap_or(0),
+            conditional_protocol_fee: storage.get(&DataKey::ConditionalProtocolFee).unwrap_or(0),
+            vested: storage.get(&DataKey::FeesVested).unwrap_or(false),
+        }
+    }
+
     pub fn private_config(env: Env) -> Option<PrivateMarketConfig> {
         if !env
             .storage()
@@ -377,9 +471,11 @@ impl LmsrMarket {
             rules_hash: storage.get(&DataKey::RulesHash).unwrap(),
             funding: storage.get(&DataKey::Funding).unwrap_or(0),
             fee_bps: storage.get(&DataKey::FeeBps).unwrap_or(0),
+            lp_fee_share_bps: storage.get(&DataKey::LpFeeShareBps).unwrap_or(0),
             lot_size: storage.get(&DataKey::LotSize).unwrap_or(0),
             fixed_batch_size: storage.get(&DataKey::FixedBatchSize).unwrap_or(0),
             minimum_side_count: storage.get(&DataKey::MinimumSideCount).unwrap_or(0),
+            maximum_price_movement: storage.get(&DataKey::MaximumPriceMovement).unwrap_or(0),
         })
     }
 
@@ -414,6 +510,7 @@ impl LmsrMarket {
             || decimals != 7
             || config.funding < Self::required_funding(env.clone())?
             || config.fee_bps > 1_000
+            || config.lp_fee_share_bps > 10_000
             || config.lot_size <= 0
             || config.lot_size > MAX_Q
             || config.fixed_batch_size < 8
@@ -422,6 +519,8 @@ impl LmsrMarket {
                 .minimum_side_count
                 .checked_mul(2)
                 .is_none_or(|count| count > config.fixed_batch_size)
+            || config.maximum_price_movement <= 0
+            || config.maximum_price_movement > math::SCALE
             || Self::is_zero_bytes(&config.rules_hash)
         {
             return Err(Error::InvalidParams);
@@ -438,9 +537,14 @@ impl LmsrMarket {
         storage.set(&DataKey::RulesHash, &config.rules_hash);
         storage.set(&DataKey::Funding, &config.funding);
         storage.set(&DataKey::FeeBps, &config.fee_bps);
+        storage.set(&DataKey::LpFeeShareBps, &config.lp_fee_share_bps);
         storage.set(&DataKey::LotSize, &config.lot_size);
         storage.set(&DataKey::FixedBatchSize, &config.fixed_batch_size);
         storage.set(&DataKey::MinimumSideCount, &config.minimum_side_count);
+        storage.set(
+            &DataKey::MaximumPriceMovement,
+            &config.maximum_price_movement,
+        );
         storage.set(&DataKey::AccountedBalance, &config.funding);
         storage.set(&DataKey::PrivateConfigured, &true);
         PrivateActivated {
@@ -449,7 +553,11 @@ impl LmsrMarket {
             resolver: config.resolver,
             funding: config.funding,
             fee_bps: config.fee_bps,
+            lp_fee_share_bps: config.lp_fee_share_bps,
             lot_size: config.lot_size,
+            fixed_batch_size: config.fixed_batch_size,
+            minimum_side_count: config.minimum_side_count,
+            maximum_price_movement: config.maximum_price_movement,
         }
         .publish(&env);
         Self::bump(&env);
@@ -667,6 +775,7 @@ impl LmsrMarket {
             return Err(Error::Undersolvent);
         }
         env.storage().instance().set(&DataKey::Outcome, &outcome);
+        Self::increment_state_version(&env)?;
         Resolved { outcome }.publish(&env);
         Self::bump(&env);
         Ok(())
@@ -758,6 +867,7 @@ impl LmsrMarket {
         env.storage()
             .instance()
             .set(&DataKey::Outcome, &Outcome::Void);
+        Self::increment_state_version(env)?;
         Voided {
             pool_refund,
             sponsor_refund: funding,
@@ -828,8 +938,233 @@ impl LmsrMarket {
         Ok(())
     }
 
+    pub fn quote_private_batch(
+        env: Env,
+        expected_version: u64,
+        yes_count: u32,
+        no_count: u32,
+    ) -> Result<BatchQuote, Error> {
+        Self::ensure_batchable(&env)?;
+        if !env.storage().instance().has(&DataKey::PrivateConfigured) {
+            return Err(Error::ConfigurationLocked);
+        }
+        if Self::state_version(env.clone()) != expected_version {
+            return Err(Error::StaleState);
+        }
+        let config = Self::private_config(env.clone()).ok_or(Error::NotInitialized)?;
+        let batch_size = yes_count
+            .checked_add(no_count)
+            .ok_or(Error::InvalidParams)?;
+        if batch_size != config.fixed_batch_size
+            || yes_count < config.minimum_side_count
+            || no_count < config.minimum_side_count
+        {
+            return Err(Error::InvalidParams);
+        }
+
+        let delta_yes = config
+            .lot_size
+            .checked_mul(i128::from(yes_count))
+            .ok_or(Error::InvalidParams)?;
+        let delta_no = config
+            .lot_size
+            .checked_mul(i128::from(no_count))
+            .ok_or(Error::InvalidParams)?;
+        let (q_yes, q_no, b) = Self::state(&env)?;
+        let next_yes = q_yes
+            .checked_add(delta_yes)
+            .filter(|value| *value <= MAX_Q)
+            .ok_or(Error::InvalidParams)?;
+        let next_no = q_no
+            .checked_add(delta_no)
+            .filter(|value| *value <= MAX_Q)
+            .ok_or(Error::InvalidParams)?;
+
+        let before = math::cost(q_yes, q_no, b);
+        let after = math::cost(next_yes, next_no, b);
+        let aggregate_market_charge = Self::to_atomic(&env, after - before, true);
+        let pre_yes_price = math::price_yes(q_yes, q_no, b);
+        let post_yes_price = math::price_yes(next_yes, next_no, b);
+        let movement = if post_yes_price >= pre_yes_price {
+            post_yes_price - pre_yes_price
+        } else {
+            pre_yes_price - post_yes_price
+        };
+        if movement > config.maximum_price_movement {
+            return Err(Error::InvalidParams);
+        }
+
+        let yes_price = math::average_yes_price(q_yes, q_no, delta_yes, delta_no, b);
+        let no_price = math::SCALE
+            .checked_sub(yes_price)
+            .ok_or(Error::InvalidParams)?;
+        let yes_weight = math::multiply_fixed(delta_yes, yes_price);
+        let no_weight = math::multiply_fixed(delta_no, no_price);
+        let (yes_market_cost, no_market_cost) =
+            Self::allocate_side_costs(aggregate_market_charge, yes_weight, no_weight)?;
+        let yes_charge_per_position = yes_market_cost
+            .checked_div(i128::from(yes_count))
+            .ok_or(Error::InvalidParams)?;
+        let no_charge_per_position = no_market_cost
+            .checked_div(i128::from(no_count))
+            .ok_or(Error::InvalidParams)?;
+        let rounding_contribution = yes_market_cost
+            .checked_sub(
+                yes_charge_per_position
+                    .checked_mul(i128::from(yes_count))
+                    .ok_or(Error::InvalidParams)?,
+            )
+            .and_then(|yes_remainder| {
+                no_market_cost
+                    .checked_sub(no_charge_per_position.checked_mul(i128::from(no_count))?)
+                    .and_then(|no_remainder| yes_remainder.checked_add(no_remainder))
+            })
+            .ok_or(Error::InvalidParams)?;
+        if rounding_contribution < 0 || rounding_contribution >= i128::from(batch_size) {
+            return Err(Error::InvalidParams);
+        }
+
+        let risk = math::multiply_fixed(yes_price, no_price);
+        let rate = i128::from(config.fee_bps)
+            .checked_mul(math::SCALE)
+            .and_then(|value| value.checked_div(10_000))
+            .ok_or(Error::InvalidParams)?;
+        let fee_fixed = math::multiply_fixed(math::multiply_fixed(config.lot_size, risk), rate);
+        let fee_per_position = Self::to_atomic(&env, fee_fixed, true);
+        let fee_escrow = fee_per_position
+            .checked_mul(i128::from(batch_size))
+            .ok_or(Error::InvalidParams)?;
+        if fee_escrow < rounding_contribution {
+            return Err(Error::InvalidParams);
+        }
+        let distributable_fee = fee_escrow - rounding_contribution;
+        let conditional_lp_fee = distributable_fee
+            .checked_mul(i128::from(config.lp_fee_share_bps))
+            .and_then(|value| value.checked_div(10_000))
+            .ok_or(Error::InvalidParams)?;
+        let conditional_protocol_fee = distributable_fee
+            .checked_sub(conditional_lp_fee)
+            .ok_or(Error::InvalidParams)?;
+
+        let projected_assets = env
+            .storage()
+            .instance()
+            .get::<_, i128>(&DataKey::AccountedBalance)
+            .ok_or(Error::NotInitialized)?
+            .checked_add(aggregate_market_charge)
+            .ok_or(Error::InvalidParams)?;
+        let yes_liability = Self::to_atomic(&env, next_yes, false);
+        let no_liability = Self::to_atomic(&env, next_no, false);
+        if projected_assets < yes_liability || projected_assets < no_liability {
+            return Err(Error::Undersolvent);
+        }
+
+        Ok(BatchQuote {
+            state_version: expected_version,
+            batch_size,
+            yes_count,
+            no_count,
+            pre_yes_price,
+            post_yes_price,
+            yes_price,
+            no_price,
+            aggregate_market_charge,
+            yes_market_cost,
+            no_market_cost,
+            yes_charge_per_position,
+            no_charge_per_position,
+            rounding_contribution,
+            fee_per_position,
+            fee_escrow,
+            conditional_lp_fee,
+            conditional_protocol_fee,
+        })
+    }
+
+    pub fn apply_private_batch(
+        env: Env,
+        batcher: Address,
+        expected_version: u64,
+        yes_count: u32,
+        no_count: u32,
+    ) -> Result<BatchQuote, Error> {
+        batcher.require_auth();
+        let configured: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Batcher)
+            .ok_or(Error::NotInitialized)?;
+        if batcher != configured {
+            return Err(Error::Unauthorized);
+        }
+        let quote = Self::quote_private_batch(env.clone(), expected_version, yes_count, no_count)?;
+        let config = Self::private_config(env.clone()).ok_or(Error::NotInitialized)?;
+        let delta_yes = config
+            .lot_size
+            .checked_mul(i128::from(yes_count))
+            .ok_or(Error::InvalidParams)?;
+        let delta_no = config
+            .lot_size
+            .checked_mul(i128::from(no_count))
+            .ok_or(Error::InvalidParams)?;
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        token::Client::new(&env, &token_addr).transfer(
+            &batcher,
+            &env.current_contract_address(),
+            &quote.aggregate_market_charge,
+        );
+        Self::increase_accounted_balance(&env, quote.aggregate_market_charge)?;
+
+        let (q_yes, q_no, _) = Self::state(&env)?;
+        let next_yes = q_yes.checked_add(delta_yes).ok_or(Error::InvalidParams)?;
+        let next_no = q_no.checked_add(delta_no).ok_or(Error::InvalidParams)?;
+        env.storage().instance().set(&DataKey::QYes, &next_yes);
+        env.storage().instance().set(&DataKey::QNo, &next_no);
+        Self::credit_shares(&env, &batcher, delta_yes, delta_no);
+        Self::increase_total(
+            &env,
+            DataKey::BatchCollateral,
+            quote.aggregate_market_charge,
+        )?;
+        Self::increase_total(&env, DataKey::FeeEscrow, quote.fee_escrow)?;
+        Self::increase_total(
+            &env,
+            DataKey::RoundingReceivable,
+            quote.rounding_contribution,
+        )?;
+        Self::increase_total(&env, DataKey::ConditionalLpFee, quote.conditional_lp_fee)?;
+        Self::increase_total(
+            &env,
+            DataKey::ConditionalProtocolFee,
+            quote.conditional_protocol_fee,
+        )?;
+        let state_version = Self::increment_state_version(&env)?;
+        PrivateBatch {
+            state_version,
+            yes_count,
+            no_count,
+            yes_price: quote.yes_price,
+            no_price: quote.no_price,
+            yes_charge_per_position: quote.yes_charge_per_position,
+            no_charge_per_position: quote.no_charge_per_position,
+            market_charge: quote.aggregate_market_charge,
+            rounding_contribution: quote.rounding_contribution,
+            fee_escrow: quote.fee_escrow,
+        }
+        .publish(&env);
+        Self::bump(&env);
+        Ok(quote)
+    }
+
     pub fn quote_batch(env: Env, dqyes: i128, dqno: i128) -> Result<i128, Error> {
         Self::ensure_batchable(&env)?;
+        if env.storage().instance().has(&DataKey::PrivateConfigured) {
+            return Err(Error::ConfigurationLocked);
+        }
         if dqyes < 0 || dqno < 0 {
             return Err(Error::InvalidParams);
         }
@@ -968,6 +1303,79 @@ impl LmsrMarket {
         Ok(payout)
     }
 
+    pub fn record_vested_fees(
+        env: Env,
+        batcher: Address,
+        lp_fee: i128,
+        prior_unallocated_balance: i128,
+        expected_version: u64,
+    ) -> Result<FeeState, Error> {
+        batcher.require_auth();
+        let configured: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Batcher)
+            .ok_or(Error::NotInitialized)?;
+        if batcher != configured {
+            return Err(Error::Unauthorized);
+        }
+        if expected_version != Self::state_version(env.clone()) {
+            return Err(Error::StaleState);
+        }
+        if prior_unallocated_balance < 0
+            || env
+                .storage()
+                .instance()
+                .get::<_, bool>(&DataKey::FeesVested)
+                .unwrap_or(false)
+        {
+            return Err(Error::ConfigurationLocked);
+        }
+        match env
+            .storage()
+            .instance()
+            .get::<_, Outcome>(&DataKey::Outcome)
+        {
+            Some(Outcome::Yes) | Some(Outcome::No) => {}
+            _ => return Err(Error::NotResolved),
+        }
+        let fee_state = Self::fee_state(env.clone());
+        if lp_fee != fee_state.conditional_lp_fee {
+            return Err(Error::InvalidParams);
+        }
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+        let raw = token::Client::new(&env, &token_addr).balance(&env.current_contract_address());
+        let accounted: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AccountedBalance)
+            .ok_or(Error::NotInitialized)?;
+        if raw
+            != accounted
+                .checked_add(prior_unallocated_balance)
+                .and_then(|value| value.checked_add(lp_fee))
+                .ok_or(Error::InvalidParams)?
+        {
+            return Err(Error::Undersolvent);
+        }
+        Self::increase_accounted_balance(&env, lp_fee)?;
+        env.storage().instance().set(&DataKey::FeesVested, &true);
+        let state_version = Self::increment_state_version(&env)?;
+        FeesVested {
+            lp_fee,
+            protocol_fee: fee_state.conditional_protocol_fee,
+            rounding_reimbursement: fee_state.rounding_receivable,
+            state_version,
+        }
+        .publish(&env);
+        Self::bump(&env);
+        Ok(Self::fee_state(env))
+    }
+
     pub fn settle_liquidity(env: Env) -> Result<i128, Error> {
         if !env.storage().instance().has(&DataKey::PrivateConfigured) {
             return Err(Error::InvalidParams);
@@ -990,6 +1398,10 @@ impl LmsrMarket {
             Outcome::No => LiquidityOutcome::No,
             Outcome::Void => return Err(Error::AlreadySettled),
         };
+        let fee_state = Self::fee_state(env.clone());
+        if fee_state.escrow > 0 && !fee_state.vested {
+            return Err(Error::InvalidParams);
+        }
         let batcher: Address = env
             .storage()
             .instance()
@@ -1014,6 +1426,7 @@ impl LmsrMarket {
             .get(&DataKey::AccountedBalance)
             .ok_or(Error::NotInitialized)?;
         Self::return_liquidity(&env, assets, liquidity_outcome, outcome)?;
+        Self::increment_state_version(&env)?;
         Self::bump(&env);
         Ok(assets)
     }
@@ -1123,6 +1536,67 @@ impl LmsrMarket {
 
     fn is_zero_bytes(value: &BytesN<32>) -> bool {
         value.to_array().iter().all(|byte| *byte == 0)
+    }
+
+    fn allocate_side_costs(
+        total: i128,
+        yes_weight: i128,
+        no_weight: i128,
+    ) -> Result<(i128, i128), Error> {
+        let denominator = yes_weight
+            .checked_add(no_weight)
+            .filter(|value| *value > 0)
+            .ok_or(Error::InvalidParams)?;
+        let yes_numerator = total.checked_mul(yes_weight).ok_or(Error::InvalidParams)?;
+        let no_numerator = total.checked_mul(no_weight).ok_or(Error::InvalidParams)?;
+        let mut yes = yes_numerator
+            .checked_div(denominator)
+            .ok_or(Error::InvalidParams)?;
+        let mut no = no_numerator
+            .checked_div(denominator)
+            .ok_or(Error::InvalidParams)?;
+        let remaining = total
+            .checked_sub(yes)
+            .and_then(|value| value.checked_sub(no))
+            .ok_or(Error::InvalidParams)?;
+        if remaining < 0 || remaining > 1 {
+            return Err(Error::InvalidParams);
+        }
+        if remaining == 1 {
+            let yes_remainder = yes_numerator
+                .checked_rem(denominator)
+                .ok_or(Error::InvalidParams)?;
+            let no_remainder = no_numerator
+                .checked_rem(denominator)
+                .ok_or(Error::InvalidParams)?;
+            if yes_remainder >= no_remainder {
+                yes = yes.checked_add(1).ok_or(Error::InvalidParams)?;
+            } else {
+                no = no.checked_add(1).ok_or(Error::InvalidParams)?;
+            }
+        }
+        Ok((yes, no))
+    }
+
+    fn increase_total(env: &Env, key: DataKey, amount: i128) -> Result<(), Error> {
+        let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
+        env.storage().instance().set(
+            &key,
+            &current.checked_add(amount).ok_or(Error::InvalidParams)?,
+        );
+        Ok(())
+    }
+
+    fn increment_state_version(env: &Env) -> Result<u64, Error> {
+        let next = env
+            .storage()
+            .instance()
+            .get::<_, u64>(&DataKey::StateVersion)
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or(Error::InvalidParams)?;
+        env.storage().instance().set(&DataKey::StateVersion, &next);
+        Ok(next)
     }
 
     fn increase_accounted_balance(env: &Env, amount: i128) -> Result<(), Error> {

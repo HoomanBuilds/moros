@@ -29,6 +29,12 @@ fn fexp(x: i128) -> i128 {
         k -= 1;
         r += LN2;
     }
+    if k <= -127 {
+        return 0;
+    }
+    if k >= 127 {
+        return i128::MAX;
+    }
     let mut term = SCALE;
     let mut sum = SCALE;
     let mut n: i128 = 1;
@@ -38,7 +44,7 @@ fn fexp(x: i128) -> i128 {
         n += 1;
     }
     if k >= 0 {
-        sum << (k as u32)
+        sum.checked_shl(k as u32).unwrap_or(i128::MAX)
     } else {
         sum >> ((-k) as u32)
     }
@@ -86,4 +92,29 @@ pub fn price_yes(q_yes: i128, q_no: i128, b: i128) -> i128 {
     let ea = fexp(a - m);
     let ec = fexp(c - m);
     fdiv(ea, ea + ec)
+}
+
+fn softplus(value: i128) -> i128 {
+    let maximum = if value > 0 { value } else { 0 };
+    maximum + fln(fexp(value - maximum) + fexp(-maximum))
+}
+
+pub fn average_yes_price(
+    q_yes: i128,
+    q_no: i128,
+    delta_yes: i128,
+    delta_no: i128,
+    b: i128,
+) -> i128 {
+    let start = fdiv(q_yes - q_no, b);
+    let delta = fdiv(delta_yes - delta_no, b);
+    if delta == 0 {
+        return price_yes(q_yes, q_no, b);
+    }
+    let price = fdiv(softplus(start + delta) - softplus(start), delta);
+    price.clamp(0, SCALE)
+}
+
+pub fn multiply_fixed(a: i128, b: i128) -> i128 {
+    fmul(a, b)
 }

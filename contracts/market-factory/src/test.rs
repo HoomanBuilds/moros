@@ -32,8 +32,10 @@ fn config(env: &Env, collateral: Address) -> FactoryConfig {
         maximum_market_duration: 1_000_000,
         batch_grace: 300,
         maximum_fee_bps: 500,
+        lp_fee_share_bps: 5_000,
         fixed_batch_size: 8,
         minimum_side_count: 2,
+        maximum_price_movement: 1i128 << 30,
     }
 }
 

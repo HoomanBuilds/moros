@@ -430,13 +430,34 @@ fn setup_private(
             resolver: resolver.clone(),
             rules_hash: bytes_id(env, 82),
             funding: 200_000_000,
-            fee_bps: 200,
+            fee_bps: 400,
+            lp_fee_share_bps: 5_000,
             lot_size: S,
             fixed_batch_size: 8,
             minimum_side_count: 2,
+            maximum_price_movement: S / 4,
         },
     );
     (market, liquidity, token, shared_vault, resolver)
+}
+
+fn vest_fees(env: &Env, market: &LmsrMarketClient<'_>, token: &Address, shared_vault: &Address) {
+    let fees = market.fee_state();
+    let prior_unallocated = market.unallocated_balance();
+    if fees.conditional_lp_fee > 0 {
+        TokenClient::new(env, token).transfer(
+            shared_vault,
+            &market.address,
+            &fees.conditional_lp_fee,
+        );
+    }
+    let vested = market.record_vested_fees(
+        shared_vault,
+        &fees.conditional_lp_fee,
+        &prior_unallocated,
+        &market.state_version(),
+    );
+    assert!(vested.vested);
 }
 
 #[test]
@@ -449,18 +470,52 @@ fn private_market_returns_normal_terminal_equity_to_lp_shares() {
     assert!(market.try_fund(&Address::generate(&env), &1).is_err());
     assert!(market.try_buy(&shared_vault, &Side::Yes, &S).is_err());
 
-    let batch_cost = market.apply_batch(&shared_vault, &(10 * S), &(10 * S));
-    assert_eq!(batch_cost, 100_000_000);
+    let quote = market.apply_private_batch(&shared_vault, &0, &4, &4);
+    assert_eq!(quote.aggregate_market_charge, 40_000_000);
+    assert_eq!(quote.yes_price, S / 2);
+    assert_eq!(quote.no_price, S / 2);
+    assert_eq!(quote.yes_charge_per_position, 5_000_000);
+    assert_eq!(quote.no_charge_per_position, 5_000_000);
+    assert_eq!(quote.fee_per_position, 100_000);
+    assert_eq!(quote.fee_escrow, 800_000);
     env.ledger().with_mut(|ledger| ledger.timestamp = 2_100);
     market.resolve(&resolver, &Outcome::Yes);
-    assert_eq!(market.redeem(&shared_vault, &Side::Yes), 100_000_000);
+    assert_eq!(market.redeem(&shared_vault, &Side::Yes), 40_000_000);
     assert_eq!(market.redeem(&shared_vault, &Side::No), 0);
-    assert_eq!(market.settle_liquidity(), 200_000_000);
+    assert!(market.try_settle_liquidity().is_err());
+    vest_fees(&env, &market, &token, &shared_vault);
+    assert_eq!(market.settle_liquidity(), 200_400_000);
 
     let info = liquidity.info();
     assert_eq!(info.phase, LiquidityPhase::Settled);
-    assert_eq!(info.terminal_assets, 200_000_000);
+    assert_eq!(info.terminal_assets, 200_400_000);
     assert_eq!(TokenClient::new(&env, &token).balance(&market.address), 0);
+}
+
+#[test]
+fn private_batch_quote_matches_the_shared_integer_fixture_and_rejects_stale_state() {
+    let env = Env::default();
+    let (market, _liquidity, _token, shared_vault, _resolver) = setup_private(&env);
+    let quote = market.quote_private_batch(&0, &2, &6);
+    assert_eq!(quote.batch_size, 8);
+    assert_eq!(quote.pre_yes_price, 2_147_483_648);
+    assert_eq!(quote.post_yes_price, 1_933_448_258);
+    assert_eq!(quote.yes_price, 2_040_288_020);
+    assert_eq!(quote.no_price, 2_254_679_276);
+    assert_eq!(quote.aggregate_market_charge, 40_998_338);
+    assert_eq!(quote.yes_market_cost, 9_500_832);
+    assert_eq!(quote.no_market_cost, 31_497_506);
+    assert_eq!(quote.yes_charge_per_position, 4_750_416);
+    assert_eq!(quote.no_charge_per_position, 5_249_584);
+    assert_eq!(quote.rounding_contribution, 2);
+    assert_eq!(quote.fee_per_position, 99_751);
+    assert_eq!(quote.fee_escrow, 798_008);
+
+    assert_eq!(market.apply_private_batch(&shared_vault, &0, &2, &6), quote);
+    assert_eq!(market.state_version(), 1);
+    assert!(market
+        .try_apply_private_batch(&shared_vault, &0, &2, &6)
+        .is_err());
 }
 
 #[test]
@@ -473,14 +528,15 @@ fn direct_donations_never_become_private_market_lp_equity() {
     TokenClient::new(&env, &token).transfer(&donor, &market.address, &donation);
     assert_eq!(market.unallocated_balance(), donation);
 
-    market.apply_batch(&shared_vault, &(10 * S), &(10 * S));
+    market.apply_private_batch(&shared_vault, &0, &4, &4);
     env.ledger().with_mut(|ledger| ledger.timestamp = 2_100);
     market.resolve(&resolver, &Outcome::Yes);
     market.redeem(&shared_vault, &Side::Yes);
     market.redeem(&shared_vault, &Side::No);
+    vest_fees(&env, &market, &token, &shared_vault);
 
-    assert_eq!(market.settle_liquidity(), 200_000_000);
-    assert_eq!(liquidity.info().terminal_assets, 200_000_000);
+    assert_eq!(market.settle_liquidity(), 200_400_000);
+    assert_eq!(liquidity.info().terminal_assets, 200_400_000);
     assert_eq!(market.unallocated_balance(), donation);
     assert_eq!(
         TokenClient::new(&env, &token).balance(&market.address),
@@ -489,25 +545,22 @@ fn direct_donations_never_become_private_market_lp_equity() {
 }
 
 #[test]
-fn private_one_sided_market_voids_bettors_and_returns_full_lp_principal() {
+fn private_one_sided_batch_is_rejected_and_empty_market_returns_lp_principal() {
     let env = Env::default();
     let (market, liquidity, token, shared_vault, resolver) = setup_private(&env);
     let donor = Address::generate(&env);
     let donation = 7_000_000;
     StellarAssetClient::new(&env, &token).mint(&donor, &donation);
     TokenClient::new(&env, &token).transfer(&donor, &market.address, &donation);
-    let shared_before = TokenClient::new(&env, &token).balance(&shared_vault);
-    let batch_cost = market.apply_batch(&shared_vault, &(10 * S), &0);
+    assert!(market
+        .try_apply_private_batch(&shared_vault, &0, &8, &0)
+        .is_err());
+    assert!(market.try_apply_batch(&shared_vault, &(8 * S), &0).is_err());
     env.ledger().with_mut(|ledger| ledger.timestamp = 2_100);
     market.resolve(&resolver, &Outcome::Yes);
 
     assert_eq!(market.outcome(), Some(Outcome::Void));
-    assert_eq!(
-        TokenClient::new(&env, &token).balance(&shared_vault),
-        shared_before
-    );
     assert_eq!(liquidity.info().terminal_assets, 200_000_000);
-    assert!(batch_cost > 0);
     assert_eq!(market.unallocated_balance(), donation);
     assert_eq!(
         TokenClient::new(&env, &token).balance(&market.address),

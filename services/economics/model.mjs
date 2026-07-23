@@ -16,7 +16,7 @@ function requirePositive(name, value) {
 }
 
 function multiplyFixed(a, b) {
-  return a * b / FIXED_SCALE;
+  return a * b >> 32n;
 }
 
 function divideFixed(a, b) {
