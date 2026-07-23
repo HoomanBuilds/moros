@@ -9,13 +9,14 @@
     "ws": "8.21.1"
   },
   "scripts": {
-    "test": "node test-oracle-config.mjs && node economics/baseline.test.mjs && node economics/model.test.mjs && node committee/test-bn254-babyjub.mjs",
+    "test": "node test-oracle-config.mjs && node test-deployment-utils.mjs && node economics/baseline.test.mjs && node economics/model.test.mjs && node committee/test-bn254-babyjub.mjs",
     "zk:register-verifier": "node zk/register-verifier.mjs",
     "verify:oracles": "node verify-oracles.mjs"
   },
   "dependencies": {
     "@pythnetwork/pyth-lazer-sdk": "^5.0.0",
     "@stellar/stellar-sdk": "^16.0.1",
+    "@zkpassport/poseidon2": "0.6.2",
     "circomlibjs": "^0.1.7",
     "snarkjs": "^0.7.4"
   }
