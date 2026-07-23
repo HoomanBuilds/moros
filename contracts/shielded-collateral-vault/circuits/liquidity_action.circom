@@ -2,9 +2,10 @@ pragma circom 2.2.3;
 
 include "./privacy_primitives.circom";
 
-template PrivateLiquidityAction(levels, actionCode) {
+template PrivateLiquidityAction(levels, actionCode, inputCount) {
     assert(actionCode >= 6);
     assert(actionCode <= 8);
+    assert((actionCode == 6 && inputCount == 2) || (actionCode != 6 && inputCount == 1));
 
     signal input action;
     signal input contextDigest;
@@ -24,16 +25,16 @@ template PrivateLiquidityAction(levels, actionCode) {
 
     signal input contextFields[46];
 
-    signal input inPurpose[2];
-    signal input inAmount[2];
-    signal input inSpendSecret[2];
-    signal input inViewingPublicKey[2][2];
-    signal input inNoteId[2];
-    signal input inPayloadHash[2];
-    signal input inPrivateData[2][2];
-    signal input inBlinding[2];
-    signal input inLeafIndex[2];
-    signal input inSiblings[2][levels];
+    signal input inPurpose[inputCount];
+    signal input inAmount[inputCount];
+    signal input inSpendSecret[inputCount];
+    signal input inViewingPublicKey[inputCount][2];
+    signal input inNoteId[inputCount];
+    signal input inPayloadHash[inputCount];
+    signal input inPrivateData[inputCount][2];
+    signal input inBlinding[inputCount];
+    signal input inLeafIndex[inputCount];
+    signal input inSiblings[inputCount][levels];
 
     signal input outPurpose[2];
     signal input outAmount[2];
@@ -49,7 +50,7 @@ template PrivateLiquidityAction(levels, actionCode) {
     signal input appendSiblings[levels - 1];
 
     action === actionCode;
-    nullifierCount === 2;
+    nullifierCount === inputCount;
     contextFields[0] === 1;
     contextFields[9] === action;
     contextFields[12] === 0;
@@ -109,16 +110,16 @@ template PrivateLiquidityAction(levels, actionCode) {
     liquidityPayload.inputs[1] <== contextFields[22];
     liquidityPayload.inputs[2] <== contextFields[23];
 
-    component inputs[2];
-    component inputPurposePadding[2];
-    component inputPurposePrimary[2];
-    component inputPurposeRefund[2];
-    component inputPurposePayout[2];
-    component inputAmountRange[2];
-    component inputAmountZero[2];
-    component inputSecretZero[2];
+    component inputs[inputCount];
+    component inputPurposePadding[inputCount];
+    component inputPurposePrimary[inputCount];
+    component inputPurposeRefund[inputCount];
+    component inputPurposePayout[inputCount];
+    component inputAmountRange[inputCount];
+    component inputAmountZero[inputCount];
+    component inputSecretZero[inputCount];
     var totalInput = 0;
-    for (var index = 0; index < 2; index++) {
+    for (var index = 0; index < inputCount; index++) {
         if (actionCode == 6) {
             inputs[index] = InputNote(levels, 1);
         } else {
@@ -192,10 +193,14 @@ template PrivateLiquidityAction(levels, actionCode) {
         totalInput += inAmount[index];
     }
 
-    component distinctNullifiers = IsEqual();
-    distinctNullifiers.in[0] <== nullifier0;
-    distinctNullifiers.in[1] <== nullifier1;
-    distinctNullifiers.out === 0;
+    if (inputCount == 1) {
+        nullifier1 === 0;
+    } else {
+        component distinctNullifiers = IsEqual();
+        distinctNullifiers.in[0] <== nullifier0;
+        distinctNullifiers.in[1] <== nullifier1;
+        distinctNullifiers.out === 0;
+    }
 
     component outputs[2];
     component outputAmountRange[2];

@@ -18,4 +18,4 @@ component main { public [
     firstLeafIndex,
     publicAmountSign,
     publicAmountMagnitude
-] } = PrivateExitAction(20, 11, 2);
+] } = PrivateExitAction(20, 11, 1);

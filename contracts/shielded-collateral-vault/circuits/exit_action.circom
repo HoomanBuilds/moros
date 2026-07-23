@@ -4,7 +4,7 @@ include "./privacy_primitives.circom";
 
 template PrivateExitAction(levels, actionCode, inputCount) {
     assert(actionCode == 11 || actionCode == 12);
-    assert((actionCode == 11 && inputCount == 2) || (actionCode == 12 && inputCount == 1));
+    assert(inputCount == 1);
 
     signal input action;
     signal input contextDigest;

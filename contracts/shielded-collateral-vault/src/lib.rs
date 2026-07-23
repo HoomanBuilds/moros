@@ -1284,7 +1284,7 @@ impl ShieldedCollateralVault {
             Self::exit_request_operation_binding(&env, &binding),
             action_expiry,
             transition,
-            2,
+            1,
         );
         LiquidityVaultClient::new(&env, &liquidity_vault).request_exit(
             &env.current_contract_address(),
@@ -2821,7 +2821,7 @@ impl ShieldedCollateralVault {
             operation_binding,
             expiry,
             transition,
-            2,
+            1,
         );
 
         let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();

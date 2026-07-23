@@ -750,7 +750,7 @@ fn private_lp_funding_and_unfunding_keep_ownership_in_shielded_notes() {
         &1,
         &unfund_id,
         &EXPIRY,
-        &transition(&setup.env, 3, 3, 4, &[41, 42], [51, 91]),
+        &transition(&setup.env, 3, 3, 4, &[41], [51, 91]),
     );
     assert_eq!(received, 50_000_000);
     assert_eq!(liquidity_vault.info().funded_assets, 150_000_000);
@@ -858,7 +858,7 @@ fn active_lp_exit_replacement_is_private_state_bound_and_keeps_market_backing() 
         &3,
         &request_id,
         &EXPIRY,
-        &transition(&setup.env, 1, 1, 2, &[21, 22], [101, 102]),
+        &transition(&setup.env, 1, 1, 2, &[21], [101, 102]),
     );
     assert_eq!(liquidity.info().locked_shares, 40_000_000);
     assert_eq!(
@@ -983,7 +983,7 @@ fn active_lp_exit_replacement_rejects_a_stale_market_snapshot() {
         &3,
         &request_id,
         &EXPIRY,
-        &transition(&setup.env, 1, 1, 2, &[21, 22], [111, 112]),
+        &transition(&setup.env, 1, 1, 2, &[21], [111, 112]),
     );
 
     StellarAssetClient::new(&setup.env, &setup.token).mint(&setup.vault.address, &50_000_000);

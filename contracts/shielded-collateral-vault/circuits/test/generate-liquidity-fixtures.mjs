@@ -50,14 +50,16 @@ function buildFixture({
   shares,
   version,
   inputs,
+  treeCommitments,
   outputs,
   nullifierDomain,
 }) {
   const inputCommitments = inputs.map((note) => note.commitment);
-  const membership = appendFirstPair(inputCommitments, LEVELS);
-  const paths = firstPairMembershipPaths(inputCommitments, LEVELS);
+  const populatedCommitments = treeCommitments ?? inputCommitments;
+  const membership = appendFirstPair(populatedCommitments, LEVELS);
+  const paths = firstPairMembershipPaths(populatedCommitments, LEVELS);
   const append = appendSecondPair(
-    inputCommitments,
+    populatedCommitments,
     outputs.map((note) => note.commitment),
     LEVELS,
   );
@@ -96,9 +98,11 @@ function buildFixture({
     membershipRoot: membership.newRoot,
     appendRoot: append.appendRoot,
     newRoot: append.newRoot,
-    nullifierCount: 2n,
+    nullifierCount: BigInt(inputs.length),
     nullifier0: noteNullifier(inputs[0], inputs[0].spendSecret, nullifierDomain),
-    nullifier1: noteNullifier(inputs[1], inputs[1].spendSecret, nullifierDomain),
+    nullifier1: inputs[1]
+      ? noteNullifier(inputs[1], inputs[1].spendSecret, nullifierDomain)
+      : 0n,
     outputCommitment0: outputs[0].commitment,
     outputCommitment1: outputs[1].commitment,
     outputEnvelopeHash0: outputs[0].envelopeHash,
@@ -115,8 +119,8 @@ function buildFixture({
     inPayloadHash: inputs.map((note) => note.payloadHash),
     inPrivateData: inputs.map((note) => note.privateData),
     inBlinding: inputs.map((note) => note.blinding),
-    inLeafIndex: [0n, 1n],
-    inSiblings: paths,
+    inLeafIndex: inputs.map((_, index) => BigInt(index)),
+    inSiblings: paths.slice(0, inputs.length),
     outPurpose: outputs.map((note) => note.purpose),
     outAmount: outputs.map((note) => note.amount),
     outSpendPublicKey: outputs.map((note) => note.spendPublicKey),
@@ -234,7 +238,7 @@ const exitOutputs = [
     outputIndex: 1,
     noteDomain: domain,
     purpose: 3n,
-    amount: 13_000_000n,
+    amount: 5_000_000n,
     spendSecret: 81n,
     viewingSecret: 82n,
     noteId: 83n,
@@ -249,7 +253,8 @@ const exit = buildFixture({
   publicAmount: 9_000_000n,
   shares: 7_000_000n,
   version: 1n,
-  inputs: exitInputs,
+  inputs: exitInputs.slice(0, 1),
+  treeCommitments: exitInputs.map((note) => note.commitment),
   outputs: exitOutputs,
   nullifierDomain: 2n,
 });
@@ -283,9 +288,10 @@ const redeemOutputs = [
 const redeem = buildFixture({
   action: 8n,
   publicAmount: 21_000_000n,
-  shares: 20_000_000n,
+  shares: 12_000_000n,
   version: 2n,
-  inputs: exitInputs,
+  inputs: exitInputs.slice(0, 1),
+  treeCommitments: exitInputs.map((note) => note.commitment),
   outputs: redeemOutputs,
   nullifierDomain: 2n,
 });
