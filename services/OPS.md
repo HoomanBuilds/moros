@@ -41,7 +41,9 @@ Stellar account with multisig thresholds, not a single hot key:
   (`set_redeem_vk`, encrypt-order VK consumers) to match the ceremony output.
 
 ## Money / solvency
-- Fund the market with a `b*ln2` buffer before resolution (covers the LMSR operator subsidy).
-- The pool is self-funding: it pays the market's net from escrowed stakes and reclaims
-  winning shares via `claim_winnings` after resolution. Monitor pool balance >= outstanding
-  redeemable entitlements.
+- Legacy XLM pool deployments used an operator subsidy and separate pool accounting. Do not apply that model to new private USDC markets.
+- New private markets raise their isolated activation target permissionlessly from LPs. Market creators do not supply USDC.
+- Activation transfers the exact target to the market and fixes `b`. Active LP withdrawal does not reduce backing. It requires a full-fill replacement offer or terminal settlement.
+- Monitor shared-vault assets against shielded liabilities, each market's scenario equity, unvested fee escrow, locked LP shares, unresolved exit offers, and terminal assets.
+- A direct token donation never mints shares and must not enter accounted assets.
+- After resolution or void, users still need a submitted proof-bound claim or refund transaction. Keep the permissionless keeper and user recovery paths available.

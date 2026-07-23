@@ -160,10 +160,10 @@ Rust, circuit, TypeScript, and UI implementations must consume the same fixture 
 - Roll back deployment, reserve transfer, and registration when any nested call fails.
 - Freeze direct share minting after activation.
 - Create and cancel an active exit request with share amount, minimum USDC, destination, and expiry without double use.
-- Fill active exit shares at or above the stated minimum with replacement USDC atomically.
+- Fill the complete offered share lot for its exact stated USDC payment atomically.
 - Bind replacement acceptance to the exit terms, exact market state version, scenario equity, fees, expiry, and maximum state age.
-- Reject a match after a batch, close, resolution, cancellation, or prior partial fill changes the bound state.
-- Reject duplicate, stale, overfilled, and self-inconsistent exit matches.
+- Reject a match after a batch, close, resolution, cancellation, or prior match changes the bound state.
+- Reject duplicate, stale, underpaid, partially filled, overfilled, and self-inconsistent exit matches.
 - Verify the replacement payment goes to the seller's shielded output while the existing reserve stays unchanged and fee rights follow the transferred shares.
 - Reject unsupported USDC contracts, decimals, negative amounts, standing allowances, and accounting based on raw donated balance.
 
@@ -175,7 +175,7 @@ Rust, circuit, TypeScript, and UI implementations must consume the same fixture 
 - Track funded assets from accepted transfers, not raw SAC balance.
 - Freeze the exact USDC SAC and decimals, validate exact transfer effects, and record unallocated balance differences separately.
 - Store total LP shares and private LP note root.
-- Store exit intent nullifiers and remaining shares.
+- Store each exit intent, private receipt commitment, seller payment template, and terminal status.
 - Emit proposal, funded, unfunded, ready, activated, exit-requested, exit-matched, cancelled, and finalized events.
 - Keep every time transition permissionless.
 - Charge proposal, deployment, activation, keeper, and TTL XLM only to the caller or an explicit operations budget, never to LP USDC or bettor collateral.

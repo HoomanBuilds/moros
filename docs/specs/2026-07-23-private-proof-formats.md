@@ -249,7 +249,11 @@ Standard action proofs have exactly 15 public field elements in this order:
 
 The two outputs are always present. A padding output has zero economic value but a unique nonzero commitment and fixed-size encrypted envelope.
 
-An active exit match has 20 public fields. It uses three nullifier slots and four proof-bound outputs so a partial fill can create seller payment, buyer LP shares, buyer change, and a remaining exit note without revealing their owners.
+An active exit match has 20 public fields. Two of its three nullifier slots consume the replacement LP's shielded USDC notes, while the third slot is fixed to zero. Its four proof-bound outputs are the seller's exact precommitted payment note, the buyer's LP share note, buyer change, and padding.
+
+The seller request consumes one LP share note, creates any retained LP change, and creates a private exit receipt. It also publishes a one-time payment-note template containing a commitment, spend public key, viewing public key, note ID, and blinding. The request circuit proves that this template commits to the exact stated payment amount in the shared vault note domain. A later buyer can encrypt the payment output to that public template without learning the seller's note secrets.
+
+The first testnet active-exit circuit requires a complete fill of one offered lot. A seller who wants to sell fewer shares creates a smaller offer and retains the remainder as a private LP change note. This avoids a multi-party witness in which a later buyer would need the seller's receipt secret to create the next partial-fill receipt.
 
 ## Batch public signals
 

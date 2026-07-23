@@ -8,6 +8,7 @@ These Node.js services support the Moros testnet beta. They do not custody plain
 - committee/member.mjs holds one DKG share, verifies exact encrypted orders and aggregate decryptions, and signs only valid batch authorization entries.
 - resolve-keeper.mjs calls the configured price resolver after eligible price markets expire.
 - relayer.mjs submits proof-bound redemption transactions.
+- private-server.mjs runs the current shared-vault testnet runtime: output indexing, proposal activation, fixed private batches, encrypted allocation delivery, private relay, and LP exit discovery.
 
 ## Testnet configuration
 
@@ -58,6 +59,18 @@ There is no paid resolver default and no generic resolver override.
 - POST /redeem relays a proof-bound redemption.
 
 POST /batch is an operator action and requires SERVICE_TOKEN.
+
+The current shared-vault runtime also exposes:
+
+- GET /private/config for the exact testnet deployment and proof artifacts.
+- GET /private/tree for locally verifiable encrypted note output recovery.
+- GET /private/allocation for an authenticated encrypted allocation witness.
+- GET /private/exits for paginated, chain-verified active LP exit discovery.
+- POST /private/register-proposal and POST /private/register-market for permissionless lifecycle discovery.
+- POST /private/register-exit for recovery when an on-chain exit needs to be relisted.
+- POST /private/relay for proof-bound transactions that contain no wallet authorization.
+
+An LP exit registry entry contains only public ledger data: market, liquidity vault, and exit ID. Ownership is recovered in the browser from the encrypted exit receipt. The service rechecks the linked market, shared vault controller, exit intent, and current snapshot before publishing an offer. The first testnet implementation requires a full fill of each offered lot.
 
 Public pool registration validates:
 
@@ -132,3 +145,4 @@ Terminate TLS in front of the public service. Run committee members on independe
 - The final order queue must be monitored so eligible short batches settle before finalize_after.
 - Price resolution and redemption are permissionless calls, but they still require a keeper, relayer, or user to submit transactions.
 - Nothing runs automatically merely because a market has expired or resolved.
+- The current single-VM committee and service are testnet-only. Mainnet requires independently operated committee members, monitored redundant runtimes, a completed trusted setup, and an external security review.

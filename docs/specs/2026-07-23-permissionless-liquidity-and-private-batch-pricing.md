@@ -283,7 +283,7 @@ The LP may submit an exit request at any time. The request locks the selected LP
 
 The request binds the share amount, minimum USDC accepted, expiry, and destination shielded key. This is a sale offer for the existing risk-bearing shares, not a protocol promise that the unresolved position has one exact fair value.
 
-The replacement LP acceptance binds the exit terms hash, current market state version, maximum state age, scenario equity values, fee totals, and expiry. A batch, close, resolution, cancellation, or prior partial fill that changes those bound fields makes the match fail atomically. The replacement LP must submit a fresh acceptance instead of receiving a silently changed risk position.
+The replacement LP acceptance binds the exit terms, current market state version, maximum state age, scenario equity values, fee totals, and expiry. A batch, close, resolution, cancellation, or prior match that changes those bound fields makes the match fail atomically. The replacement LP must submit a fresh acceptance instead of receiving a silently changed risk position.
 
 An active exit completes through one of these paths:
 
@@ -298,9 +298,9 @@ Replacement liquidity does not mint additional shares or change `b`. It changes 
 
 The purchase USDC moves from the replacement LP's shielded balance to the exiting LP's shielded balance. It does not enter or leave the market reserve. Accrued and future LP fee rights, market-maker profit, and market-maker loss follow the transferred shares to their new owner. The sale price is the only value retained by the seller for the transferred portion.
 
-The exit queue is FIFO within an identical price and share class. A cancellation restores the locked shares if no match has started. Partial fills update the remaining shares atomically.
+Every first-testnet offer is a full-fill lot. A seller may offer part of one LP note and retain the rest as private LP change, but a buyer must fill that offered lot completely. A cancellation spends the seller's private exit receipt and restores the locked shares while the offer remains open.
 
-The first testnet matching venue may expose an exit lot, ask, expiry, and market state to prospective replacement LPs. It must not describe the exit as fully private. Shielded ownership prevents a public wallet link, but a unique request or queue change can still reveal economic metadata through timing.
+The first testnet matching venue exposes an exit lot, ask, expiry, payment-note template, and market state to prospective replacement LPs. It must not describe the offer itself as fully private. Shielded ownership prevents a public wallet link, but multiple active offers using the same shielded recipient keys may be linkable to one another, and a unique request can reveal economic metadata through timing.
 
 Exit intents and their remaining fill state are ledger-reconstructable. The matching service is only discovery infrastructure. Any replacement LP may submit a valid state-bound acceptance directly, so one matcher cannot block a sale that already has a willing counterparty.
 
