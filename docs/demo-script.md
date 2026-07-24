@@ -97,11 +97,6 @@ Everything shown is testnet beta software. The contracts and circuits still need
 ## Testnet references
 
 - Circle USDC SAC: `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`
-- Shared private vault: `CBVNCHDJOIDFWEW5UQX62CDGV6CS5V7N54DO4CNZS2QC73RDFSDRG7LE`
-- Pooled liquidity vault: `CAMWZJPST7QO7Z2S4O4QZR57CJTYSDYXVTHLRNCZWMSNUOUYFLF3LGVO`
-- Market factory: `CAWTJYYQ3YEKNJ4RPYYOPOV3JMPGQG42AWTYOQXXFTOYCO7U7F4JVJ3C`
-- Free price resolver: `CCQ6UZGXJOOXPM6MTGE3H2LSPW3CWDIPIDXHO4OLJWQ7AUBIQ7ZT5EZX`
-- Proof verifier: `CC2FGGBXS4LNY2YSDF4K3DLJAS4F3F7U64QIMUXQYUXSEMGSVKXDAKKX`
 - Reflector CEX oracle: `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63`
 - Reflector fiat oracle: `CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W`
-- Current deployment record: `deployments/private-testnet.json`
+- Current verifier, resolver, shared vault, pooled liquidity vault, and factory IDs: `deployments/private-testnet.json`
