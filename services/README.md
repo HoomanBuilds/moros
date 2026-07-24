@@ -1,6 +1,6 @@
-# Moros testnet services
+# Moros network services
 
-The active Moros runtime consists of `private-server.mjs` and `resolve-keeper.mjs`. Both load contract addresses and policy from `deployments/private-testnet.json`. Contract IDs and WASM hashes are not copied into environment variables.
+The active Moros runtime consists of `private-server.mjs` and `resolve-keeper.mjs`. Both select one network profile and load its contract addresses and policy from the matching deployment manifest. Contract IDs and WASM hashes are not copied into environment variables.
 
 ## Active components
 
@@ -14,20 +14,31 @@ The active Moros runtime consists of `private-server.mjs` and `resolve-keeper.mj
 
 Copy `.env.example` to `.env` and fill the secret values locally.
 
-The active runtime requires:
+The active runtime uses one switch:
 
-    RPC_URL=https://soroban-testnet.stellar.org
-    NETWORK_PASSPHRASE=Test SDF Network ; September 2015
-    NETWORK=testnet
-    FUNDER_SK=<testnet runtime and fee payer secret>
+    MOROS_NETWORK=testnet
+
+Configure both profiles once:
+
+    MOROS_TESTNET_RPC_URL=https://soroban-testnet.stellar.org
+    MOROS_MAINNET_RPC_URL=https://mainnet.sorobanrpc.com
+    MOROS_TESTNET_DEPLOYMENT=deployments/private-testnet.json
+    MOROS_MAINNET_DEPLOYMENT=deployments/private-mainnet.json
+    MOROS_TESTNET_ZK_PUBLIC_DIR=circuits/private-build/public
+    MOROS_MAINNET_ZK_PUBLIC_DIR=circuits/private-mainnet-build/public
+    MOROS_TESTNET_FUNDER_SK=<testnet runtime and fee payer secret>
+    MOROS_MAINNET_FUNDER_SK=<mainnet runtime and fee payer secret>
+    MOROS_TESTNET_PRIVACY_SK=<testnet privacy identity>
+    MOROS_MAINNET_PRIVACY_SK=<mainnet privacy identity>
     SUPABASE_URL=<public market registry project URL>
     SUPABASE_SERVICE_ROLE_KEY=<public market registry service role key>
     PRIVATE_SYNC_SUPABASE_URL=<server-only private sync project URL>
     PRIVATE_SYNC_SUPABASE_SERVICE_ROLE_KEY=<server-only service role key>
-    MOROS_PUBLIC_DEPLOYMENT=deployments/private-testnet.json
     ORACLE_MODE=free
 
-`MOROS_TESTNET_PRIVACY_SK` is optional. When set, it must contain the same testnet privacy identity used during deployment. When omitted, `FUNDER_SK` supplies that identity. Keep every secret out of git, logs, browser variables, and shared configuration.
+Restart both services after changing `MOROS_NETWORK`. The runtime rejects an RPC passphrase mismatch, a deployment manifest for the wrong network, or a mainnet manifest without `mainnetReady: true`. The generic `RPC_URL`, `HORIZON_URL`, `MOROS_PUBLIC_DEPLOYMENT`, `FUNDER_SK`, and `MOROS_PRIVACY_SK` variables remain compatibility overrides, but network-scoped values are preferred.
+
+The selected privacy secret must reproduce the identity recorded during that network deployment. On testnet it may be omitted when the selected funder secret supplied the deployment identity. Keep every secret out of git, logs, browser variables, and shared configuration.
 
 The deployment command can use a separate Stellar deployer:
 
@@ -40,11 +51,11 @@ The public name remains `Moros Testnet`. Contract names do not include dates or 
 
 ## Oracle modes
 
-Free Reflector mode is mandatory for the current beta:
+Free Reflector mode is the default on both networks:
 
     ORACLE_MODE=free
 
-The canonical resolver reads the free Reflector testnet CEX and fiat contracts recorded in the deployment manifest. The CEX feed covers supported crypto assets. The fiat feed covers supported FX assets and XAU. Both feeds belong to one provider family and are not presented as independent-provider redundancy.
+The canonical resolver reads the network's free public Reflector CEX and fiat contracts. The CEX feed covers supported crypto assets. The fiat feed covers supported FX assets and XAU. Both feeds belong to one provider family and are not presented as independent-provider redundancy.
 
 Pyth Pro remains available as a future paid switch:
 
@@ -80,7 +91,7 @@ LP exit listings contain public ledger identifiers only. Ownership is recovered 
 - Pending orders remain encrypted and refundable under the configured close and finalization rules when they cannot execute.
 - Runtime queues, used nullifiers, encrypted allocations, and output indexes persist across restarts.
 
-The current testnet coordinator holds the combined committee secret on one VM. This is an explicit testnet limitation, not threshold privacy.
+The current testnet coordinator holds the combined committee secret on one VM. This is an explicit testnet limitation, not threshold privacy. A mainnet manifest must not be marked ready until independently operated threshold committee members and redundant services are deployed.
 
 ## Running and testing
 
@@ -106,7 +117,7 @@ The package contains only the active runtime, canonical deployment, and proving 
 
     ./services/deploy-vm.sh package
 
-After copying and unpacking `deploy-bundle.tar.gz` on the testnet VM:
+After copying and unpacking `deploy-bundle.tar.gz` on the selected network VM:
 
     ./services/deploy-vm.sh provision
     ./services/deploy-vm.sh service

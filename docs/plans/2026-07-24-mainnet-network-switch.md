@@ -47,6 +47,8 @@ The selected value reads the matching scoped variables:
 - `MOROS_MAINNET_HORIZON_URL`
 - `MOROS_TESTNET_DEPLOYMENT`
 - `MOROS_MAINNET_DEPLOYMENT`
+- `MOROS_TESTNET_ZK_PUBLIC_DIR`
+- `MOROS_MAINNET_ZK_PUBLIC_DIR`
 - `MOROS_TESTNET_FUNDER_SK`
 - `MOROS_MAINNET_FUNDER_SK`
 - `MOROS_TESTNET_PRIVACY_SK`
@@ -188,4 +190,3 @@ The expensive operations are ZK verification, persistent Merkle state writes, en
 - Redundant RPC operations and monitoring
 - A committee design appropriate for real funds rather than the current single-VM testnet coordinator
 - Limited liability caps and incident procedures
-

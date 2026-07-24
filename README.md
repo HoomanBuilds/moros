@@ -135,7 +135,7 @@ Only two Moros services are active:
 - `services/private-server.mjs`: output indexing, private proof relaying, proposal activation, pooled LP allocation, fixed-batch coordination, encrypted allocation witnesses, terminal finalization, and LP harvest
 - `services/resolve-keeper.mjs`: supported price resolution and contract TTL maintenance
 
-Both services load contract IDs and policy from `deployments/private-testnet.json`. Contract addresses are not duplicated in environment variables.
+Both services select `deployments/private-testnet.json` or the future `deployments/private-mainnet.json` from `MOROS_NETWORK`. Contract addresses are not duplicated in environment variables. The service refuses to start when its selected RPC, network passphrase, deployment network, mainnet readiness flag, collateral, or proving artifacts disagree.
 
 The current testnet coordinator holds the combined committee secret on one VM. This is a testnet limitation and is not threshold privacy. Mainnet requires independently operated committee members, threshold key custody, redundant services, monitoring, and recovery procedures.
 
@@ -158,12 +158,12 @@ The canonical record is [deployments/private-testnet.json](deployments/private-t
 | Component | Testnet value |
 | --- | --- |
 | Circle USDC SAC | CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA |
-| Market factory | CCPRPUNRJV2CCHN2ENZAJKSV3PVN2HH2LHXDDZZQNGFUEAZNCBVRB52D |
-| Shared collateral vault | CBGZDC64P5LGMGCKUUIQDCXNYE2E4LA66O2GHFQFG2QPX67KO6V2YZR2 |
-| Pooled liquidity vault | CDYJTE5J54ITTKVDYENR7UQTBVKTY4LOHQJAHF5YRVJZDA77YJI5S3WX |
-| Groth16 verifier | CBGUQRKJLNZZS4L2PZYKHAGR7CXOTJFISYM27D7HYDAIF32AXO47WKUL |
-| Free price resolver | CCZNETDY464HA2RCXPIEFM56W3NRT3GHQ7GUPWZS6LWMILCERDADSKJT |
-| Market WASM | 1b6661c230955a5452fa841a8df6dbed99b17165dede73b3b5e8b319ecf5a9d3 |
+| Market factory | CBUZTKKWJCM2YMU3LNJKO54VNFP2G4UP3UIIM7SKUDSNI6Q5L7TTW7DZ |
+| Shared collateral vault | CCW32HGZRBJ3SP2C6GCY5D2AGXUGQEOFTPDEMDJURBDCFS352C2SP5XZ |
+| Pooled liquidity vault | CA43THSU2WTHRVYFXPYC7K5U6CP34ND57PIGA5DVDNLQZRXK3427IJB5 |
+| Groth16 verifier | CBF7KDQ6ARPMVCF2YMVFDBLPBDYNPV3U2DEYTJT63MA2MVXMZ3R2BS7Q |
+| Free price resolver | CDNNXJHGG4KYTG4EXKPJ5WGJJ4LHV4JPXEDQYK7NLL3VEI66O4NVK6ZU |
+| Market WASM | cbe984639185b49439508223f5e80d70bf5db42e8a6836bffcf13d8962a395c5 |
 | Liquidity vault WASM | 28ab6ba66df7e5512be4050e6000adc0786d8a75a9faf13e331c9907893b8b08 |
 
 The application, services, keeper, and live tests reject registry records that do not match this factory, shared vault, Circle USDC SAC, and active market state.
