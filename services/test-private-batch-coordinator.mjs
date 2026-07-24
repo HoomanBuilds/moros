@@ -140,8 +140,9 @@ const adaptiveRoot = fixedRoot([acceptedLeaf({
   encryptedOrder: adaptiveOrder.encrypted_order,
   committeeEpoch: 1n,
 })]);
-let adaptivePhase = "Collecting";
+let adaptivePhase = "Sealed";
 let adaptiveSubmitCalls = 0;
+let adaptiveSubmitAttempts = 0;
 let adaptiveProofCalls = 0;
 let adaptiveAllocationCount = 0;
 const adaptiveRegistration = {
@@ -216,6 +217,16 @@ const adaptiveCoordinator = new PrivateBatchCoordinator({
   publishAllocations: async (packages) => {
     adaptiveAllocationCount = packages.length;
   },
+  submit: async (pending) => {
+    adaptiveSubmitAttempts++;
+    if (adaptiveSubmitAttempts === 1) {
+      throw new Error(
+        "Account not found: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+      );
+    }
+    return (await pending).signAndSend();
+  },
+  sleep: async () => {},
   now: () => 201,
 });
 const adaptiveResult = await adaptiveCoordinator.process(adaptiveMarket);
@@ -225,5 +236,6 @@ assert.equal(adaptiveResult.noCount, 0);
 assert.equal(adaptiveProofCalls, 1);
 assert.equal(adaptiveAllocationCount, 1);
 assert.equal(adaptiveSubmitCalls, 1);
+assert.equal(adaptiveSubmitAttempts, 2);
 
 process.stdout.write("private batch coordinator tests passed\n");

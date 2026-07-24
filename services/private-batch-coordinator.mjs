@@ -12,6 +12,9 @@ async function send(transaction) {
   return (await transaction).signAndSend();
 }
 
+const RETRYABLE_SUBMISSION =
+  /account not found|status code 503|fetch failed|network|pending|rate limit|timed out|timeout|try again|tx_bad_seq/i;
+
 export function phaseName(value) {
   if (typeof value === "string") return value;
   if (value && typeof value.tag === "string") return value.tag;
@@ -68,6 +71,10 @@ export class PrivateBatchCoordinator {
     prove,
     publishAllocations = async () => {},
     submit = send,
+    sleep = (milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    submissionAttempts = 5,
+    submissionRetryMilliseconds = 2_000,
     now = () => Math.floor(Date.now() / 1_000),
   }) {
     if (
@@ -76,7 +83,11 @@ export class PrivateBatchCoordinator {
       !networkDomain ||
       !committeeSecret ||
       !marketClient ||
-      !prove
+      !prove ||
+      !Number.isSafeInteger(submissionAttempts) ||
+      submissionAttempts < 1 ||
+      !Number.isSafeInteger(submissionRetryMilliseconds) ||
+      submissionRetryMilliseconds < 0
     ) {
       throw new Error("private batch coordinator configuration is incomplete");
     }
@@ -88,8 +99,12 @@ export class PrivateBatchCoordinator {
     this.prove = prove;
     this.publishAllocations = publishAllocations;
     this.submit = submit;
+    this.sleep = sleep;
+    this.submissionAttempts = submissionAttempts;
+    this.submissionRetryMilliseconds = submissionRetryMilliseconds;
     this.now = now;
     this.processing = new Set();
+    this.batchProofs = new Map();
   }
 
   async process(market) {
@@ -111,7 +126,7 @@ export class PrivateBatchCoordinator {
     const marketContract = await this.marketClient(market);
     const outcome = invocationResultValue(await marketContract.outcome());
     if (outcome !== undefined && outcome !== null) {
-      await this.submit(this.vault.finalize_market({ market }));
+      await this.submitBuilt(() => this.vault.finalize_market({ market }));
       return { status: "finalized" };
     }
     const epochNumber = BigInt(registration.current_epoch);
@@ -133,7 +148,7 @@ export class PrivateBatchCoordinator {
         now >= Number(epoch.cutoff)
       )
     ) {
-      await this.submit(this.vault.seal_epoch({
+      await this.submitBuilt(() => this.vault.seal_epoch({
         market,
         epoch_number: epochNumber,
       }));
@@ -155,7 +170,7 @@ export class PrivateBatchCoordinator {
     }
 
     if (phase === "Sealed" && now >= Number(epoch.refund_at)) {
-      await this.submit(this.vault.make_epoch_refundable({
+      await this.submitBuilt(() => this.vault.make_epoch_refundable({
         market,
         epoch_number: epochNumber,
       }));
@@ -204,9 +219,23 @@ export class PrivateBatchCoordinator {
         quote,
         committeeSecret: this.committeeSecret,
       });
-      const proof = await this.prove(statement.witness);
+      const proofKey = [
+        market,
+        epochNumber,
+        epoch.market_state_version,
+        epoch.accepted_root,
+      ].join(":");
+      let proofPromise = this.batchProofs.get(proofKey);
+      if (!proofPromise) {
+        proofPromise = this.prove(statement.witness).catch((error) => {
+          this.batchProofs.delete(proofKey);
+          throw error;
+        });
+        this.batchProofs.set(proofKey, proofPromise);
+      }
+      const proof = await proofPromise;
       await this.publishAllocations(statement.allocationPackages);
-      await this.submit(this.vault.submit_batch({
+      await this.submitBuilt(() => this.vault.submit_batch({
         market,
         epoch_number: epochNumber,
         submission: {
@@ -230,6 +259,7 @@ export class PrivateBatchCoordinator {
           proof,
         },
       }));
+      this.batchProofs.delete(proofKey);
       return {
         status: "executed",
         epoch: epochNumber.toString(),
@@ -251,7 +281,7 @@ export class PrivateBatchCoordinator {
       now < Number(registration.expiry)
     ) {
       const next = invocationResultValue(
-        await this.submit(this.vault.open_next_epoch({
+        await this.submitBuilt(() => this.vault.open_next_epoch({
           market,
           prior_epoch: epochNumber,
         })),
@@ -266,5 +296,25 @@ export class PrivateBatchCoordinator {
       status: phase.toLowerCase(),
       epoch: epochNumber.toString(),
     };
+  }
+
+  async submitBuilt(build) {
+    let lastError;
+    for (let attempt = 0; attempt < this.submissionAttempts; attempt++) {
+      try {
+        return await this.submit(build());
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          attempt + 1 >= this.submissionAttempts ||
+          !RETRYABLE_SUBMISSION.test(message)
+        ) {
+          throw error;
+        }
+        await this.sleep(this.submissionRetryMilliseconds);
+      }
+    }
+    throw lastError;
   }
 }
