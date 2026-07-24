@@ -79,27 +79,54 @@ const server = new rpc.Server(RPC);
 const funder = FUNDER_SK ? Keypair.fromSecret(FUNDER_SK) : null;
 let pythClient;
 let resolutionTimeout = 0;
-const lastTtlRefresh = new Map();
+let persistedStatus = {};
+try {
+  persistedStatus = JSON.parse(readFileSync(STATUS_FILE, "utf8"));
+} catch {}
+const matchingStatus =
+  persistedStatus.network === network.id &&
+  persistedStatus.resolverRegistry === RESOLVER_REGISTRY
+    ? persistedStatus
+    : {};
+const lastTtlRefresh = new Map(
+  Object.entries(matchingStatus.ttlRefreshAt || {})
+    .map(([contractId, refreshedAt]) => [contractId, Number(refreshedAt)])
+    .filter(([, refreshedAt]) => Number.isSafeInteger(refreshedAt)),
+);
+if (
+  lastTtlRefresh.size === 0 &&
+  Number(matchingStatus.ttlRefreshed) > 0
+) {
+  const refreshedAt = Date.parse(matchingStatus.lastTickAt || "");
+  if (Number.isSafeInteger(refreshedAt)) {
+    lastTtlRefresh.set(RESOLVER_REGISTRY, refreshedAt);
+  }
+}
 let status = {
+  ...matchingStatus,
   startedAt: new Date().toISOString(),
-  lastTickAt: null,
+  lastTickAt: matchingStatus.lastTickAt || null,
   network: network.id,
   mode: ORACLE_MODE,
   resolver: RESOLVER,
   resolverRegistry: RESOLVER_REGISTRY,
-  marketsScanned: 0,
-  dueMarkets: 0,
-  resolvedMarkets: 0,
-  voidedMarkets: 0,
-  waitingForOracle: 0,
-  ttlRefreshed: 0,
+  marketsScanned: Number(matchingStatus.marketsScanned || 0),
+  dueMarkets: Number(matchingStatus.dueMarkets || 0),
+  resolvedMarkets: Number(matchingStatus.resolvedMarkets || 0),
+  voidedMarkets: Number(matchingStatus.voidedMarkets || 0),
+  waitingForOracle: Number(matchingStatus.waitingForOracle || 0),
+  ttlRefreshed: Number(matchingStatus.ttlRefreshed || 0),
   errors: [],
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function saveStatus(update = {}) {
-  status = { ...status, ...update };
+  status = {
+    ...status,
+    ...update,
+    ttlRefreshAt: Object.fromEntries(lastTtlRefresh),
+  };
   const temp = `${STATUS_FILE}.tmp`;
   mkdirSync(dirname(STATUS_FILE), { recursive: true });
   writeFileSync(temp, JSON.stringify(status, null, 2), { mode: 0o600 });
@@ -227,6 +254,7 @@ async function refreshTargetTtl(target, nowMs) {
     if (nowMs - (lastTtlRefresh.get(contractId) || 0) < TTL_REFRESH_MS) continue;
     await touchContract(contractId);
     lastTtlRefresh.set(contractId, nowMs);
+    saveStatus();
     refreshed++;
   }
   return refreshed;
@@ -241,6 +269,7 @@ async function refreshRegistryTtl(nowMs) {
   }
   await touchContract(RESOLVER_REGISTRY);
   lastTtlRefresh.set(RESOLVER_REGISTRY, nowMs);
+  saveStatus();
   return 1;
 }
 
