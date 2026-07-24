@@ -78,9 +78,9 @@ export function AboutPanel() {
           </p>
         )}
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Your side and quantity stay encrypted on-chain. Exactly {data?.fixedBatchSize ?? 8} orders execute atomically, with at
-          least {data?.minimumSideCount ?? 2} orders on each side and one clearing price. An incomplete batch is refundable after its
-          deadline. Claims are proof-bound and relayer-submittable. The current single-VM coordinator can
+          Your side and quantity stay encrypted on-chain. Up to {data?.maximumBatchSize ?? 8} orders execute atomically at one
+          clearing price per side. A batch executes when full or after its 60-second window, including one-sided activity. A batch
+          that cannot execute becomes refundable after its deadline. Claims are proof-bound and relayer-submittable. The current single-VM coordinator can
           recover individual order values, so this testnet is not threshold privacy.
         </p>
       </div>

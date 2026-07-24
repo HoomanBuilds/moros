@@ -33,7 +33,7 @@ export async function fetchMarket(
           poolBalance,
           feeBps: registration.fee_bps,
           lotSize: fixedToNumber(registration.lot_size),
-          fixedBatchSize: registration.fixed_batch_size,
+          maximumBatchSize: registration.maximum_batch_size,
           minimumSideCount: registration.minimum_side_count,
         };
       })
@@ -44,7 +44,7 @@ export async function fetchMarket(
         poolBalance,
         feeBps: Number(feeConfig[1]),
         lotSize: 1,
-        fixedBatchSize: null,
+        maximumBatchSize: null,
         minimumSideCount: null,
       }));
   const [state, priceYes, outcome, info, storedMeta, resolverId, marketEconomics] = await Promise.all([
@@ -107,7 +107,7 @@ export async function fetchMarket(
     collateral,
     feeBps: marketEconomics.feeBps,
     lotSize: marketEconomics.lotSize,
-    fixedBatchSize: marketEconomics.fixedBatchSize,
+    maximumBatchSize: marketEconomics.maximumBatchSize,
     minimumSideCount: marketEconomics.minimumSideCount,
     expiry,
     finalizeAfter: Number(info.finalize_after ?? info.expiry),

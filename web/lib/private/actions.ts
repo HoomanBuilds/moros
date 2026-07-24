@@ -154,7 +154,7 @@ export type PooledRedemptionPreview = {
 type PrivateMarketRegistration = {
   current_epoch: bigint;
   lot_size: bigint;
-  fixed_batch_size: number;
+  maximum_batch_size: number;
   minimum_side_count: number;
   fee_bps: number;
   lp_fee_share_bps: number;
@@ -262,7 +262,7 @@ type PrivateOrderBinding = {
   position_commitment: bigint;
   lot_size: bigint;
   fee_bps: number;
-  fixed_batch_size: number;
+  maximum_batch_size: number;
   minimum_side_count: number;
   maximum_price_movement: bigint;
   rules_hash: Uint8Array;
@@ -2289,7 +2289,7 @@ function orderBindingFields(binding: PrivateOrderBinding): bigint[] {
     binding.position_commitment,
     binding.lot_size,
     BigInt(binding.fee_bps),
-    BigInt(binding.fixed_batch_size),
+    BigInt(binding.maximum_batch_size),
     BigInt(binding.minimum_side_count),
     binding.maximum_price_movement,
     ...bytes32Limbs(binding.rules_hash),

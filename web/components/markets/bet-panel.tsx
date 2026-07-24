@@ -317,10 +317,10 @@ export function BetPanel() {
             <>
               <div className="flex items-center justify-between">
                 <span>Batch pricing</span>
-                <span className="text-foreground">Same clearing price</span>
+                <span className="text-foreground">Adaptive clearing</span>
               </div>
               <p className="text-[10px] leading-snug text-muted-foreground/70">
-                {data?.fixedBatchSize ?? 8} orders clear together, with at least {data?.minimumSideCount ?? 2} orders on each side. Your side and quantity stay encrypted. Every unit on the same side receives the same batch price.
+                Up to {data?.maximumBatchSize ?? 8} encrypted orders clear together. A batch executes when full or after its 60-second window, including one-sided activity. Every unit on the same side receives the same batch price.
               </p>
             </>
           ) : (

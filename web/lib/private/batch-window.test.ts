@@ -4,7 +4,7 @@ import { waitForPrivateBatch, type PrivateBatchWindow } from "./batch-window.ts"
 const registration = {
   finalized: false,
   current_epoch: 2n,
-  fixed_batch_size: 8,
+  maximum_batch_size: 8,
 };
 const closed: PrivateBatchWindow = {
   registration,

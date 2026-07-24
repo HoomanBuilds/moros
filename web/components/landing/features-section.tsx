@@ -21,8 +21,8 @@ const features = [
     number: "03",
     title: "Atomic batch fairness",
     description:
-      "Eight orders execute together at one clearing price. Incomplete batches never move the visible odds.",
-    stats: { value: "8 orders", label: "one atomic clearing price" },
+      "Up to eight orders execute together at one clearing price when full or after 60 seconds.",
+    stats: { value: "1 to 8", label: "orders per atomic batch" },
   },
   {
     number: "04",
@@ -184,9 +184,9 @@ export function FeaturesSection() {
                     : "opacity-0 translate-y-4"
                 }`}
               >
-                Every order is proven valid before it is accepted. Eight orders
-                clear atomically, the LMSR sets one price, and private recovery
-                keys are derived by your wallet.
+                Every order is proven valid before it is accepted. Adaptive
+                batches clear atomically, the LMSR updates the price, and
+                private recovery keys are derived by your wallet.
               </p>
             </div>
           </div>

@@ -19,10 +19,10 @@ const steps = [
     number: "02",
     title: "The coordinator builds the batch",
     subtitle: "",
-    description: "Exactly eight encrypted orders clear atomically at one price, with at least two orders on each side.",
+    description: "Up to eight encrypted orders clear atomically when full or after the 60-second window.",
     code: `const batch = await coordinator.build({
-  orders: 8,
-  minimumPerSide: 2
+  maximumOrders: 8,
+  deadlineSeconds: 60
 })`,
   },
   {

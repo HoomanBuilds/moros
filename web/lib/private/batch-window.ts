@@ -3,7 +3,7 @@ type PrivateBatchPhase = string | { tag: string } | string[];
 type PrivateBatchRegistration = {
   finalized: boolean;
   current_epoch: bigint;
-  fixed_batch_size: number;
+  maximum_batch_size: number;
 };
 
 type PrivateBatchEpoch = {
@@ -40,7 +40,7 @@ function acceptsOrders<
     !window.registration.finalized &&
     window.epoch.epoch === window.registration.current_epoch &&
     phaseName(window.epoch.phase) === "Collecting" &&
-    window.epoch.accepted_count < window.registration.fixed_batch_size &&
+    window.epoch.accepted_count < window.registration.maximum_batch_size &&
     nowSeconds < window.epoch.cutoff
   );
 }

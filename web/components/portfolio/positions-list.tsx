@@ -68,7 +68,7 @@ const SIDE_STYLE = {
 
 const LIFECYCLE: Record<PositionLifecycle, { label: string; detail: string; tone: string }> = {
   awaiting_submission: { label: "Action required", detail: "The order is on-chain but still needs its private coordinator submission.", tone: "#f5b942" },
-  awaiting_batch: { label: "Awaiting batch", detail: "The coordinator has the encrypted order and is waiting for a complete private batch.", tone: "#69a7ff" },
+  awaiting_batch: { label: "Awaiting batch", detail: "The encrypted order will clear when the batch fills or its 60-second window ends.", tone: "#69a7ff" },
   active: { label: "Active", detail: "The order is included and the market is still open.", tone: "#69a7ff" },
   closed: { label: "Resolving", detail: "Betting is closed. Final batching and oracle resolution are pending.", tone: "#f5b942" },
   recover_execution_change: { label: "USDC ready", detail: "The batch executed. Recover the unused order budget without revealing the position side.", tone: "#16c784" },

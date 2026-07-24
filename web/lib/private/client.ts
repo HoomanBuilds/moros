@@ -37,7 +37,7 @@ export type PrivateDeploymentConfig = {
     liquidityTiers: string[];
     feeMaximumBps: number;
     lpFeeShareBps: number;
-    fixedBatchSize: number;
+    maximumBatchSize: number;
     minimumSideCount: number;
     maximumPriceMovement: string;
     batchGrace: number;
@@ -157,9 +157,9 @@ export async function getPrivateConfig(): Promise<PrivateDeploymentConfig> {
     !/^[0-9a-f]{64}$/u.test(config.verifierDomain) ||
     !/^C[A-Z2-7]{55}$/u.test(config.contracts.liquidityPool) ||
     config.privacy.treeLevels !== 20 ||
-    config.marketPolicy.fixedBatchSize !== 8 ||
-    config.marketPolicy.minimumSideCount !== 2 ||
-    config.marketPolicy.epochDuration < 300 ||
+    config.marketPolicy.maximumBatchSize !== 8 ||
+    config.marketPolicy.minimumSideCount !== 0 ||
+    config.marketPolicy.epochDuration !== 60 ||
     config.marketPolicy.refundDelay < 30
   ) {
     throw new Error("Private service configuration is incompatible");

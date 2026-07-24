@@ -17,7 +17,7 @@ export function MarketsHeroRail() {
           </span>
           <h3 className="font-display text-xl leading-tight">Private by design</h3>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Your side and quantity stay encrypted on-chain. Eight orders clear atomically at one price, with at least two orders on each side.
+            Your side and quantity stay encrypted on-chain. Up to eight orders clear together when full or after 60 seconds.
           </p>
         </div>
         <Link

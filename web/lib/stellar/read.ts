@@ -48,7 +48,7 @@ export async function getPrivateMarketRegistration(
   lot_size: bigint;
   fee_bps: number;
   lp_fee_share_bps: number;
-  fixed_batch_size: number;
+  maximum_batch_size: number;
   minimum_side_count: number;
 } | null> {
   const market = nativeToScVal(Address.fromString(marketId), {
