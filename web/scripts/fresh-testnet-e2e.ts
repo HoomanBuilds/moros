@@ -426,7 +426,7 @@ async function setup(): Promise<void> {
   let proposal: PendingProposal;
   if (!state || !phaseAtLeast(state, "proposal-ready")) {
     const expiryUnix = state?.proposal.expiryUnix
-      ?? Math.floor(Date.now() / 1_000) + 9_000;
+      ?? Math.floor(Date.now() / 1_000) + 3_600;
     log(state
       ? "resuming the checkpointed fresh market proposal"
       : "proposing a fresh market from a creator with no USDC");
@@ -566,14 +566,14 @@ async function setup(): Promise<void> {
   }
   if (!phaseAtLeast(state, "bettor-funded")) {
     let wallet = await openPrivateWallet(bettor);
-    if (wallet.balance < 5n * USDC_SCALE) {
+    if (wallet.balance < 4n * USDC_SCALE) {
       if (wallet.balance !== 0n) {
         throw new Error("Fresh bettor private balance is only partially funded");
       }
-      log("shielding 5 USDC for variable private positions");
+      log("shielding 4 USDC for variable private positions");
       const bettorDepositHash = await shieldUsdc(
         bettor,
-        5n * USDC_SCALE,
+        4n * USDC_SCALE,
         (status) => log(status),
       );
       log(`bettor public shield confirmed ${bettorDepositHash}`);
@@ -582,11 +582,11 @@ async function setup(): Promise<void> {
         180_000,
         async () => {
           const current = await openPrivateWallet(bettor);
-          return current.balance >= 5n * USDC_SCALE ? current : null;
+          return current.balance >= 4n * USDC_SCALE ? current : null;
         },
       );
     }
-    if (wallet.balance < 5n * USDC_SCALE) {
+    if (wallet.balance < 4n * USDC_SCALE) {
       throw new Error("Fresh bettor private balance is insufficient");
     }
     state = { ...state, phase: "bettor-funded" };

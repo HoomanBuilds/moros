@@ -61,7 +61,7 @@ const SOURCE_COMMIT = process.env.MOROS_SOURCE_COMMIT || "";
 const DEPLOYMENT_NAME =
   process.env.MOROS_DEPLOYMENT_NAME || "Moros Testnet";
 const SALT_NAMESPACE =
-  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet-ready";
+  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet-release";
 const COLLATERAL =
   process.env.COLLATERAL_ID ||
   "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
@@ -98,6 +98,8 @@ const MINIMUM_IDLE_BPS = 2_000;
 const PRIVATE_BATCH_GRACE = 300;
 const PRIVATE_EPOCH_DURATION = 600;
 const PRIVATE_REFUND_DELAY = 120;
+const MINIMUM_FUNDING_WINDOW = 240;
+const MINIMUM_OPEN_WINDOW = 600;
 const RETRYABLE_TRANSACTION =
   /pending|timed out|timeout|tx_bad_seq|try again|rate limit/i;
 
@@ -607,8 +609,8 @@ async function main() {
           500_000_000n,
           1_000_000_000n,
         ],
-        minimum_funding_window: 3_600n,
-        minimum_open_window: 3_600n,
+        minimum_funding_window: BigInt(MINIMUM_FUNDING_WINDOW),
+        minimum_open_window: BigInt(MINIMUM_OPEN_WINDOW),
         maximum_market_duration: 7_776_000n,
         batch_grace: BigInt(PRIVATE_BATCH_GRACE),
         epoch_duration: BigInt(PRIVATE_EPOCH_DURATION),
@@ -732,8 +734,8 @@ async function main() {
       batchGrace: PRIVATE_BATCH_GRACE,
       epochDuration: PRIVATE_EPOCH_DURATION,
       refundDelay: PRIVATE_REFUND_DELAY,
-      minimumFundingWindow: 3_600,
-      minimumOpenWindow: 3_600,
+      minimumFundingWindow: MINIMUM_FUNDING_WINDOW,
+      minimumOpenWindow: MINIMUM_OPEN_WINDOW,
       maximumMarketDuration: 7_776_000,
     },
     liquidityPolicy: {

@@ -51,6 +51,7 @@ import { uploadMarketBanner } from "@/lib/supabase/market-media";
 import { cn } from "@/lib/utils";
 import { NETWORK } from "@/lib/network";
 import {
+  MIN_MARKET_LEAD_SECONDS,
   marketExpiryError,
   parseMarketExpiry,
   presetExpiryLocal,
@@ -74,13 +75,13 @@ const STEPS: { key: ProposalStep; label: string }[] = [
 ];
 
 const EXPIRY_PRESETS = [
-  { key: "3h", label: "3 hours", detail: "Intraday", seconds: 3 * 60 * 60 },
+  { key: "1h", label: "1 hour", detail: "Intraday", seconds: 60 * 60 },
   { key: "1d", label: "1 day", detail: "Tomorrow", seconds: 24 * 60 * 60 },
   { key: "7d", label: "7 days", detail: "This week", seconds: 7 * 24 * 60 * 60 },
   { key: "30d", label: "30 days", detail: "This month", seconds: 30 * 24 * 60 * 60 },
 ];
 
-const PROPOSAL_MIN_LEAD_SECONDS = 2 * 60 * 60 + 10 * 60;
+const PROPOSAL_MIN_LEAD_SECONDS = MIN_MARKET_LEAD_SECONDS;
 const LIQUIDITY_TIERS = [
   { atomic: "200000000", label: "20 USDC", detail: "Starter depth" },
   { atomic: "500000000", label: "50 USDC", detail: "Standard depth" },

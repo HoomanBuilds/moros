@@ -45,6 +45,21 @@ assert.throws(
   /too soon or too far/,
 );
 
+const shortPolicy = {
+  marketPolicy: {
+    minimumFundingWindow: 240,
+    minimumOpenWindow: 600,
+    maximumMarketDuration: 90 * 24 * 60 * 60,
+  },
+} as PrivateDeploymentConfig;
+assert.deepEqual(
+  proposalTiming(now + 15 * 60, shortPolicy, now),
+  {
+    fundingDeadline: now + 300,
+    activationCutoff: now + 300,
+  },
+);
+
 const storage = new Map<string, string>();
 Object.defineProperty(globalThis, "localStorage", {
   configurable: true,
