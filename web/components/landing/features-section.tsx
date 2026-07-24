@@ -14,22 +14,22 @@ const features = [
     number: "02",
     title: "Fair LMSR odds",
     description:
-      "A logarithmic market maker prices YES/NO continuously and settles the net on-chain.",
-    stats: { value: "LMSR", label: "prices YES/NO continuously" },
+      "A logarithmic market maker updates YES/NO prices after each executed batch and settles the aggregate net on-chain.",
+    stats: { value: "LMSR", label: "batch-driven YES/NO prices" },
   },
   {
     number: "03",
     title: "Atomic batch fairness",
     description:
-      "Up to eight orders execute together at one clearing price when full or after 60 seconds.",
+      "Up to eight orders execute together at one clearing price when full or after 60 seconds, including one-sided activity.",
     stats: { value: "1 to 8", label: "orders per atomic batch" },
   },
   {
     number: "04",
-    title: "Self-custody",
+    title: "Pooled liquidity",
     description:
-      "Your wallet derives private note keys. Recovery pages are encrypted before they leave the browser.",
-    stats: { value: "Self-custody", label: "wallet-derived private recovery" },
+      "Permissionless LP shares track a shared USDC pool that automatically allocates capital across eligible markets.",
+    stats: { value: "80%", label: "distributable execution fees to LPs" },
   },
 ];
 

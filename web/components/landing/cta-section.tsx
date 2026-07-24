@@ -52,13 +52,15 @@ export function CtaSection() {
               {/* Left content */}
               <div className="flex-1">
                 <h2 className="text-6xl md:text-7xl lg:text-[72px] font-display tracking-tight mb-8 leading-[0.95]">
-                  Trade without
+                  Make your move.
                   <br />
-                  being watched
+                  Keep it private.
                 </h2>
 
                 <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-xl">
-                  Deposit privately, back an outcome, and redeem winnings without exposing your position to anyone, including us.
+                  Shield Circle USDC once, choose a side, and settle through
+                  proof-bound actions. Your side and quantity stay encrypted
+                  on-chain from order to resolution.
                 </p>
 
                 <div className="flex flex-col sm:flex-row items-start gap-4">
@@ -67,12 +69,21 @@ export function CtaSection() {
                     size="lg"
                     className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group"
                   >
-                    <Link href="/app">Launch app</Link>
+                    <Link href="/app">Explore markets</Link>
+                  </Button>
+                  <Button
+                    asChild
+                    size="lg"
+                    variant="outline"
+                    className="border-foreground/20 bg-transparent px-8 h-14 text-base rounded-full"
+                  >
+                    <Link href="/app/create">Create a market</Link>
                   </Button>
                 </div>
 
-                <p className="text-sm text-muted-foreground mt-8 font-mono">
-                  {NETWORK.name}, unaudited.
+                <p className="inline-flex items-center gap-2 text-sm text-muted-foreground mt-8 font-mono">
+                  <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
+                  Live on {NETWORK.name}
                 </p>
               </div>
 

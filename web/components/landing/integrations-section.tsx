@@ -3,20 +3,20 @@
 import { useEffect, useState, useRef } from "react";
 
 const logos: Record<string, React.ReactNode> = {
-  Stellar: <span className="font-mono text-sm">USDC</span>,
+  Stellar: <span className="font-mono text-sm">STR</span>,
+  "Circle USDC": <span className="font-mono text-sm">USDC</span>,
   Soroban: <span className="font-mono text-sm">SOR</span>,
   Reflector: <span className="font-mono text-sm">RFL</span>,
   circom: <span className="font-mono text-sm">CIR</span>,
-  snarkjs: <span className="font-mono text-sm">SNJ</span>,
   "Groth16/BN254": <span className="font-mono text-sm">G16</span>,
 };
 
 const integrations = [
   { name: "Stellar", category: "Chain" },
+  { name: "Circle USDC", category: "Collateral" },
   { name: "Soroban", category: "Contracts" },
   { name: "Reflector", category: "Oracle" },
   { name: "circom", category: "Circuits" },
-  { name: "snarkjs", category: "Proving" },
   { name: "Groth16/BN254", category: "Proofs" },
 ];
 
@@ -61,7 +61,9 @@ export function IntegrationsSection() {
         <p className={`mt-8 text-xl text-muted-foreground leading-relaxed max-w-lg mx-auto transition-all duration-1000 delay-100 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}>
-          Stellar Soroban for settlement, Reflector for price resolution, and a circom + Groth16 proving stack for private orders.
+          Circle USDC on Stellar, Soroban settlement, Reflector price
+          resolution, and a Circom plus Groth16 proving stack for private
+          positions.
         </p>
       </div>
 
@@ -143,8 +145,8 @@ export function IntegrationsSection() {
           <div className="flex flex-wrap gap-12">
             {[
               { value: "Groth16", label: "proof system" },
-              { value: "8 orders", label: "atomic private batch" },
-              { value: "Self-custody", label: "wallet signs every order" },
+              { value: "Up to 8", label: "orders per private batch" },
+              { value: "Wallet keys", label: "encrypted recovery" },
             ].map((stat) => (
               <div key={stat.label} className="flex items-baseline gap-3">
                 <span className="text-3xl font-display">{stat.value}</span>
@@ -153,7 +155,12 @@ export function IntegrationsSection() {
             ))}
           </div>
 
-          <a href="#" className="group inline-flex items-center gap-2 text-sm font-mono text-muted-foreground hover:text-foreground transition-colors">
+          <a
+            href="https://github.com/HoomanBuilds/moros#system-architecture"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group inline-flex items-center gap-2 text-sm font-mono text-muted-foreground hover:text-foreground transition-colors"
+          >
             View the architecture
             <span className="group-hover:translate-x-1 transition-transform">&gt;</span>
           </a>

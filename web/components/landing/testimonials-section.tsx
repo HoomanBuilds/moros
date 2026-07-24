@@ -5,25 +5,25 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const primitives = [
   {
-    quote: "LMSR prices every position continuously from a single automated market maker, no order book and no counterparty to find.",
+    quote: "LMSR reprices YES and NO after every executed batch, with no order book and no counterparty to find.",
     author: "LMSR",
     role: "Market pricing",
     company: "LMSR",
     metric: { value: "1", label: "AMM per market" },
   },
   {
-    quote: "Groth16 proves each deposit and redemption is valid without revealing the position, verified on-chain in a single pairing check.",
+    quote: "Groth16 proves private note actions are valid without publishing the underlying position on-chain.",
     author: "Groth16",
     role: "Zero-knowledge proofs",
     company: "Groth16",
     metric: { value: "192B", label: "Proof size" },
   },
   {
-    quote: "Uniform private batches execute eight encrypted orders at one clearing price, so no user receives a partially updated market.",
-    author: "Uniform batch",
+    quote: "Adaptive private batches execute up to eight encrypted orders at one clearing price, including one-sided activity after the collection window.",
+    author: "Adaptive batch",
     role: "Private execution",
     company: "Atomic settlement",
-    metric: { value: "8", label: "Orders per batch" },
+    metric: { value: "Up to 8", label: "Orders per batch" },
   },
   {
     quote: "LeanIMT commits every order into an append-only Merkle tree, so membership is provable without exposing the order itself.",

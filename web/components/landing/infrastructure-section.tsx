@@ -4,15 +4,11 @@ import { useEffect, useState, useRef } from "react";
 import { NETWORK } from "@/lib/network";
 
 const regions = [
-  { name: "Shared vault", detail: "Soroban private notes", status: "live" },
-  { name: "Proof gateway", detail: "BN254 Groth16", status: "live" },
-  {
-    name: "Coordinator",
-    detail: NETWORK.id === "testnet" ? "single VM testnet" : "threshold mainnet",
-    status: NETWORK.id === "testnet" ? "limited" : "live",
-  },
-  { name: "Resolver", detail: "Reflector oracle", status: "live" },
-  { name: NETWORK.name, detail: "live deploy", status: "live" },
+  { name: "Circle USDC", detail: "Stellar collateral", status: "live" },
+  { name: "Shared vault", detail: "Reusable private balance", status: "live" },
+  { name: "Market maker", detail: "Adaptive LMSR batches", status: "live" },
+  { name: "Resolver", detail: "Reflector price feeds", status: "live" },
+  { name: NETWORK.name, detail: "Soroban settlement", status: "live" },
 ];
 
 export function InfrastructureSection() {
@@ -50,7 +46,7 @@ export function InfrastructureSection() {
             isVisible ? "opacity-100" : "opacity-0"
           }`}>
             <span className="w-12 h-px bg-foreground/20" />
-            On-chain infrastructure
+            Protocol stack
           </span>
           
           <div className="grid lg:grid-cols-[auto_1fr] gap-8 lg:gap-16 items-stretch">
@@ -78,8 +74,9 @@ export function InfrastructureSection() {
               <p className={`mt-8 text-xl text-muted-foreground leading-relaxed max-w-lg transition-all duration-1000 delay-100 ${
                 isVisible ? "opacity-100" : "opacity-0"
               }`}>
-                Built on Stellar Soroban with BN254 Groth16 circuits, a shared
-                shielded USDC vault, atomic batch execution, and Reflector resolution.
+                Circle USDC moves through shared shielded and pooled liquidity
+                vaults, while adaptive LMSR batches and registered Reflector
+                feeds settle on Stellar.
               </p>
             </div>
           </div>
@@ -150,8 +147,8 @@ export function InfrastructureSection() {
             
             <div className="relative z-10">
               <div className="flex items-baseline gap-2 mb-4">
-                <span className="text-8xl lg:text-[10rem] font-display leading-none">100%</span>
-                <span className="text-2xl text-muted-foreground">net settled</span>
+                <span className="text-8xl lg:text-[10rem] font-display leading-none">Net</span>
+                <span className="text-2xl text-muted-foreground">batch settlement</span>
               </div>
               <p className="text-muted-foreground max-w-md">
                 Soroban records commitments and encrypted orders. Individual sides and quantities never appear on-chain in plaintext.
@@ -164,15 +161,19 @@ export function InfrastructureSection() {
             <div className={`p-8 border border-foreground/10 bg-foreground/[0.02] transition-all duration-700 delay-100 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}>
-              <span className="text-5xl lg:text-6xl font-display">1 VM</span>
-              <span className="block text-sm text-muted-foreground mt-2">Coordinator limitation disclosed</span>
+              <span className="text-5xl lg:text-6xl font-display">
+                {NETWORK.id === "mainnet" ? "40" : "Live"}
+              </span>
+              <span className="block text-sm text-muted-foreground mt-2">
+                {NETWORK.id} price routes
+              </span>
             </div>
 
             <div className={`p-8 border border-foreground/10 bg-foreground/[0.02] transition-all duration-700 delay-200 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}>
-              <span className="text-5xl lg:text-6xl font-display">~30k</span>
-              <span className="block text-sm text-muted-foreground mt-2">Constraints per private order</span>
+              <span className="text-5xl lg:text-6xl font-display">15</span>
+              <span className="block text-sm text-muted-foreground mt-2">Groth16 circuits in the proving manifest</span>
             </div>
           </div>
         </div>

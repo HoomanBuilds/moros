@@ -22,8 +22,24 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://moros.fun'),
   title: 'Moros - Private prediction markets on Stellar',
-  description: 'Bet on binary outcomes with zero-knowledge privacy on Stellar. Your side and amount stay encrypted; only the market net settles on-chain.',
+  description: 'Create and trade private prediction markets with Circle USDC on Stellar. Encrypted positions, adaptive batch pricing, and proof-bound settlement.',
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    title: 'Moros - Private prediction markets on Stellar',
+    description: 'Create and trade private prediction markets with Circle USDC on Stellar. Encrypted positions, adaptive batch pricing, and proof-bound settlement.',
+    url: '/',
+    siteName: 'Moros',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Moros - Private prediction markets on Stellar',
+    description: 'Create and trade private prediction markets with Circle USDC on Stellar.',
+  },
 }
 
 export default function RootLayout({

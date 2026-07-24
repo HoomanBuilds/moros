@@ -16,7 +16,7 @@ const metrics = [
     suffix: "",
     prefix: "",
     label: "Orders per atomic batch",
-    sublabel: "minimum two on each side",
+    sublabel: "one-sided activity supported",
   },
   {
     value: 100,
@@ -259,7 +259,7 @@ export function MetricsSection() {
                 LIVE
               </span>
               <span className="text-sm font-mono text-muted-foreground">
-                {time ? `${time.toLocaleTimeString("en-GB")} UTC` : ""}
+                {time ? `${time.toLocaleTimeString("en-GB", { timeZone: "UTC" })} UTC` : ""}
               </span>
             </div>
 
@@ -268,7 +268,7 @@ export function MetricsSection() {
             }`}>
               Proven
               <br />
-              <span className="text-muted-foreground">on {NETWORK.id}.</span>
+              <span className="text-muted-foreground">on {NETWORK.name}.</span>
             </h2>
           </div>
         </div>
@@ -337,8 +337,10 @@ export function MetricsSection() {
           <span>Live on {NETWORK.name}</span>
           <span>circom + Groth16 order circuits</span>
           <span>Reflector-oracle resolution</span>
-          <span>{NETWORK.id === "testnet" ? "Single-VM coordinator limitation" : "Threshold coordinator"}</span>
-          <span className="text-foreground">{NETWORK.name}</span>
+          <span>Circle USDC collateral</span>
+          <span className="text-foreground">
+            {NETWORK.id === "mainnet" ? "40 registered price routes" : "Registered price routes"}
+          </span>
         </div>
       </div>
     </section>

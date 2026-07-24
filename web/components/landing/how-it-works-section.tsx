@@ -5,9 +5,9 @@ import { useEffect, useRef, useState } from "react";
 const steps = [
   {
     number: "01",
-    title: "Place an encrypted order",
+    title: "Shield Circle USDC",
     subtitle: "",
-    description: "Pick a side and amount; your browser proves the order is valid without revealing it.",
+    description: "Add USDC once and reuse the resulting private balance across markets, liquidity, claims, and refunds.",
     code: `const commitment = poseidon255({
   amount,
   side,
@@ -17,9 +17,9 @@ const steps = [
   },
   {
     number: "02",
-    title: "The coordinator builds the batch",
+    title: "Choose or create",
     subtitle: "",
-    description: "Up to eight encrypted orders clear atomically when full or after the 60-second window.",
+    description: "Trade a live market or propose a supported price market with its asset, strike, expiry, and liquidity target.",
     code: `const batch = await coordinator.build({
   maximumOrders: 8,
   deadlineSeconds: 60
@@ -27,9 +27,9 @@ const steps = [
   },
   {
     number: "03",
-    title: "Odds move on-chain",
+    title: "Trade in a batch",
     subtitle: "",
-    description: "The LMSR market updates YES/NO prices from the verified net.",
+    description: "Your side and quantity stay encrypted as up to eight orders execute at one clearing price.",
     code: `await pool.submitBatch({
   commitments,
   nullifierHashes,
@@ -38,9 +38,9 @@ const steps = [
   },
   {
     number: "04",
-    title: "Claim with a proof",
+    title: "Resolve and claim",
     subtitle: "",
-    description: "After resolution, recover change and claim the winning terminal value with proof-bound actions.",
+    description: "Reflector resolves the outcome at expiry. Winning positions become claimable private USDC with a proof.",
     code: `const fee = lot * 0.02 * price * (1 - price)
 await relayer.submit({ proof, recipient })`,
   },
@@ -93,9 +93,9 @@ export function HowItWorksSection() {
             <h2 className={`text-6xl md:text-7xl lg:text-[128px] font-display tracking-tight leading-[0.85] transition-all duration-1000 delay-100 ${
               isVisible ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
             }`}>
-              <span className="block">Deposit.</span>
-              <span className="block text-white/30">Supply.</span>
-              <span className="block text-white/10">Earn.</span>
+              <span className="block">Shield.</span>
+              <span className="block text-white/30">Predict.</span>
+              <span className="block text-white/10">Claim.</span>
             </h2>
           </div>
 

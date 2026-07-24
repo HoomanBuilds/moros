@@ -8,15 +8,13 @@ const securityFeatures = [
   {
     icon: Shield,
     title: "Zero-knowledge order validity",
-    description: "Each order proves it is well-formed and in-range before the coordinator processes it.",
+    description: "Each order proves it is well-formed and in-range before private batch execution.",
     image: "/images/isolated.jpg",
   },
   {
     icon: Lock,
-    title: `Encrypted ${NETWORK.id} batching`,
-    description: NETWORK.id === "testnet"
-      ? "Sides and quantities stay encrypted on-chain. The current single-VM coordinator can recover individual order values."
-      : "Sides and quantities stay encrypted on-chain. No individual threshold coordinator member can decrypt an order alone.",
+    title: "Encrypted batch execution",
+    description: "Sides and quantities stay encrypted on-chain while verified batch totals update the market.",
     image: "/images/encrypted.jpg",
   },
   {
@@ -27,13 +25,13 @@ const securityFeatures = [
   },
   {
     icon: FileCheck,
-    title: "Self-run trusted-setup ceremony tooling",
-    description: "Anyone can rerun the trusted-setup ceremony to check the proving key.",
+    title: "Reproducible proving artifacts",
+    description: "Published manifests bind every supported circuit to its verification and proving artifacts.",
     image: "/images/permissions.jpg",
   },
 ];
 
-const certifications = ["BN254", "Groth16", "circom", NETWORK.name];
+const certifications = ["BN254", "Groth16", "Circom", NETWORK.name];
 
 export function SecuritySection() {
   const [isVisible, setIsVisible] = useState(false);
@@ -77,9 +75,9 @@ export function SecuritySection() {
           <h2 className={`text-6xl md:text-7xl lg:text-[128px] font-display tracking-tight leading-[0.9] mb-12 transition-all duration-1000 ${
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}>
-            Verified,
+            Verified
             <br />
-            <span className="text-muted-foreground">not assumed.</span>
+            <span className="text-muted-foreground">on-chain.</span>
           </h2>
 
           {/* Description - below title */}
@@ -87,9 +85,8 @@ export function SecuritySection() {
             isVisible ? "opacity-100" : "opacity-0"
           }`}>
             <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl">
-              Proof validity, nullifiers, accounting, and payouts are enforced on-chain. {NETWORK.id === "testnet"
-                ? "The current coordinator runs on one VM and is not threshold privacy."
-                : "The mainnet profile requires a threshold coordinator."} Unaudited {NETWORK.id} release.
+              Proof validity, nullifiers, private-note accounting, and payout
+              authorization are enforced by contracts on {NETWORK.name}.
             </p>
           </div>
         </div>

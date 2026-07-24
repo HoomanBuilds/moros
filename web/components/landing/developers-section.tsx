@@ -6,7 +6,7 @@ import { BRAND } from "@/lib/brand";
 const features = [
   {
     title: "Circom circuits",
-    description: "Groth16 circuits proving deposit validity and private redemption."
+    description: "Groth16 circuits proving private note transitions, orders, claims, refunds, and liquidity actions."
   },
   {
     title: "Soroban contracts",
@@ -80,14 +80,14 @@ export function DevelopersSection() {
 
         {/* Description + Features - left half only */}
         <div
-          className={`max-w-[50%] transition-all duration-700 delay-100 ${
+          className={`max-w-full lg:max-w-[50%] transition-all duration-700 delay-100 ${
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
         >
           <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-md">
-            Open circuits and contracts. Inspect the circom sources, Soroban contracts, and private runtime.
+            Open circuits and contracts. Inspect the Circom sources, Soroban contracts, deployment manifests, and proving artifacts.
           </p>
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {features.map((feature, index) => (
               <div
                 key={feature.title}

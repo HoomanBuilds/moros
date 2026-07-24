@@ -103,12 +103,13 @@ export function FooterSection() {
               </a>
 
               <p className="text-white/50 leading-relaxed mb-8 max-w-xs text-sm">
-                Private prediction markets on Stellar. Positions stay shielded from deposit to redemption.
+                Private prediction markets with encrypted positions, pooled
+                liquidity, and proof-bound Circle USDC settlement on Stellar.
               </p>
 
               <span className="inline-flex items-center gap-2 text-sm text-white/40">
                 <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
-                {NETWORK.name} - unaudited
+                Live on {NETWORK.name}
               </span>
             </div>
 
@@ -142,7 +143,7 @@ export function FooterSection() {
           <div className="flex items-center gap-4 text-sm text-white/30">
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
-              Batcher operational
+              Circle USDC collateral
             </span>
           </div>
         </div>

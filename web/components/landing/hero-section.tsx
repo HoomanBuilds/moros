@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { NETWORK } from "@/lib/network";
 
 const words = ["side", "position", "edge"];
@@ -165,7 +167,7 @@ export function HeroSection() {
         ))}
       </div>
       
-      <div className="relative z-10 w-full max-w-[1400px] mx-auto px-6 lg:px-12 py-32 lg:py-40">
+      <div className="relative z-10 w-full max-w-[1400px] mx-auto px-6 lg:px-12 pt-28 pb-48 lg:py-40">
         <div className="lg:max-w-[55%]">
         {/* Eyebrow */}
         <div 
@@ -175,7 +177,7 @@ export function HeroSection() {
         >
           <span className="inline-flex items-center gap-3 text-sm font-mono text-white/60">
             <span className="w-8 h-px bg-white/30" />
-            Zero-knowledge prediction markets on Stellar
+            Live on {NETWORK.name}
           </span>
         </div>
 
@@ -199,8 +201,31 @@ export function HeroSection() {
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            Bet on binary outcomes with zero-knowledge proofs. Your side and quantity stay encrypted on-chain while one atomic batch sets the public odds.
+            Create or trade binary price markets with Circle USDC. Your side
+            and quantity stay encrypted on-chain while adaptive batches update
+            public odds on Stellar.
           </p>
+          <div
+            className={`mt-8 flex flex-col sm:flex-row items-start gap-3 transition-all duration-1000 delay-300 ${
+              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+            }`}
+          >
+            <Button
+              asChild
+              size="lg"
+              className="rounded-full bg-white px-7 text-black hover:bg-white/90"
+            >
+              <Link href="/app">Explore markets</Link>
+            </Button>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="rounded-full border-white/30 bg-black/20 px-7 text-white backdrop-blur-sm hover:bg-white/10 hover:text-white"
+            >
+              <Link href="/app/create">Create a market</Link>
+            </Button>
+          </div>
         </div>
         </div>
       </div>
@@ -212,9 +237,12 @@ export function HeroSection() {
       >
         <div className="max-w-[1400px] mx-auto flex flex-wrap items-start gap-x-10 gap-y-6 lg:gap-20">
           {[
-            { value: "Live", label: `on ${NETWORK.name}` },
-            { value: "8 orders", label: "one atomic batch" },
-            { value: "LMSR", label: "on-chain odds" },
+            { value: "USDC", label: "Circle collateral" },
+            { value: "Up to 8", label: "orders per batch" },
+            {
+              value: NETWORK.id === "mainnet" ? "40" : "Live",
+              label: `${NETWORK.id} price routes`,
+            },
           ].map((stat) => (
             <div key={stat.label} className="flex flex-col gap-2">
               <span className="text-3xl lg:text-4xl font-display text-white">{stat.value}</span>
