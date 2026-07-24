@@ -61,7 +61,7 @@ const SOURCE_COMMIT = process.env.MOROS_SOURCE_COMMIT || "";
 const DEPLOYMENT_NAME =
   process.env.MOROS_DEPLOYMENT_NAME || "Moros Testnet";
 const SALT_NAMESPACE =
-  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet-canonical";
+  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet-launch";
 const COLLATERAL =
   process.env.COLLATERAL_ID ||
   "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
@@ -91,6 +91,10 @@ const ROUNDING_RESERVE = BigInt(
   process.env.MOROS_ROUNDING_RESERVE || "10000000",
 );
 const Q32 = 1n << 32n;
+const MAX_DEPLOYED_BPS = 8_000;
+const MAX_MARKET_BPS = 8_000;
+const MAX_GROUP_BPS = 8_000;
+const MINIMUM_IDLE_BPS = 2_000;
 const RETRYABLE_TRANSACTION =
   /pending|timed out|timeout|tx_bad_seq|try again|rate limit/i;
 
@@ -567,10 +571,10 @@ async function main() {
       policy: {
         deposit_cap: 1_000_000_000_000n,
         max_active_allocations: 8,
-        max_deployed_bps: 8_000,
-        max_market_bps: 2_500,
-        max_group_bps: 5_000,
-        minimum_idle_bps: 2_000,
+        max_deployed_bps: MAX_DEPLOYED_BPS,
+        max_market_bps: MAX_MARKET_BPS,
+        max_group_bps: MAX_GROUP_BPS,
+        minimum_idle_bps: MINIMUM_IDLE_BPS,
         withdrawal_window: 3_600n,
         max_withdrawal_bps: 1_000,
       },
@@ -729,10 +733,10 @@ async function main() {
     liquidityPolicy: {
       depositCap: 1_000_000_000_000n,
       maxActiveAllocations: 8,
-      maxDeployedBps: 8_000,
-      maxMarketBps: 2_500,
-      maxGroupBps: 5_000,
-      minimumIdleBps: 2_000,
+      maxDeployedBps: MAX_DEPLOYED_BPS,
+      maxMarketBps: MAX_MARKET_BPS,
+      maxGroupBps: MAX_GROUP_BPS,
+      minimumIdleBps: MINIMUM_IDLE_BPS,
       withdrawalWindow: 3_600,
       maxWithdrawalBps: 1_000,
     },

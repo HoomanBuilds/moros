@@ -151,14 +151,14 @@ Initial testnet policy:
 
 - At most 8 active allocations.
 - At most 80 percent of deposit NAV deployed.
-- At most 25 percent of deposit NAV in one market.
-- At most 50 percent of deposit NAV in one risk group.
+- At most 80 percent of deposit NAV in one market during the early testnet bootstrap.
+- At most 80 percent of deposit NAV in one risk group during the early testnet bootstrap.
 - At least 20 percent of withdrawal NAV idle after an allocation.
 - Crypto assets share one correlated risk group.
 - FX assets share one correlated risk group.
 - Gold uses the commodities risk group.
 
-These are test parameters. Mainnet parameters require measured testnet loss and utilization data.
+These are test parameters. The bootstrap caps let a 25 USDC pool fund the minimum 20 USDC market while retaining 5 USDC idle. Mainnet requires lower concentration limits based on measured testnet loss, utilization, and correlated-market exposure.
 
 ## Market allocation lifecycle
 

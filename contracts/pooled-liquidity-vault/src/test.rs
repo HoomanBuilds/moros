@@ -45,11 +45,23 @@ fn policy() -> RiskPolicy {
     }
 }
 
+fn bootstrap_policy() -> RiskPolicy {
+    RiskPolicy {
+        max_market_bps: 8_000,
+        max_group_bps: 8_000,
+        ..policy()
+    }
+}
+
 fn set_time(env: &Env, timestamp: u64) {
     env.ledger().with_mut(|ledger| ledger.timestamp = timestamp);
 }
 
 fn setup() -> Setup {
+    setup_with_policy(policy())
+}
+
+fn setup_with_policy(risk_policy: RiskPolicy) -> Setup {
     let env = Env::default();
     env.mock_all_auths();
     set_time(&env, 1_000);
@@ -68,7 +80,7 @@ fn setup() -> Setup {
             factory.clone(),
             shared.clone(),
             governance,
-            policy(),
+            risk_policy,
         ),
     );
     Setup {
@@ -148,6 +160,21 @@ fn register_with_target(
         &target,
         &2_000,
     )
+}
+
+#[test]
+fn bootstrap_pool_funds_the_minimum_market_and_keeps_twenty_percent_idle() {
+    let setup = setup_with_policy(bootstrap_policy());
+    let pool = setup.pool();
+    deposit(&setup, 250_000_000, 1);
+    let proposal = id(&setup.env, 11);
+    let cell = cell_with_target(&setup, proposal.clone(), 200_000_000, 2_000, 2_500);
+    register_with_target(&setup, &cell, proposal, 200_000_000);
+
+    let allocation = pool.allocate_next().unwrap();
+    assert_eq!(allocation.principal, 200_000_000);
+    assert_eq!(pool.info().idle_assets, 50_000_000);
+    assert_eq!(cell.info().phase, Phase::Ready);
 }
 
 #[test]
