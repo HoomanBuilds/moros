@@ -1,7 +1,7 @@
 {
   "network": "testnet",
   "name": "Moros Testnet",
-  "sourceCommit": "54739dc8fed3e3a7e72f58ad15a4af4c6d52fb18",
+  "sourceCommit": "6a069ab7183f594a19e9ee3214fe9a48c40acb75",
   "deployedBy": "GB2POTXP2R63ETOQSP32OOEWSTTATLY7TBSFMISNPSTHQ6PZXETNQ3RH",
   "collateral": {
     "code": "USDC",
@@ -9,11 +9,11 @@
     "decimals": 7
   },
   "contracts": {
-    "verifier": "CACXQO4SK7ZAYQ27J6NTKRYDGLGUNIKRBR54B63M5OTACPT6CDI2X4WC",
-    "resolver": "CDANKDPTGVHPVLYK4CNY6JEI5VJSCIVUUDMTTNDV2PE2LGF5BGHTUMY2",
-    "sharedVault": "CA5FAI7KULQARXADW6RT6T32FS4NAOOIEPQGPHRVYUHU3ORUER3UI3HL",
-    "liquidityPool": "CA344CRFOAQPEU76U2FB2QEDH4VJR5IPGUJIEVHNUQ3WKQMWYY3PSGT2",
-    "factory": "CBDXRUK7Q6HSJPHVA4LYT3HHMLRCYZGT5J2TKF5RUFIM73VJUPAET43K"
+    "verifier": "CBF7KDQ6ARPMVCF2YMVFDBLPBDYNPV3U2DEYTJT63MA2MVXMZ3R2BS7Q",
+    "resolver": "CDNNXJHGG4KYTG4EXKPJ5WGJJ4LHV4JPXEDQYK7NLL3VEI66O4NVK6ZU",
+    "sharedVault": "CCW32HGZRBJ3SP2C6GCY5D2AGXUGQEOFTPDEMDJURBDCFS352C2SP5XZ",
+    "liquidityPool": "CA43THSU2WTHRVYFXPYC7K5U6CP34ND57PIGA5DVDNLQZRXK3427IJB5",
+    "factory": "CBUZTKKWJCM2YMU3LNJKO54VNFP2G4UP3UIIM7SKUDSNI6Q5L7TTW7DZ"
   },
   "wasm": {
     "verifier": "a02de4d0ab0dadb834bf7569b4c35323bcb9ac7def1497e2b57ef7b97c2e0d56",
@@ -179,9 +179,9 @@
     "maximumBatchSize": 8,
     "minimumSideCount": 0,
     "maximumPriceMovement": "1073741824",
-    "batchGrace": 300,
+    "batchGrace": 600,
     "epochDuration": 60,
-    "refundDelay": 120,
+    "refundDelay": 600,
     "minimumFundingWindow": 240,
     "minimumOpenWindow": 600,
     "maximumMarketDuration": 7776000
