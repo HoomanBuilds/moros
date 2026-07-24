@@ -18,7 +18,8 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
-import { startRpcFailover } from "./rpc-failover.mjs";
+import { configureRpcFailover } from "./rpc-failover.mjs";
+import { configuredSecret } from "./key-config.mjs";
 
 const CONTRACT_ID = /^C[A-Z2-7]{55}$/u;
 const SYMBOL = /^[A-Z0-9_]{1,32}$/u;
@@ -58,7 +59,7 @@ function signingOptions(source, network) {
 
 async function main() {
   const selectedNetwork = networkConfig();
-  const rpcUrl = await startRpcFailover(selectedNetwork);
+  const rpcUrl = configureRpcFailover(selectedNetwork);
   const network = { ...selectedNetwork, rpcUrl };
   const repo = fileURLToPath(new URL("..", import.meta.url));
   const deployment = assertDeploymentNetwork(
@@ -78,8 +79,13 @@ async function main() {
   }
   const server = new rpc.Server(network.rpcUrl);
   await assertRpcNetwork(server, network);
-  const source = network.funderSecret
-    ? Keypair.fromSecret(network.funderSecret)
+  const funderSecret = configuredSecret({
+    secret: network.funderSecret,
+    identity: network.funderIdentity,
+    label: `${network.id} governance signer`,
+  });
+  const source = funderSecret
+    ? Keypair.fromSecret(funderSecret)
     : undefined;
   if (action !== "status" && !source) {
     throw new Error(`${network.id} governance signer is required`);

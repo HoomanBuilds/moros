@@ -23,9 +23,12 @@ const mainnet = networkConfig({
   MOROS_MAINNET_DEPLOYMENT: "deployments/custom-mainnet.json",
   MOROS_MAINNET_ZK_PUBLIC_DIR: "circuits/custom-mainnet/public",
   MOROS_MAINNET_DEPLOYER_SK: "mainnet-deployer",
+  MOROS_MAINNET_DEPLOYER_IDENTITY: "mainnet-deployer-identity",
   MOROS_MAINNET_FUNDER_SK: "mainnet-funder",
+  MOROS_MAINNET_FUNDER_IDENTITY: "mainnet-funder-identity",
   MOROS_MAINNET_ROUNDING_FUNDER_SK: "mainnet-rounding",
   MOROS_MAINNET_PRIVACY_SK: "mainnet-privacy",
+  MOROS_MAINNET_PRIVACY_IDENTITY: "mainnet-privacy-identity",
   RPC_URL: "https://legacy.example",
   DEPLOYER_SK: "legacy-deployer",
   FUNDER_SK: "legacy-funder",
@@ -42,9 +45,12 @@ assert.equal(mainnet.horizonUrl, "https://horizon.example");
 assert.equal(mainnet.deploymentPath, "deployments/custom-mainnet.json");
 assert.equal(mainnet.artifactPath, "circuits/custom-mainnet/public");
 assert.equal(mainnet.deployerSecret, "mainnet-deployer");
+assert.equal(mainnet.deployerIdentity, "mainnet-deployer-identity");
 assert.equal(mainnet.funderSecret, "mainnet-funder");
+assert.equal(mainnet.funderIdentity, "mainnet-funder-identity");
 assert.equal(mainnet.roundingFunderSecret, "mainnet-rounding");
 assert.equal(mainnet.privacySecret, "mainnet-privacy");
+assert.equal(mainnet.privacyIdentity, "mainnet-privacy-identity");
 assert.equal(mainnet.mainnetReady, true);
 assert.equal(
   networkConfig({

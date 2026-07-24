@@ -1,80 +1,58 @@
-import http from "node:http";
+const INSTALLED = Symbol.for("moros.rpcFailover");
 
-const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
-
-async function requestBody(request) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of request) {
-    size += chunk.length;
-    if (size > MAX_REQUEST_BYTES) {
-      throw new Error("RPC request is too large");
-    }
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
+function normalized(value) {
+  return String(value).replace(/\/+$/u, "");
 }
 
-export async function startRpcFailover(network) {
+function requestUrl(input) {
+  return normalized(
+    typeof input === "string" || input instanceof URL
+      ? input
+      : input.url,
+  );
+}
+
+function requestFor(url, input) {
+  if (typeof input === "string" || input instanceof URL) return url;
+  return new Request(url, input.clone());
+}
+
+export async function rpcFetch(
+  urls,
+  input,
+  init,
+  fetchImpl = globalThis.fetch,
+) {
+  const candidates = [...new Set(urls)];
+  const target = requestUrl(input);
+  if (!candidates.some((url) => normalized(url) === target)) {
+    return fetchImpl(input, init);
+  }
+  let lastResponse;
+  let lastError;
+  for (const url of candidates) {
+    try {
+      const response = await fetchImpl(requestFor(url, input), init);
+      if (response.status !== 429 && response.status < 500) {
+        return response;
+      }
+      lastResponse = response;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastResponse) return lastResponse;
+  throw lastError || new Error("RPC endpoints are unavailable");
+}
+
+export function configureRpcFailover(network) {
   const urls = [...new Set(network.rpcUrls || [network.rpcUrl])];
   if (urls.length < 2) return urls[0];
-  const timeoutMs = Number(
-    process.env.MOROS_RPC_FAILOVER_TIMEOUT_MS || "5000",
-  );
-  const server = http.createServer(async (request, response) => {
-    if (request.method !== "POST") {
-      response.writeHead(405).end();
-      return;
-    }
-    let body;
-    try {
-      body = await requestBody(request);
-    } catch {
-      response.writeHead(413).end();
-      return;
-    }
-    for (const url of urls) {
-      try {
-        const upstream = await fetch(url, {
-          method: "POST",
-          headers: {
-            accept: "application/json",
-            "content-type": "application/json",
-          },
-          body,
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-        if (upstream.status === 429 || upstream.status >= 500) {
-          continue;
-        }
-        const result = Buffer.from(await upstream.arrayBuffer());
-        response.writeHead(upstream.status, {
-          "content-type":
-            upstream.headers.get("content-type") || "application/json",
-        });
-        response.end(result);
-        return;
-      } catch {}
-    }
-    response.writeHead(503, {
-      "content-type": "application/json",
-    });
-    response.end(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        id: null,
-        error: {
-          code: -32000,
-          message: `${network.id} RPC endpoints are unavailable`,
-        },
-      }),
-    );
-  });
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  server.unref();
-  const address = server.address();
-  return `http://127.0.0.1:${address.port}`;
+  if (!globalThis[INSTALLED]) {
+    const originalFetch = globalThis.fetch.bind(globalThis);
+    globalThis.fetch = (input, init) =>
+      rpcFetch(urls, input, init, originalFetch);
+    globalThis[INSTALLED] = true;
+  }
+  return urls[0];
 }

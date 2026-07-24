@@ -16,11 +16,11 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
-import { startRpcFailover } from "./rpc-failover.mjs";
+import { configureRpcFailover } from "./rpc-failover.mjs";
 
 const network = networkConfig();
 const reflector = reflectorConfig(network.id);
-const rpcUrl = await startRpcFailover(network);
+const rpcUrl = configureRpcFailover(network);
 const passphrase = network.passphrase;
 const server = new rpc.Server(rpcUrl);
 const source = new Account(Keypair.random().publicKey(), "0");

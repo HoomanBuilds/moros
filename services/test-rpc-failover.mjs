@@ -1,47 +1,37 @@
 import assert from "node:assert/strict";
-import http from "node:http";
-import { startRpcFailover } from "./rpc-failover.mjs";
+import { rpcFetch } from "./rpc-failover.mjs";
 
-async function listen(handler) {
-  const server = http.createServer(handler);
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  return {
-    server,
-    url: `http://127.0.0.1:${address.port}`,
-  };
-}
-
-const primary = await listen((_request, response) => {
-  response.writeHead(503).end();
-});
-let fallbackRequests = 0;
-const fallback = await listen(async (request, response) => {
-  for await (const _chunk of request) {}
-  fallbackRequests += 1;
-  response.writeHead(200, { "content-type": "application/json" });
-  response.end(JSON.stringify({ jsonrpc: "2.0", id: 1, result: 42 }));
-});
-const proxy = await startRpcFailover({
-  id: "mainnet",
-  rpcUrls: [primary.url, fallback.url],
-});
-const result = await fetch(proxy, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "test" }),
-});
-assert.equal(result.status, 200);
-assert.equal((await result.json()).result, 42);
-assert.equal(fallbackRequests, 1);
-assert.equal(
-  await startRpcFailover({
-    id: "testnet",
-    rpcUrls: ["https://single.example"],
-  }),
-  "https://single.example",
+const calls = [];
+const response = await rpcFetch(
+  ["https://primary.example", "https://fallback.example"],
+  "https://primary.example",
+  { method: "POST", body: "{}" },
+  async (url) => {
+    calls.push(String(url));
+    return new Response(
+      JSON.stringify({ result: calls.length }),
+      {
+        status: calls.length === 1 ? 503 : 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  },
 );
-primary.server.close();
-fallback.server.close();
+assert.equal(response.status, 200);
+assert.deepEqual(calls, [
+  "https://primary.example",
+  "https://fallback.example",
+]);
+assert.equal(
+  (
+    await rpcFetch(
+      ["https://primary.example", "https://fallback.example"],
+      "https://other.example",
+      undefined,
+      async (url) => new Response(String(url)),
+    )
+  ).status,
+  200,
+);
 
 console.log("RPC failover ok");

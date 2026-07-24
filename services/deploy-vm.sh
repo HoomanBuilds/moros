@@ -26,6 +26,7 @@ RUNTIME_FILES=(
   "services/current-market-targets.mjs"
   "services/deploy-vm.sh"
   "services/deployment-utils.mjs"
+  "services/key-config.mjs"
   "services/market-registry.mjs"
   "services/manage-resolver-route.mjs"
   "services/network-config.mjs"

@@ -22,10 +22,11 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
-import { startRpcFailover } from "./rpc-failover.mjs";
+import { configureRpcFailover } from "./rpc-failover.mjs";
 import { reflectorConfig } from "./oracle-config.mjs";
 import { PrivateArtifactStore } from "./private-artifacts.mjs";
 import { RELEASE_WASM_FILES } from "./fetch-release-wasm.mjs";
+import { configuredSecret } from "./key-config.mjs";
 
 export const MAINNET_USDC_ISSUER =
   "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
@@ -73,11 +74,20 @@ export async function runMainnetPreflight() {
     NETWORK: "mainnet",
     NETWORK_PASSPHRASE: Networks.PUBLIC,
   });
-  const deployerSecret = network.deployerSecret;
+  const deployerSecret = configuredSecret({
+    secret: network.deployerSecret,
+    identity: network.deployerIdentity,
+    label: "mainnet deployer",
+  });
   if (!deployerSecret) {
     throw new Error("MOROS_MAINNET_DEPLOYER_SK is required");
   }
-  if (!network.privacySecret) {
+  const privacySecret = configuredSecret({
+    secret: network.privacySecret,
+    identity: network.privacyIdentity,
+    label: "mainnet privacy identity",
+  });
+  if (!privacySecret) {
     throw new Error("MOROS_MAINNET_PRIVACY_SK is required");
   }
   const sourceCommit =
@@ -110,7 +120,7 @@ export async function runMainnetPreflight() {
     "mainnet Circle USDC SAC mismatch",
   );
 
-  const rpcUrl = await startRpcFailover(network);
+  const rpcUrl = configureRpcFailover(network);
   const server = new rpc.Server(rpcUrl);
   const networkInfo = await assertRpcNetwork(server, network);
   if (Number(networkInfo.protocolVersion || 0) < 26) {

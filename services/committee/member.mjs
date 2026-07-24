@@ -13,7 +13,7 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "../network-config.mjs";
-import { startRpcFailover } from "../rpc-failover.mjs";
+import { configureRpcFailover } from "../rpc-failover.mjs";
 
 const network = networkConfig();
 const PORT = Number(process.env.PORT || 9711);
@@ -29,7 +29,7 @@ const S = 1n << 32n;
 const kp = process.env.MEMBER_SK ? Keypair.fromSecret(process.env.MEMBER_SK) : null;
 const SHARE_FILE = process.env.SHARE_FILE || "";
 const TARGETS_FILE = process.env.TARGETS_FILE || (SHARE_FILE ? `${SHARE_FILE}.targets.json` : "");
-const RPC_URL = await startRpcFailover(network);
+const RPC_URL = configureRpcFailover(network);
 const NETWORK_PASSPHRASE = network.passphrase;
 const POOL_WASM_HASH = (process.env.POOL_WASM_HASH || "").toLowerCase();
 const CID = /^[A-Z0-9]{56}$/;

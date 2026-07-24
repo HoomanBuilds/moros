@@ -42,12 +42,13 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
-import { startRpcFailover } from "./rpc-failover.mjs";
+import { configureRpcFailover } from "./rpc-failover.mjs";
+import { configuredSecret } from "./key-config.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const network = networkConfig();
 const PORT = Number(process.env.PRIVATE_PORT || process.env.PORT || 8787);
-const RPC_URL = await startRpcFailover(network);
+const RPC_URL = configureRpcFailover(network);
 const NETWORK_PASSPHRASE = network.passphrase;
 const DEPLOYMENT_PATH = resolve(
   cfg.repo,
@@ -64,6 +65,16 @@ const RUNTIME_ROOT = resolve(
 );
 const TICK_MS = Number(process.env.PRIVATE_TICK_MS || 10_000);
 const MAX_BODY = 256 * 1024;
+const FUNDER_SECRET = configuredSecret({
+  secret: network.funderSecret,
+  identity: network.funderIdentity,
+  label: `${network.id} funder`,
+});
+const PRIVACY_SECRET = configuredSecret({
+  secret: network.privacySecret,
+  identity: network.privacyIdentity,
+  label: `${network.id} privacy identity`,
+});
 const ALLOWED_ORIGINS = new Set(
   (
     process.env.PUBLIC_ORIGINS ||
@@ -169,7 +180,7 @@ async function main() {
     root: ARTIFACT_ROOT,
     deployment,
   });
-  const source = runtimeSource(network.funderSecret);
+  const source = runtimeSource(FUNDER_SECRET);
   const server = new rpc.Server(RPC_URL);
   await assertRpcNetwork(server, network);
   const vaultId = deployment.contracts.sharedVault;
@@ -198,7 +209,7 @@ async function main() {
   });
   const factoryInfo = invocationResultValue(await factory.config());
   const identity = networkPrivacyIdentity(
-    network.privacySecret || network.funderSecret,
+    PRIVACY_SECRET || FUNDER_SECRET,
     network.id,
   );
   if (

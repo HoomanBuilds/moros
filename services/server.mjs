@@ -15,7 +15,8 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
-import { startRpcFailover } from "./rpc-failover.mjs";
+import { configureRpcFailover } from "./rpc-failover.mjs";
+import { configuredSecret } from "./key-config.mjs";
 
 const network = networkConfig();
 const PORT = Number(process.env.PORT || 8787);
@@ -29,9 +30,13 @@ const MEMBERS = (process.env.MEMBERS || "").split(",").filter(Boolean);
 const THRESHOLD = Number(process.env.THRESHOLD || 2);
 const MARKET = process.env.MARKET || "";
 const DRY = process.env.DRY_RUN === "1";
-const RPC_URL = await startRpcFailover(network);
+const RPC_URL = configureRpcFailover(network);
 const NETWORK_PASSPHRASE = network.passphrase;
-const FUNDER_SK = network.funderSecret;
+const FUNDER_SK = configuredSecret({
+  secret: network.funderSecret,
+  identity: network.funderIdentity,
+  label: `${network.id} funder`,
+});
 const READER_ADDRESS = process.env.READER_ADDRESS || (FUNDER_SK ? Keypair.fromSecret(FUNDER_SK).publicKey() : "");
 const statePath = (value, fallback) => value ? resolve(cfg.repo, value) : resolve(cfg.repo, "services", fallback);
 const POOLS_FILE = statePath(process.env.POOLS_FILE, "pools.json");

@@ -33,10 +33,11 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
-import { startRpcFailover } from "./rpc-failover.mjs";
+import { configureRpcFailover } from "./rpc-failover.mjs";
+import { configuredSecret } from "./key-config.mjs";
 
 const network = networkConfig();
-const RPC = await startRpcFailover(network);
+const RPC = configureRpcFailover(network);
 const PASSPHRASE = network.passphrase;
 const ORACLE_MODE = process.env.ORACLE_MODE || "free";
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -53,7 +54,11 @@ const PRIVATE_DEPLOYMENT = existsSync(PRIVATE_DEPLOYMENT_PATH)
 const FREE_RESOLVER = selectFreeResolver(PRIVATE_DEPLOYMENT);
 const PYTH_PRO_RESOLVER = process.env.PYTH_PRO_RESOLVER_ID || "";
 const RESOLVER = ORACLE_MODE === "pyth_pro" ? PYTH_PRO_RESOLVER : FREE_RESOLVER;
-const FUNDER_SK = network.funderSecret;
+const FUNDER_SK = configuredSecret({
+  secret: network.funderSecret,
+  identity: network.funderIdentity,
+  label: `${network.id} funder`,
+});
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://khufxpfbigxpuvsvlhtn.supabase.co";
 const SUPABASE_ANON = process.env.SUPABASE_ANON_KEY || "";
 const COLLATERAL_ID = PRIVATE_DEPLOYMENT?.collateral?.contract;

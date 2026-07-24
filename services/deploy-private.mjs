@@ -46,7 +46,8 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
-import { startRpcFailover } from "./rpc-failover.mjs";
+import { configureRpcFailover } from "./rpc-failover.mjs";
+import { configuredSecret } from "./key-config.mjs";
 
 const network = networkConfig();
 const reflector = reflectorConfig(network.id);
@@ -58,12 +59,25 @@ const legacy = (suffix) =>
 let RPC_URL = network.rpcUrl;
 const PASSPHRASE = network.passphrase;
 const SECRET =
-  network.deployerSecret || network.funderSecret;
+  configuredSecret({
+    secret: network.deployerSecret || network.funderSecret,
+    identity: network.deployerIdentity,
+    label: `${network.id} deployer`,
+  });
 const PRIVACY_SECRET =
-  network.privacySecret ||
-  (network.id === "testnet" ? network.funderSecret || SECRET : "");
+  configuredSecret({
+    secret:
+      network.privacySecret ||
+      (network.id === "testnet" ? network.funderSecret || SECRET : ""),
+    identity: network.privacyIdentity,
+    label: `${network.id} privacy identity`,
+  });
 const ROUNDING_SECRET =
-  network.roundingFunderSecret || SECRET;
+  configuredSecret({
+    secret: network.roundingFunderSecret,
+    identity: network.roundingFunderIdentity,
+    label: `${network.id} rounding funder`,
+  }) || SECRET;
 const SOURCE_COMMIT =
   scoped("SOURCE_COMMIT") || process.env.MOROS_SOURCE_COMMIT || "";
 const DEPLOYMENT_NAME =
@@ -479,7 +493,7 @@ async function main() {
   const source = Keypair.fromSecret(SECRET);
   const roundingSource = Keypair.fromSecret(ROUNDING_SECRET);
   const sourceAddress = source.publicKey();
-  RPC_URL = await startRpcFailover(network);
+  RPC_URL = configureRpcFailover(network);
   const server = new rpc.Server(RPC_URL);
   await assertRpcNetwork(server, network);
   const artifacts = wasmArtifacts();

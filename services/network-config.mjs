@@ -69,18 +69,22 @@ export function networkConfig(env = process.env) {
       scoped(env, id, "DEPLOYER_SK") ||
       (allowLegacy ? env.DEPLOYER_SK : "") ||
       "",
+    deployerIdentity: scoped(env, id, "DEPLOYER_IDENTITY"),
     funderSecret:
       scoped(env, id, "FUNDER_SK") ||
       (allowLegacy ? env.FUNDER_SK : "") ||
       "",
+    funderIdentity: scoped(env, id, "FUNDER_IDENTITY"),
     roundingFunderSecret:
       scoped(env, id, "ROUNDING_FUNDER_SK") ||
       (allowLegacy ? env.ROUNDING_FUNDER_SK : "") ||
       "",
+    roundingFunderIdentity: scoped(env, id, "ROUNDING_FUNDER_IDENTITY"),
     privacySecret:
       scoped(env, id, "PRIVACY_SK") ||
       (allowLegacy ? env.MOROS_PRIVACY_SK : "") ||
       "",
+    privacyIdentity: scoped(env, id, "PRIVACY_IDENTITY"),
   };
 }
 
