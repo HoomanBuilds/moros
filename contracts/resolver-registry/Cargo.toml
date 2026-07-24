@@ -1,5 +1,5 @@
 [package]
-name = "market-factory"
+name = "resolver-registry"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -9,9 +9,7 @@ crate-type = ["cdylib", "rlib"]
 doctest = false
 
 [dependencies]
-privacy-types = { path = "../privacy-types" }
 soroban-sdk = { workspace = true }
 
 [dev-dependencies]
-resolver-registry = { path = "../resolver-registry" }
 soroban-sdk = { workspace = true, features = ["testutils"] }

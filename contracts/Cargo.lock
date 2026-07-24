@@ -1042,6 +1042,7 @@ name = "market-factory"
 version = "0.1.0"
 dependencies = [
  "privacy-types",
+ "resolver-registry",
  "soroban-sdk",
 ]
 
@@ -1288,6 +1289,13 @@ version = "0.1.0"
 dependencies = [
  "lmsr-market",
  "pyth-lazer-stellar-sdk",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "resolver-registry"
+version = "0.1.0"
+dependencies = [
  "soroban-sdk",
 ]
 

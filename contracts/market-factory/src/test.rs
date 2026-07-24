@@ -1,11 +1,9 @@
 extern crate std;
 
-use crate::{
-    AssetRiskGroup, FactoryConfig, MarketFactory, MarketFactoryClient, ProposalPhase,
-    ProposalRequest,
-};
+use crate::{FactoryConfig, MarketFactory, MarketFactoryClient, ProposalPhase, ProposalRequest};
+use resolver_registry::{InitialRoute, ResolverRegistry, ResolverRegistryClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol, Vec, U256};
+use soroban_sdk::{symbol_short, Address, BytesN, Env, Vec, U256};
 
 fn id(env: &Env, byte: u8) -> BytesN<32> {
     BytesN::from_array(env, &[byte; 32])
@@ -38,43 +36,41 @@ fn babyjub_base(env: &Env) -> (U256, U256) {
     )
 }
 
-fn symbols(env: &Env) -> Vec<Symbol> {
-    Vec::from_array(env, [symbol_short!("BTC"), symbol_short!("XLM")])
-}
-
 fn tiers(env: &Env) -> Vec<i128> {
     Vec::from_array(env, [100_000_000, 500_000_000])
 }
 
-fn risk_groups(env: &Env) -> Vec<AssetRiskGroup> {
+fn routes(env: &Env, resolver: &Address) -> Vec<InitialRoute> {
     Vec::from_array(
         env,
         [
-            AssetRiskGroup {
+            InitialRoute {
                 asset: symbol_short!("BTC"),
+                resolver: resolver.clone(),
                 risk_group: symbol_short!("CRYPTO"),
+                registration_required: false,
             },
-            AssetRiskGroup {
+            InitialRoute {
                 asset: symbol_short!("XLM"),
+                resolver: resolver.clone(),
                 risk_group: symbol_short!("CRYPTO"),
+                registration_required: false,
             },
         ],
     )
 }
 
-fn config(env: &Env, collateral: Address) -> FactoryConfig {
+fn config(env: &Env, collateral: Address, resolver_registry: Address) -> FactoryConfig {
     let (committee_public_key_x, committee_public_key_y) = babyjub_base(env);
     FactoryConfig {
         governance: Address::generate(env),
         collateral,
         shared_vault: Address::generate(env),
         liquidity_pool: Address::generate(env),
-        resolver: Address::generate(env),
+        resolver_registry,
         network_domain: id(env, 1),
         market_wasm_hash: id(env, 2),
         liquidity_wasm_hash: id(env, 3),
-        allowed_assets: symbols(env),
-        asset_risk_groups: risk_groups(env),
         liquidity_tiers: tiers(env),
         minimum_funding_window: 300,
         minimum_open_window: 600,
@@ -111,7 +107,7 @@ fn request(env: &Env, creator: Address) -> ProposalRequest {
     }
 }
 
-fn setup() -> (Env, MarketFactoryClient<'static>, Address) {
+fn setup() -> (Env, MarketFactoryClient<'static>, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().with_mut(|ledger| ledger.timestamp = 1_000);
@@ -119,23 +115,33 @@ fn setup() -> (Env, MarketFactoryClient<'static>, Address) {
     let collateral = env
         .register_stellar_asset_contract_v2(token_admin)
         .address();
-    let address = env.register(MarketFactory, (config(&env, collateral),));
+    let governance = Address::generate(&env);
+    let resolver = Address::generate(&env);
+    let registry = env.register(
+        ResolverRegistry,
+        (governance, 300u64, routes(&env, &resolver)),
+    );
+    let address = env.register(MarketFactory, (config(&env, collateral, registry),));
     let env_static: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env.clone()));
     let address_static: &'static Address = std::boxed::Box::leak(std::boxed::Box::new(address));
     (
         env,
         MarketFactoryClient::new(env_static, address_static),
         Address::generate(env_static),
+        resolver,
     )
 }
 
 #[test]
 fn creator_proposes_without_usdc_or_a_collateral_transfer() {
-    let (env, client, creator) = setup();
+    let (env, client, creator, resolver) = setup();
     let proposal_id = client.propose(&request(&env, creator.clone()));
     let proposal = client.proposal(&proposal_id).unwrap();
     assert_eq!(proposal.creator, creator);
     assert_eq!(proposal.risk_group, symbol_short!("CRYPTO"));
+    assert_eq!(proposal.resolver, resolver);
+    assert_eq!(proposal.route_revision, 1);
+    assert!(!proposal.registration_required);
     assert_eq!(proposal.phase, ProposalPhase::Proposed);
     assert_eq!(proposal.liquidity_vault, None);
     assert_eq!(proposal.liquidity_sequence, None);
@@ -144,7 +150,7 @@ fn creator_proposes_without_usdc_or_a_collateral_transfer() {
 
 #[test]
 fn extend_ttl_preserves_factory_configuration() {
-    let (_, client, _) = setup();
+    let (_, client, _, _) = setup();
     let before = client.config();
     client.extend_ttl();
     assert_eq!(client.config(), before);
@@ -152,7 +158,7 @@ fn extend_ttl_preserves_factory_configuration() {
 
 #[test]
 fn proposal_identifier_binds_creator_nonce_and_configuration() {
-    let (env, client, creator) = setup();
+    let (env, client, creator, _) = setup();
     let first = request(&env, creator.clone());
     let first_id = client.proposal_id(&first);
     assert_eq!(client.propose(&first), first_id);
@@ -165,7 +171,7 @@ fn proposal_identifier_binds_creator_nonce_and_configuration() {
 
 #[test]
 fn unsupported_assets_liquidity_fees_and_timing_fail_before_funding() {
-    let (env, client, creator) = setup();
+    let (env, client, creator, _) = setup();
 
     let mut unsupported_asset = request(&env, creator.clone());
     unsupported_asset.asset = symbol_short!("ETH");
@@ -186,7 +192,7 @@ fn unsupported_assets_liquidity_fees_and_timing_fail_before_funding() {
 
 #[test]
 fn undeployed_expired_proposal_cancels_permissionlessly() {
-    let (env, client, creator) = setup();
+    let (env, client, creator, _) = setup();
     let proposal_id = client.propose(&request(&env, creator));
     env.ledger().with_mut(|ledger| ledger.timestamp = 2_001);
     client.cancel(&proposal_id, &0, &0);
@@ -198,7 +204,7 @@ fn undeployed_expired_proposal_cancels_permissionlessly() {
 
 #[test]
 fn liquidity_address_is_deterministic_before_deployment() {
-    let (env, client, creator) = setup();
+    let (env, client, creator, _) = setup();
     let proposal_id = client.propose(&request(&env, creator));
     assert_eq!(
         client.liquidity_address(&proposal_id),
@@ -216,7 +222,7 @@ fn liquidity_address_is_deterministic_before_deployment() {
 
 #[test]
 fn liquidity_parameter_is_the_largest_supported_value_covered_by_the_target() {
-    let (_env, client, _creator) = setup();
+    let (_env, client, _creator, _) = setup();
     let first_target = 100_000_000;
     let second_target = 500_000_000;
     let first = client.liquidity_parameter(&first_target);
@@ -231,60 +237,40 @@ fn liquidity_parameter_is_the_largest_supported_value_covered_by_the_target() {
 }
 
 #[test]
-#[should_panic]
-fn constructor_rejects_duplicate_capabilities() {
+fn proposal_identifier_binds_registry_revision() {
     let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|ledger| ledger.timestamp = 1_000);
     let token_admin = Address::generate(&env);
     let collateral = env
         .register_stellar_asset_contract_v2(token_admin)
         .address();
-    let mut bad = config(&env, collateral);
-    bad.allowed_assets = Vec::from_array(&env, [symbol_short!("BTC"), symbol_short!("BTC")]);
-    env.register(MarketFactory, (bad,));
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #1)")]
-fn constructor_rejects_missing_asset_risk_groups() {
-    let env = Env::default();
-    let token_admin = Address::generate(&env);
-    let collateral = env
-        .register_stellar_asset_contract_v2(token_admin)
-        .address();
-    let mut bad = config(&env, collateral);
-    bad.asset_risk_groups = Vec::from_array(
-        &env,
-        [AssetRiskGroup {
-            asset: symbol_short!("BTC"),
-            risk_group: symbol_short!("CRYPTO"),
-        }],
+    let governance = Address::generate(&env);
+    let resolver = Address::generate(&env);
+    let registry = env.register(
+        ResolverRegistry,
+        (governance.clone(), 300u64, routes(&env, &resolver)),
     );
-    env.register(MarketFactory, (bad,));
-}
+    let factory = env.register(MarketFactory, (config(&env, collateral, registry.clone()),));
+    let factory_client = MarketFactoryClient::new(&env, &factory);
+    let registry_client = ResolverRegistryClient::new(&env, &registry);
+    let creator = Address::generate(&env);
+    let market_request = request(&env, creator);
+    let first_id = factory_client.proposal_id(&market_request);
 
-#[test]
-#[should_panic(expected = "Error(Contract, #1)")]
-fn constructor_rejects_duplicate_asset_risk_groups() {
-    let env = Env::default();
-    let token_admin = Address::generate(&env);
-    let collateral = env
-        .register_stellar_asset_contract_v2(token_admin)
-        .address();
-    let mut bad = config(&env, collateral);
-    bad.asset_risk_groups = Vec::from_array(
-        &env,
-        [
-            AssetRiskGroup {
-                asset: symbol_short!("BTC"),
-                risk_group: symbol_short!("CRYPTO"),
-            },
-            AssetRiskGroup {
-                asset: symbol_short!("BTC"),
-                risk_group: symbol_short!("CRYPTO"),
-            },
-        ],
+    let replacement = Address::generate(&env);
+    registry_client.propose_route(
+        &governance,
+        &symbol_short!("BTC"),
+        &replacement,
+        &symbol_short!("CRYPTO"),
+        &false,
+        &true,
     );
-    env.register(MarketFactory, (bad,));
+    env.ledger().with_mut(|ledger| ledger.timestamp = 1_300);
+    registry_client.execute_route(&symbol_short!("BTC"));
+
+    assert_ne!(factory_client.proposal_id(&market_request), first_id);
 }
 
 #[test]
@@ -295,7 +281,12 @@ fn constructor_rejects_an_invalid_committee_encryption_key() {
     let collateral = env
         .register_stellar_asset_contract_v2(token_admin)
         .address();
-    let mut invalid = config(&env, collateral);
+    let resolver = Address::generate(&env);
+    let registry = env.register(
+        ResolverRegistry,
+        (Address::generate(&env), 300u64, routes(&env, &resolver)),
+    );
+    let mut invalid = config(&env, collateral, registry);
     invalid.committee_public_key_x = U256::from_u32(&env, 5);
     invalid.committee_public_key_y = U256::from_u32(&env, 6);
     env.register(MarketFactory, (invalid,));
@@ -309,7 +300,12 @@ fn constructor_rejects_a_batch_size_without_a_proving_key() {
     let collateral = env
         .register_stellar_asset_contract_v2(token_admin)
         .address();
-    let mut bad = config(&env, collateral);
+    let resolver = Address::generate(&env);
+    let registry = env.register(
+        ResolverRegistry,
+        (Address::generate(&env), 300u64, routes(&env, &resolver)),
+    );
+    let mut bad = config(&env, collateral, registry);
     bad.maximum_batch_size = 9;
     env.register(MarketFactory, (bad,));
 }

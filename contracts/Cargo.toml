@@ -8,6 +8,7 @@ members = [
     "pooled-liquidity-vault",
     "privacy-types",
     "resolver",
+    "resolver-registry",
     "shielded-collateral-vault",
     "zk-verifier",
 ]

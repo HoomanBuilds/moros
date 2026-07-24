@@ -9,7 +9,6 @@ use soroban_sdk::{
 #[cfg(test)]
 mod test;
 
-const MAX_ALLOWED_ASSETS: u32 = 64;
 const MAX_LIQUIDITY_TIERS: u32 = 8;
 const PRIVATE_MAXIMUM_BATCH_SIZE: u32 = 8;
 const PRIVATE_MINIMUM_SIDE_COUNT: u32 = 0;
@@ -43,24 +42,15 @@ pub enum LiquidityPhase {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AssetRiskGroup {
-    pub asset: Symbol,
-    pub risk_group: Symbol,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FactoryConfig {
     pub governance: Address,
     pub collateral: Address,
     pub shared_vault: Address,
     pub liquidity_pool: Address,
-    pub resolver: Address,
+    pub resolver_registry: Address,
     pub network_domain: BytesN<32>,
     pub market_wasm_hash: BytesN<32>,
     pub liquidity_wasm_hash: BytesN<32>,
-    pub allowed_assets: Vec<Symbol>,
-    pub asset_risk_groups: Vec<AssetRiskGroup>,
     pub liquidity_tiers: Vec<i128>,
     pub minimum_funding_window: u64,
     pub minimum_open_window: u64,
@@ -104,7 +94,10 @@ pub struct ProposalPreimage {
     pub collateral: Address,
     pub shared_vault: Address,
     pub liquidity_pool: Address,
+    pub resolver_registry: Address,
     pub resolver: Address,
+    pub route_revision: u32,
+    pub registration_required: bool,
     pub market_wasm_hash: BytesN<32>,
     pub liquidity_wasm_hash: BytesN<32>,
     pub batch_grace: u64,
@@ -129,6 +122,9 @@ pub struct Proposal {
     pub creator: Address,
     pub asset: Symbol,
     pub risk_group: Symbol,
+    pub resolver: Address,
+    pub route_revision: u32,
+    pub registration_required: bool,
     pub threshold: i128,
     pub rules_hash: BytesN<32>,
     pub metadata_hash: BytesN<32>,
@@ -227,6 +223,27 @@ pub trait PooledLiquidityVault {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolverRoute {
+    pub resolver: Address,
+    pub risk_group: Symbol,
+    pub registration_required: bool,
+    pub enabled: bool,
+    pub revision: u32,
+}
+
+#[contractclient(crate_path = "soroban_sdk", name = "ResolverRegistryClient")]
+pub trait ResolverRegistry {
+    fn route(env: Env, asset: Symbol) -> Option<ResolverRoute>;
+    fn is_current(env: Env, asset: Symbol, revision: u32, resolver: Address) -> bool;
+}
+
+#[contractclient(crate_path = "soroban_sdk", name = "ResolutionAdapterClient")]
+pub trait ResolutionAdapter {
+    fn register_market(env: Env, market: Address, admin: Address, rules_hash: BytesN<32>);
+}
+
+#[contracttype]
 #[derive(Clone)]
 enum DataKey {
     Config,
@@ -258,6 +275,8 @@ pub struct MarketProposed {
     pub creator: Address,
     pub asset: Symbol,
     pub risk_group: Symbol,
+    pub resolver: Address,
+    pub route_revision: u32,
     pub expiry: u64,
     pub liquidity_target: i128,
 }
@@ -299,9 +318,6 @@ impl MarketFactory {
             || Self::is_zero(&config.network_domain)
             || Self::is_zero(&config.market_wasm_hash)
             || Self::is_zero(&config.liquidity_wasm_hash)
-            || config.allowed_assets.is_empty()
-            || config.allowed_assets.len() > MAX_ALLOWED_ASSETS
-            || config.asset_risk_groups.len() != config.allowed_assets.len()
             || config.liquidity_tiers.is_empty()
             || config.liquidity_tiers.len() > MAX_LIQUIDITY_TIERS
             || config.minimum_funding_window == 0
@@ -332,30 +348,6 @@ impl MarketFactory {
         {
             panic_with_error!(&env, Error::InvalidConfiguration);
         }
-        for i in 0..config.allowed_assets.len() {
-            for prior in 0..i {
-                if config.allowed_assets.get(i) == config.allowed_assets.get(prior) {
-                    panic_with_error!(&env, Error::InvalidConfiguration);
-                }
-            }
-            let asset = config.allowed_assets.get(i).unwrap();
-            let mut mappings = 0u32;
-            for mapping in config.asset_risk_groups.iter() {
-                if mapping.asset == asset {
-                    mappings = mappings
-                        .checked_add(1)
-                        .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
-                }
-            }
-            if mappings != 1 {
-                panic_with_error!(&env, Error::InvalidConfiguration);
-            }
-        }
-        for mapping in config.asset_risk_groups.iter() {
-            if !config.allowed_assets.contains(&mapping.asset) {
-                panic_with_error!(&env, Error::InvalidConfiguration);
-            }
-        }
         for i in 0..config.liquidity_tiers.len() {
             let tier = config.liquidity_tiers.get(i).unwrap();
             if tier <= 0 || tier > MAX_USDC_AMOUNT {
@@ -382,15 +374,17 @@ impl MarketFactory {
 
     pub fn proposal_id(env: Env, request: ProposalRequest) -> BytesN<32> {
         let config = Self::config(env.clone());
+        let route = Self::route_for(&env, &config, &request.asset);
         Self::validate_request(&env, &config, &request);
-        Self::derive_id(&env, &config, request)
+        Self::derive_id(&env, &config, request, route)
     }
 
     pub fn propose(env: Env, request: ProposalRequest) -> BytesN<32> {
         request.creator.require_auth();
         let config = Self::config(env.clone());
+        let route = Self::route_for(&env, &config, &request.asset);
         Self::validate_request(&env, &config, &request);
-        let proposal_id = Self::derive_id(&env, &config, request.clone());
+        let proposal_id = Self::derive_id(&env, &config, request.clone(), route.clone());
         let key = DataKey::Proposal(proposal_id.clone());
         if env.storage().persistent().has(&key) {
             panic_with_error!(&env, Error::DuplicateProposal);
@@ -399,7 +393,10 @@ impl MarketFactory {
             proposal_id: proposal_id.clone(),
             creator: request.creator.clone(),
             asset: request.asset.clone(),
-            risk_group: Self::risk_group_for(&env, &config, &request.asset),
+            risk_group: route.risk_group.clone(),
+            resolver: route.resolver.clone(),
+            route_revision: route.revision,
+            registration_required: route.registration_required,
             threshold: request.threshold,
             rules_hash: request.rules_hash,
             metadata_hash: request.metadata_hash,
@@ -422,6 +419,8 @@ impl MarketFactory {
             creator: request.creator,
             asset: request.asset,
             risk_group: proposal.risk_group,
+            resolver: proposal.resolver,
+            route_revision: proposal.route_revision,
             expiry: request.expiry,
             liquidity_target: request.liquidity_target,
         }
@@ -614,7 +613,7 @@ impl MarketFactory {
         let private_config = PrivateMarketConfig {
             batcher: config.shared_vault.clone(),
             liquidity_vault: liquidity.clone(),
-            resolver: config.resolver.clone(),
+            resolver: proposal.resolver.clone(),
             rules_hash: proposal.rules_hash.clone(),
             funding: moved_assets,
             fee_bps: proposal.fee_bps,
@@ -628,10 +627,17 @@ impl MarketFactory {
         market_client.activate_private(&env.current_contract_address(), &private_config);
         if market_client.collateral() != config.collateral
             || market_client.batcher() != Some(config.shared_vault.clone())
-            || market_client.resolver() != Some(config.resolver)
+            || market_client.resolver() != Some(proposal.resolver.clone())
             || market_client.private_config() != Some(private_config)
         {
             panic_with_error!(&env, Error::DeploymentMismatch);
+        }
+        if proposal.registration_required {
+            ResolutionAdapterClient::new(&env, &proposal.resolver).register_market(
+                &market,
+                &env.current_contract_address(),
+                &proposal.rules_hash,
+            );
         }
         SharedVaultClient::new(&env, &config.shared_vault).register_market(
             &env.current_contract_address(),
@@ -742,9 +748,6 @@ impl MarketFactory {
         {
             panic_with_error!(env, Error::InvalidProposal);
         }
-        if !config.allowed_assets.contains(&request.asset) {
-            panic_with_error!(env, Error::UnsupportedAsset);
-        }
         if !config.liquidity_tiers.contains(&request.liquidity_target) {
             panic_with_error!(env, Error::UnsupportedLiquidity);
         }
@@ -780,11 +783,15 @@ impl MarketFactory {
         {
             panic_with_error!(env, Error::InvalidProposal);
         }
-        if !config.allowed_assets.contains(&proposal.asset) {
-            panic_with_error!(env, Error::UnsupportedAsset);
-        }
         if !config.liquidity_tiers.contains(&proposal.liquidity_target) {
             panic_with_error!(env, Error::UnsupportedLiquidity);
+        }
+        if !ResolverRegistryClient::new(env, &config.resolver_registry).is_current(
+            &proposal.asset,
+            &proposal.route_revision,
+            &proposal.resolver,
+        ) {
+            panic_with_error!(env, Error::UnsupportedAsset);
         }
     }
 
@@ -839,14 +846,22 @@ impl MarketFactory {
             .into()
     }
 
-    fn derive_id(env: &Env, config: &FactoryConfig, request: ProposalRequest) -> BytesN<32> {
+    fn derive_id(
+        env: &Env,
+        config: &FactoryConfig,
+        request: ProposalRequest,
+        route: ResolverRoute,
+    ) -> BytesN<32> {
         let preimage = ProposalPreimage {
             factory: env.current_contract_address(),
             network_domain: config.network_domain.clone(),
             collateral: config.collateral.clone(),
             shared_vault: config.shared_vault.clone(),
             liquidity_pool: config.liquidity_pool.clone(),
-            resolver: config.resolver.clone(),
+            resolver_registry: config.resolver_registry.clone(),
+            resolver: route.resolver,
+            route_revision: route.revision,
+            registration_required: route.registration_required,
             market_wasm_hash: config.market_wasm_hash.clone(),
             liquidity_wasm_hash: config.liquidity_wasm_hash.clone(),
             batch_grace: config.batch_grace,
@@ -860,7 +875,7 @@ impl MarketFactory {
             maximum_batch_size: config.maximum_batch_size,
             minimum_side_count: config.minimum_side_count,
             maximum_price_movement: config.maximum_price_movement,
-            risk_group: Self::risk_group_for(env, config, &request.asset),
+            risk_group: route.risk_group,
             request,
         };
         env.crypto().sha256(&preimage.to_xdr(env)).into()
@@ -870,13 +885,11 @@ impl MarketFactory {
         value.to_array().iter().all(|byte| *byte == 0)
     }
 
-    fn risk_group_for(env: &Env, config: &FactoryConfig, asset: &Symbol) -> Symbol {
-        for mapping in config.asset_risk_groups.iter() {
-            if mapping.asset == *asset {
-                return mapping.risk_group;
-            }
+    fn route_for(env: &Env, config: &FactoryConfig, asset: &Symbol) -> ResolverRoute {
+        match ResolverRegistryClient::new(env, &config.resolver_registry).route(asset) {
+            Some(route) if route.enabled => route,
+            _ => panic_with_error!(env, Error::UnsupportedAsset),
         }
-        panic_with_error!(env, Error::UnsupportedAsset);
     }
 
     fn bump(env: &Env) {
