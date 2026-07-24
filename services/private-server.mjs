@@ -225,7 +225,9 @@ async function main() {
     networkPassphrase: NETWORK_PASSPHRASE,
   });
   const factoryInfo = invocationResultValue(await factory.config());
-  const identity = testnetPrivacyIdentity(process.env.FUNDER_SK);
+  const identity = testnetPrivacyIdentity(
+    process.env.MOROS_TESTNET_PRIVACY_SK || process.env.FUNDER_SK,
+  );
   if (
     vaultInfo.factory !== deployment.contracts.factory ||
     vaultInfo.verifier !== deployment.contracts.verifier ||

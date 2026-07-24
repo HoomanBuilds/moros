@@ -51,11 +51,17 @@ const PASSPHRASE =
   process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
 const SECRET =
   process.env.DEPLOYER_SK || process.env.FUNDER_SK || "";
+const PRIVACY_SECRET =
+  process.env.MOROS_TESTNET_PRIVACY_SK ||
+  process.env.FUNDER_SK ||
+  SECRET;
+const ROUNDING_SECRET =
+  process.env.ROUNDING_FUNDER_SK || SECRET;
 const SOURCE_COMMIT = process.env.MOROS_SOURCE_COMMIT || "";
 const DEPLOYMENT_NAME =
   process.env.MOROS_DEPLOYMENT_NAME || "Moros Testnet";
 const SALT_NAMESPACE =
-  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet";
+  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet-canonical";
 const COLLATERAL =
   process.env.COLLATERAL_ID ||
   "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
@@ -437,10 +443,11 @@ async function main() {
     throw new Error("invalid private testnet proving manifest");
   }
   const source = Keypair.fromSecret(SECRET);
+  const roundingSource = Keypair.fromSecret(ROUNDING_SECRET);
   const sourceAddress = source.publicKey();
   const server = new rpc.Server(RPC_URL);
   const artifacts = wasmArtifacts();
-  const identity = testnetPrivacyIdentity(SECRET);
+  const identity = testnetPrivacyIdentity(PRIVACY_SECRET);
   const salts = Object.fromEntries(
     ["verifier", "resolver", "sharedVault", "liquidityPool", "factory"].map((name) => [
       name,
@@ -654,7 +661,18 @@ async function main() {
   ) {
     throw new Error("deployed contract wiring did not match the manifest");
   }
-  await fundRoundingReserve(vault, sourceAddress);
+  const reserveVault =
+    roundingSource.publicKey() === sourceAddress
+      ? vault
+      : await clientFor(
+          artifacts.sharedVault,
+          ids.sharedVault,
+          roundingSource,
+        );
+  await fundRoundingReserve(
+    reserveVault,
+    roundingSource.publicKey(),
+  );
 
   const publicDeployment = {
     network: "testnet",

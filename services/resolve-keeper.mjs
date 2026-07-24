@@ -39,17 +39,16 @@ const PRIVATE_DEPLOYMENT_PATH = resolve(
 const PRIVATE_DEPLOYMENT = existsSync(PRIVATE_DEPLOYMENT_PATH)
   ? JSON.parse(readFileSync(PRIVATE_DEPLOYMENT_PATH, "utf8"))
   : undefined;
-const FREE_RESOLVER = selectFreeResolver(
-  process.env.FREE_RESOLVER_ID,
-  PRIVATE_DEPLOYMENT,
-  "CDHYIPCE25QZ3WGWBKPJQ37T4ZZBGKPVEUYNTQLGO4CU5ZKDIXZYHJMT",
-);
+const FREE_RESOLVER = selectFreeResolver(PRIVATE_DEPLOYMENT);
 const PYTH_PRO_RESOLVER = process.env.PYTH_PRO_RESOLVER_ID || "";
 const RESOLVER = ORACLE_MODE === "pyth_pro" ? PYTH_PRO_RESOLVER : FREE_RESOLVER;
 const FUNDER_SK = process.env.FUNDER_SK || "";
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://khufxpfbigxpuvsvlhtn.supabase.co";
 const SUPABASE_ANON = process.env.SUPABASE_ANON_KEY || "";
-const COLLATERAL_ID = process.env.COLLATERAL_ID || "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
+const COLLATERAL_ID = PRIVATE_DEPLOYMENT?.collateral?.contract;
+if (!/^C[A-Z2-7]{55}$/.test(COLLATERAL_ID || "")) {
+  throw new Error("deployment collateral contract ID is invalid");
+}
 const INTERVAL_MS = Number(process.env.RESOLVE_INTERVAL_MS || 300000);
 const TTL_REFRESH_MS = Number(process.env.TTL_REFRESH_MS || 604800000);
 const PYTH_TOKEN = process.env.PYTH_ACCESS_TOKEN || "";

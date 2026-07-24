@@ -65,8 +65,8 @@ export const PYTH_PRO_FEEDS = {
   XAU: 346,
 };
 
-export function selectFreeResolver(configured, deployment, fallback) {
-  const resolver = configured || deployment?.contracts?.resolver || fallback;
+export function selectFreeResolver(deployment) {
+  const resolver = deployment?.contracts?.resolver;
   if (!/^C[A-Z2-7]{55}$/.test(resolver || "")) {
     throw new Error("free resolver contract ID is invalid");
   }

@@ -21,23 +21,10 @@ assert.equal(resolutionPhase(1_300, 1_000, 1_300, 3_600), "resolve");
 assert.equal(resolutionPhase(4_900, 1_000, 1_300, 3_600), "void");
 assert.throws(() => resolutionPhase(1, 2, 1, 300), /invalid resolution timing/);
 const deployedResolver = `C${"A".repeat(55)}`;
-const fallbackResolver = `C${"B".repeat(55)}`;
 assert.equal(
-  selectFreeResolver(
-    "",
-    { contracts: { resolver: deployedResolver } },
-    fallbackResolver,
-  ),
+  selectFreeResolver({ contracts: { resolver: deployedResolver } }),
   deployedResolver,
 );
-assert.equal(
-  selectFreeResolver(
-    fallbackResolver,
-    { contracts: { resolver: deployedResolver } },
-    deployedResolver,
-  ),
-  fallbackResolver,
-);
-assert.throws(() => selectFreeResolver("", undefined, "bad"), /invalid/);
+assert.throws(() => selectFreeResolver(undefined), /invalid/);
 
 console.log("oracle config ok");

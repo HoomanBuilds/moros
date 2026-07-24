@@ -1,150 +1,122 @@
-# Moros committee and resolution services
+# Moros testnet services
 
-These Node.js services support the Moros testnet beta. They do not custody plaintext order openings. The browser sends an encrypted order and a Groth16 proof that binds it to an on-chain commitment and the current committee key.
+The active Moros runtime consists of `private-server.mjs` and `resolve-keeper.mjs`. Both load contract addresses and policy from `deployments/private-testnet.json`. Contract IDs and WASM hashes are not copied into environment variables.
 
-## Components
+## Active components
 
-- server.mjs runs multi-pool registration, event indexing, encrypted order intake, persistent queues, batch coordination, and redemption relay.
-- committee/member.mjs holds one DKG share, verifies exact encrypted orders and aggregate decryptions, and signs only valid batch authorization entries.
-- resolve-keeper.mjs calls the configured price resolver after eligible price markets expire.
-- relayer.mjs submits proof-bound redemption transactions.
-- private-server.mjs runs the current shared-vault testnet runtime: output indexing, proposal activation, fixed private batches, encrypted allocation delivery, private relay, and LP exit discovery.
+- `private-server.mjs` indexes shielded outputs, activates funded proposals, coordinates fixed private batches, serves encrypted allocation witnesses, relays proof-bound transactions, and discovers LP exits.
+- `resolve-keeper.mjs` resolves eligible price markets and refreshes contract TTLs.
+- `deploy-private-testnet.mjs` deploys and verifies the canonical testnet contract graph.
 
-## Testnet configuration
+`server.mjs` and `committee/member.mjs` belong to the earlier isolated-pool prototype. The VM installer disables those units. They are not part of the canonical shared-vault runtime.
 
-Copy .env.example to .env and fill secret values locally.
+## Configuration
 
-Required production-like settings:
+Copy `.env.example` to `.env` and fill the secret values locally.
+
+The active runtime requires:
 
     RPC_URL=https://soroban-testnet.stellar.org
     NETWORK_PASSPHRASE=Test SDF Network ; September 2015
-    ORACLE_MODE=free
-    FREE_RESOLVER_ID=CDHYIPCE25QZ3WGWBKPJQ37T4ZZBGKPVEUYNTQLGO4CU5ZKDIXZYHJMT
-    POOL_WASM_HASH=617e3d7e152b03ad53f5704abe92295ccfaa538771835c7b2174f00396af9363
-    MARKET_WASM_HASH=7afca617a67b7f2d2dab4e9dc6836779871dff77fd876a2d83d62b435f5fa06a
-    COLLATERAL_ID=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
-    ALLOW_UNVERIFIED_REGISTRATION=0
-    SERVICE_TOKEN=<random operator token>
-    MEMBER_TOKEN=<different random committee token>
-    FUNDER_SK=<testnet fee payer secret>
-    READER_ADDRESS=<testnet public address>
-    MEMBERS=http://member1:9711,http://member2:9712,http://member3:9713
+    NETWORK=testnet
+    FUNDER_SK=<testnet runtime and fee payer secret>
     PRIVATE_SYNC_SUPABASE_URL=<server-only private sync project URL>
     PRIVATE_SYNC_SUPABASE_SERVICE_ROLE_KEY=<server-only service role key>
+    MOROS_PUBLIC_DEPLOYMENT=deployments/private-testnet.json
+    ORACLE_MODE=free
 
-Keep FUNDER_SK and every MEMBER_SK out of git, logs, browser variables, and shared configuration.
+`MOROS_TESTNET_PRIVACY_SK` is optional. When set, it must contain the same testnet privacy identity used during deployment. When omitted, `FUNDER_SK` supplies that identity. Keep every secret out of git, logs, browser variables, and shared configuration.
 
-## Free and paid oracle modes
+The deployment command can use a separate Stellar deployer:
+
+    DEPLOYER_SK=<dedicated contract deployer secret>
+    ROUNDING_FUNDER_SK=<testnet USDC reserve funder secret>
+    MOROS_DEPLOYMENT_NAME=Moros Testnet
+    MOROS_DEPLOYMENT_SALT=moros-testnet-canonical
+
+The public name remains `Moros Testnet`. Contract names do not include dates or version suffixes.
+
+## Oracle modes
 
 Free Reflector mode is mandatory for the current beta:
 
     ORACLE_MODE=free
 
-This resolver reads both live free Reflector testnet contracts. The CEX feed covers supported crypto assets. The fiat feed covers supported FX assets and XAU. The contracts expand coverage but belong to one provider family, so the beta does not describe them as independent provider quorum.
+The canonical resolver reads the free Reflector testnet CEX and fiat contracts recorded in the deployment manifest. The CEX feed covers supported crypto assets. The fiat feed covers supported FX assets and XAU. Both feeds belong to one provider family and are not presented as independent-provider redundancy.
 
-Pyth Pro support remains in the keeper for future use. It runs only when all of these are explicitly configured:
+Pyth Pro remains available as a future paid switch:
 
     ORACLE_MODE=pyth_pro
     PYTH_PRO_RESOLVER_ID=<paid resolver contract>
     PYTH_ACCESS_TOKEN=<paid access token>
 
-There is no paid resolver default and no generic resolver override.
+There is no paid resolver default and no arbitrary free-resolver override.
 
-## Public HTTP endpoints
+## Private HTTP API
 
-- GET /health returns service health.
-- GET /pk returns the current committee encryption key.
-- GET /status returns pool and queue status.
-- GET /proof/:commitment returns a persisted Merkle membership proof.
-- POST /register-pool registers a Moros market and pool after on-chain validation.
-- POST /order verifies and queues an encrypted order.
-- POST /redeem relays a proof-bound redemption.
+- `GET /health` and `GET /private/health` return runtime health.
+- `GET /private/config` returns the canonical deployment and proving artifact manifest.
+- `GET /private/tree` returns locally verifiable encrypted output pages.
+- `GET /private/allocation` returns an authenticated encrypted allocation witness.
+- `GET /private/markets` returns chain-verified active private market registrations.
+- `GET /private/exits` returns paginated, chain-verified active LP exits.
+- `POST /private/register-proposal` registers a user-created market proposal for automatic funding.
+- `POST /private/register-market` recovers an activated market registration.
+- `POST /private/register-exit` recovers an on-chain LP exit listing.
+- `POST /private/relay` submits a proof-bound transaction with no wallet authorization.
 
-POST /batch is an operator action and requires SERVICE_TOKEN.
-
-The current shared-vault runtime also exposes:
-
-- GET /private/config for the exact testnet deployment and proof artifacts.
-- GET /private/tree for locally verifiable encrypted note output recovery.
-- GET /private/allocation for an authenticated encrypted allocation witness.
-- GET /private/exits for paginated, chain-verified active LP exit discovery.
-- POST /private/register-proposal and POST /private/register-market for permissionless lifecycle discovery.
-- POST /private/register-exit for recovery when an on-chain exit needs to be relisted.
-- POST /private/relay for proof-bound transactions that contain no wallet authorization.
-
-An LP exit registry entry contains only public ledger data: market, liquidity vault, and exit ID. Ownership is recovered in the browser from the encrypted exit receipt. The service rechecks the linked market, shared vault controller, exit intent, and current snapshot before publishing an offer. The first testnet implementation requires a full fill of each offered lot.
-
-Public pool registration validates:
-
-- Two-way market and pool linkage
-- Matching collateral
-- Expected 2-of-3 committee configuration
-- Configured redemption verification key
-- Approved pool WASM hash
-- Approved market WASM hash
-- Active price resolver and an asset supported by the selected oracle mode
-
-ALLOW_UNVERIFIED_REGISTRATION=1 bypasses these checks and is allowed only in local tests.
+LP exit listings contain public ledger identifiers only. Ownership is recovered in the browser from the encrypted exit receipt. The service verifies the market, vault controller, exit intent, and current snapshot before listing an offer.
 
 ## Batch behavior
 
-- Open markets settle full batches of four.
-- Closed markets may settle a final private batch of two to four before finalize_after.
-- A single pending order is never decrypted as its own batch.
-- Pending orders become refundable after finalize_after.
-- Queues and used nullifiers persist across restarts.
-- Each pool has an isolated queue and event index.
-- Committee members recompute the proof-bound commitments, nullifier hashes, aggregate ciphertext, decrypted net, and authorization entry before signing.
+- Each batch contains exactly eight encrypted orders.
+- Each order may represent any valid positive integer quantity.
+- Every batch requires at least two YES orders and two NO orders.
+- Every order in one batch receives the same clearing price.
+- A full batch is executed atomically, so a later user cannot trade against stale visible odds from a partially applied batch.
+- Pending orders remain encrypted and refundable under the configured close and finalization rules when they cannot execute.
+- Runtime queues, used nullifiers, encrypted allocations, and output indexes persist across restarts.
 
-## Running locally
+The current testnet coordinator holds the combined committee secret on one VM. This is an explicit testnet limitation, not threshold privacy.
 
-Install dependencies:
+## Running and testing
+
+Install dependencies and run the service tests:
 
     npm install
+    npm test
 
-Run the hosted service test:
-
-    node test-server.mjs
-
-Run service syntax checks:
-
-    node --check server.mjs
-    node --check resolve-keeper.mjs
-    node --check relayer.mjs
-    node --check indexer.mjs
-    node --check committee/member.mjs
-    node --check committee/submit-multisig.mjs
-
-Verify the live free Stellar oracle contracts and exact asset coverage:
+Verify live free-oracle availability:
 
     npm run verify:oracles
 
-The test server uses ALLOW_UNVERIFIED_REGISTRATION=1, DRY_RUN=1, temporary queue files, and temporary committee shares. Those values are not production settings.
+Check the active entry points:
+
+    node --check private-server.mjs
+    node --check resolve-keeper.mjs
+    node --check deploy-private-testnet.mjs
+    bash -n deploy-vm.sh
 
 ## VM packaging
 
-The proving artifacts and native helper binaries must match the deployed verification keys.
-
-On the build machine:
+The packaged proving artifacts must match the verification keys in the canonical deployment:
 
     ./services/deploy-vm.sh package
 
-On the testnet VM after unpacking the bundle:
+After copying and unpacking `deploy-bundle.tar.gz` on the testnet VM:
 
     ./services/deploy-vm.sh provision
     ./services/deploy-vm.sh service
 
-The service command installs the three committee members, intake server, and price resolution keeper as managed services. The keeper also refreshes registered market and pool TTLs once a week so exact long-duration expiries remain usable. GET /health fails when the committee is unavailable or the keeper heartbeat is stale. GET /status includes the last keeper tick, TTL refreshes, due markets, resolutions, voids, oracle waits, and recent errors.
+The service command installs and starts only `zkmarket-private` and `zkmarket-resolve-keeper`. It disables earlier intake and committee-member units to prevent stale contract wiring.
 
-Terminate TLS in front of the public service. Run committee members on independently operated hosts before treating threshold privacy as meaningful. The bundled single-VM setup is for testnet operations only.
+Terminate TLS in front of the public service. Back up the private runtime directory and keeper state. Monitor service health, Stellar RPC access, Supabase access, market activation, batch settlement, resolution, refunds, claims, and TTL refreshes.
 
 ## Operational limits
 
-- Current services and contracts are unaudited.
-- The committee is a fixed 2-of-3 set.
-- A colluding quorum can break threshold privacy.
-- Stellar RPC event retention requires the persistent index to stay healthy and backed up.
-- The final order queue must be monitored so eligible short batches settle before finalize_after.
-- Price resolution and redemption are permissionless calls, but they still require a keeper, relayer, or user to submit transactions.
-- Nothing runs automatically merely because a market has expired or resolved.
-- The current single-VM committee and service are testnet-only. Mainnet requires independently operated committee members, monitored redundant runtimes, a completed trusted setup, and an external security review.
+- Contracts, circuits, and services are unaudited.
+- The current trusted setup is for development.
+- The single-VM testnet coordinator can recover individual encrypted order values.
+- Price resolution and proof relaying require an operator or user to submit transactions.
+- Event markets remain disabled until their evidence, challenge, arbitration, timeout, and refund operations are implemented and monitored.
+- Mainnet requires an independent trusted setup, external security review, redundant monitored services, and independently operated threshold committee members.
