@@ -71,11 +71,12 @@ LP exit listings contain public ledger identifiers only. Ownership is recovered 
 
 ## Batch behavior
 
-- Each batch contains exactly eight encrypted orders.
+- Each batch contains one to eight encrypted orders.
 - Each order may represent any valid positive integer quantity.
-- Every batch requires at least two YES orders and two NO orders.
 - Every order in one batch receives the same clearing price.
-- A full batch is executed atomically, so a later user cannot trade against stale visible odds from a partially applied batch.
+- A batch executes atomically when it reaches eight orders or when its 60-second window ends.
+- One-sided batches execute against the pooled LMSR liquidity, so a real singleton order moves the visible odds after clearing.
+- An empty window never changes the price.
 - Pending orders remain encrypted and refundable under the configured close and finalization rules when they cannot execute.
 - Runtime queues, used nullifiers, encrypted allocations, and output indexes persist across restarts.
 

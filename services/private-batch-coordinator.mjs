@@ -129,7 +129,7 @@ export class PrivateBatchCoordinator {
       phase === "Collecting" &&
       (
         Number(epoch.accepted_count) >=
-          Number(registration.fixed_batch_size) ||
+          Number(registration.maximum_batch_size) ||
         now >= Number(epoch.cutoff)
       )
     ) {
@@ -168,8 +168,9 @@ export class PrivateBatchCoordinator {
 
     if (
       phase === "Sealed" &&
-      Number(epoch.accepted_count) ===
-        Number(registration.fixed_batch_size)
+      Number(epoch.accepted_count) > 0 &&
+      Number(epoch.accepted_count) <=
+        Number(registration.maximum_batch_size)
     ) {
       const orders = [];
       for (
@@ -184,20 +185,8 @@ export class PrivateBatchCoordinator {
         orders.push(order);
       }
       const quantities = decryptBatchQuantities(orders, this.committeeSecret);
-      const yesOrderCount = quantities.filter((value) => value.side === 1).length;
-      const noOrderCount = quantities.length - yesOrderCount;
       const yesCount = quantities.reduce((total, value) => total + value.yes, 0);
       const noCount = quantities.reduce((total, value) => total + value.no, 0);
-      if (
-        yesOrderCount < Number(registration.minimum_side_count) ||
-        noOrderCount < Number(registration.minimum_side_count)
-      ) {
-        return {
-          status: "sealed-one-sided",
-          epoch: epochNumber.toString(),
-          accepted: orders.length,
-        };
-      }
       const quote = quoteResultValue(
         await marketContract.quote_private_batch({
           expected_version: BigInt(epoch.market_state_version),

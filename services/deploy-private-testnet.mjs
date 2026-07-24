@@ -96,7 +96,7 @@ const MAX_MARKET_BPS = 8_000;
 const MAX_GROUP_BPS = 8_000;
 const MINIMUM_IDLE_BPS = 2_000;
 const PRIVATE_BATCH_GRACE = 300;
-const PRIVATE_EPOCH_DURATION = 600;
+const PRIVATE_EPOCH_DURATION = 60;
 const PRIVATE_REFUND_DELAY = 120;
 const MINIMUM_FUNDING_WINDOW = 240;
 const MINIMUM_OPEN_WINDOW = 600;
@@ -621,8 +621,8 @@ async function main() {
         committee_public_key_y: identity.committeePublicKey[1],
         maximum_fee_bps: 1_000,
         lp_fee_share_bps: 8_000,
-        fixed_batch_size: 8,
-        minimum_side_count: 2,
+        maximum_batch_size: 8,
+        minimum_side_count: 0,
         maximum_price_movement: Q32 / 4n,
       },
     },
@@ -728,8 +728,8 @@ async function main() {
       ],
       feeMaximumBps: 1_000,
       lpFeeShareBps: 8_000,
-      fixedBatchSize: 8,
-      minimumSideCount: 2,
+      maximumBatchSize: 8,
+      minimumSideCount: 0,
       maximumPriceMovement: Q32 / 4n,
       batchGrace: PRIVATE_BATCH_GRACE,
       epochDuration: PRIVATE_EPOCH_DURATION,

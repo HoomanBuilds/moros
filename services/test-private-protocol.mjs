@@ -194,8 +194,8 @@ const acceptedRoot = fixedRoot(orders.map((order) => acceptedLeaf({
   committeeEpoch: 2n,
 })));
 const registration = {
-  fixed_batch_size: 8,
-  minimum_side_count: 2,
+  maximum_batch_size: 8,
+  minimum_side_count: 0,
   committee_epoch: 2n,
   committee_config_hash: Buffer.alloc(32, 9),
   committee_public_key_x: committeeKey[0],
@@ -283,6 +283,76 @@ assert.throws(
     committeeSecret: committeeSecret + 1n,
   }),
   /does not match/,
+);
+
+const singletonOrders = orders.slice(0, 1);
+const singletonRoot = fixedRoot(singletonOrders.map((order) => acceptedLeaf({
+  market,
+  epoch: 5n,
+  sequence: order.sequence,
+  actionId: order.action_id,
+  positionCommitment: order.position_commitment,
+  encryptedOrder: order.encrypted_order,
+  committeeEpoch: 2n,
+})));
+const singletonQuote = {
+  ...batchQuote,
+  batch_size: 3,
+  yes_count: 3,
+  no_count: 0,
+  aggregate_market_charge: 15_000_000n,
+  yes_market_cost: 15_000_000n,
+  no_market_cost: 0n,
+  no_charge_per_position: 0n,
+  fee_escrow: 300_000n,
+  conditional_lp_fee: 240_000n,
+  conditional_protocol_fee: 60_000n,
+};
+const singleton = buildBatchStatement({
+  networkDomain: Buffer.alloc(32, 7),
+  vault,
+  market,
+  registration,
+  epoch: {
+    epoch: 5n,
+    accepted_count: 1,
+    first_sequence: 20n,
+    last_sequence: 20n,
+    accepted_root: singletonRoot,
+  },
+  orders: singletonOrders,
+  quote: singletonQuote,
+  committeeSecret,
+});
+assert.deepEqual(singleton.sides, [1]);
+assert.equal(singleton.allocationPackages.length, 1);
+assert.equal(singleton.witness.actionId.length, 8);
+assert.equal(singleton.witness.positionCommitment.length, 8);
+assert.equal(singleton.witness.ciphertext.length, 8);
+assert.equal(singleton.witness.yesAmount.length, 8);
+assert.equal(singleton.witness.noAmount.length, 8);
+assert.deepEqual(singleton.witness.actionId[1], [0n, 0n]);
+assert.equal(singleton.witness.positionCommitment[1], 0n);
+assert.equal(singleton.witness.yesAmount[1], 0);
+assert.equal(singleton.witness.noAmount[1], 0);
+assert.throws(
+  () => buildBatchStatement({
+    networkDomain: Buffer.alloc(32, 7),
+    vault,
+    market,
+    registration,
+    epoch: {
+      epoch: 5n,
+      accepted_count: 0,
+      first_sequence: 0n,
+      last_sequence: 0n,
+      accepted_root: fixedRoot([]),
+    },
+    orders: [],
+    quote: singletonQuote,
+    committeeSecret,
+  }),
+  /between one and eight/,
 );
 
 process.stdout.write("private protocol tests passed\n");

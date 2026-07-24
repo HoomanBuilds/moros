@@ -267,8 +267,8 @@ async function main() {
       if (
         !registration ||
         registration.market !== market ||
-        Number(registration.fixed_batch_size) !==
-          deployment.marketPolicy.fixedBatchSize ||
+        Number(registration.maximum_batch_size) !==
+          deployment.marketPolicy.maximumBatchSize ||
         Number(registration.minimum_side_count) !==
           deployment.marketPolicy.minimumSideCount ||
         Number(registration.epoch_duration) !==

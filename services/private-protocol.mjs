@@ -4,12 +4,13 @@ import { poseidon2Hash } from "@zkpassport/poseidon2";
 import {
   aggregateCiphertexts,
   decryptAmount,
+  encryptAmount,
   mod,
   multiply,
   publicKey,
 } from "./committee/bn254-babyjub.mjs";
 
-const FIXED_BATCH_SIZE = 8;
+const MAXIMUM_BATCH_SIZE = 8;
 const FIXED_TREE_LEAVES = 64;
 const FIXED_TREE_LEVELS = 6;
 const Q32 = 1n << 32n;
@@ -400,8 +401,12 @@ function ciphertext(record) {
 }
 
 export function decryptBatchQuantities(orders, committeeSecret) {
-  if (!Array.isArray(orders) || orders.length !== FIXED_BATCH_SIZE) {
-    throw new Error("a private batch must contain exactly eight orders");
+  if (
+    !Array.isArray(orders) ||
+    orders.length === 0 ||
+    orders.length > MAXIMUM_BATCH_SIZE
+  ) {
+    throw new Error("a private batch must contain between one and eight orders");
   }
   return orders.map((record) => {
     const encrypted = ciphertext(record);
@@ -434,18 +439,23 @@ export function buildBatchStatement({
   quote,
   committeeSecret,
 }) {
-  if (!Array.isArray(orders) || orders.length !== FIXED_BATCH_SIZE) {
-    throw new Error("a private batch must contain exactly eight orders");
+  if (
+    !Array.isArray(orders) ||
+    orders.length === 0 ||
+    orders.length > MAXIMUM_BATCH_SIZE
+  ) {
+    throw new Error("a private batch must contain between one and eight orders");
   }
   if (
-    Number(registration.fixed_batch_size) !== FIXED_BATCH_SIZE ||
-    Number(epoch.accepted_count) !== FIXED_BATCH_SIZE
+    Number(registration.maximum_batch_size) !== MAXIMUM_BATCH_SIZE ||
+    Number(registration.minimum_side_count) !== 0 ||
+    Number(epoch.accepted_count) !== orders.length
   ) {
-    throw new Error("market does not use the exact private batch policy");
+    throw new Error("market does not use the adaptive private batch policy");
   }
   const firstSequence = decimal(epoch.first_sequence, "first sequence");
   const lastSequence = decimal(epoch.last_sequence, "last sequence");
-  if (lastSequence - firstSequence !== 7n) {
+  if (lastSequence - firstSequence !== BigInt(orders.length - 1)) {
     throw new Error("private batch order sequence is not contiguous");
   }
   const ordered = [...orders].sort((left, right) => {
@@ -471,16 +481,8 @@ export function buildBatchStatement({
   const encrypted = ordered.map(ciphertext);
   const quantities = decryptBatchQuantities(ordered, committeeSecret);
   const sides = quantities.map((value) => value.side);
-  const yesOrderCount = sides.filter((side) => side === 1).length;
-  const noOrderCount = sides.length - yesOrderCount;
   const yesCount = quantities.reduce((total, value) => total + value.yes, 0);
   const noCount = quantities.reduce((total, value) => total + value.no, 0);
-  if (
-    yesOrderCount < Number(registration.minimum_side_count) ||
-    noOrderCount < Number(registration.minimum_side_count)
-  ) {
-    throw new Error("private batch does not satisfy minimum side counts");
-  }
   const quotedYesCount = Number(quote.yes_count);
   const quotedNoCount = Number(quote.no_count);
   const quotedBatchSize = Number(quote.batch_size);
@@ -495,9 +497,16 @@ export function buildBatchStatement({
       + `decrypted ${yesCount}/${noCount}/${yesCount + noCount})`,
     );
   }
+  const paddedEncrypted = [...encrypted];
+  while (paddedEncrypted.length < MAXIMUM_BATCH_SIZE) {
+    paddedEncrypted.push({
+      yes: encryptAmount(configuredKey, 0),
+      no: encryptAmount(configuredKey, 0),
+    });
+  }
   const aggregate = {
-    yes: aggregateCiphertexts(encrypted.map((value) => value.yes)),
-    no: aggregateCiphertexts(encrypted.map((value) => value.no)),
+    yes: aggregateCiphertexts(paddedEncrypted.map((value) => value.yes)),
+    no: aggregateCiphertexts(paddedEncrypted.map((value) => value.no)),
   };
   const payout = positionPayout(registration.lot_size);
   const acceptedLeaves = [];
@@ -622,11 +631,15 @@ export function buildBatchStatement({
     lotSize: decimal(registration.lot_size),
     quote: quoteFields(quote),
     committeeSecret: decimal(committeeSecret, "committee secret"),
-    actionId: ordered.map((order) => bytes32Limbs(order.action_id)),
-    positionCommitment: ordered.map((order) =>
-      decimal(order.position_commitment)
-    ),
-    ciphertext: encrypted.map((value) => [
+    actionId: [
+      ...ordered.map((order) => bytes32Limbs(order.action_id)),
+      ...Array(MAXIMUM_BATCH_SIZE - ordered.length).fill([0n, 0n]),
+    ],
+    positionCommitment: [
+      ...ordered.map((order) => decimal(order.position_commitment)),
+      ...Array(MAXIMUM_BATCH_SIZE - ordered.length).fill(0n),
+    ],
+    ciphertext: paddedEncrypted.map((value) => [
       value.yes.c1[0],
       value.yes.c1[1],
       value.yes.c2[0],
@@ -636,8 +649,14 @@ export function buildBatchStatement({
       value.no.c2[0],
       value.no.c2[1],
     ]),
-    yesAmount: quantities.map((value) => value.yes),
-    noAmount: quantities.map((value) => value.no),
+    yesAmount: [
+      ...quantities.map((value) => value.yes),
+      ...Array(MAXIMUM_BATCH_SIZE - ordered.length).fill(0),
+    ],
+    noAmount: [
+      ...quantities.map((value) => value.no),
+      ...Array(MAXIMUM_BATCH_SIZE - ordered.length).fill(0),
+    ],
   };
   return {
     witness,
