@@ -1,7 +1,7 @@
 # Contracts (Soroban / Rust)
 
 Independently-built Cargo workspace of the on-chain contracts. Build target is
-**`wasm32v1-none`** (Rust 1.84+ / current stable — `wasm32-unknown-unknown` is
+**`wasm32v1-none`** (Rust 1.84+ / current stable; `wasm32-unknown-unknown` is
 unsupported by the SDK on recent Rust).
 
 ```
