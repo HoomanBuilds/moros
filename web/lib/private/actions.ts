@@ -40,7 +40,7 @@ import {
   type PrivateTree,
   type Point,
 } from "./primitives";
-import { provePrivateAction } from "./prover";
+import { preparePrivateProver, provePrivateAction } from "./prover";
 import { waitForPrivateBatch } from "./batch-window";
 import {
   liquidPrivateTotal,
@@ -2336,6 +2336,8 @@ export async function placePrivateOrder({
   if (quantity <= 0n || quantity > 1_000n) {
     throw new Error("Private position quantity must be between 1 and 1,000");
   }
+  onStatus?.("Preparing the private order prover");
+  await preparePrivateProver("order");
   onStatus?.("Reading the private market epoch");
   let wallet = await openPrivateWallet(address);
   const { registration, epoch } = await waitForPrivateBatch<

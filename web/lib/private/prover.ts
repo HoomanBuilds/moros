@@ -6,6 +6,10 @@ import {
   privateArtifactUrl,
   type PrivateDeploymentConfig,
 } from "./client";
+import {
+  PrivateProverArtifactCache,
+  type PreparedPrivateProverArtifacts,
+} from "./prover-artifacts";
 
 type Groth16Point = Array<string | number | bigint | Groth16Point>;
 
@@ -36,12 +40,14 @@ type PrivateArtifactManifest = {
 
 let manifestPromise: Promise<PrivateArtifactManifest> | null = null;
 let localProverArtifactRoot: string | null = null;
+const artifactCache = new PrivateProverArtifactCache();
 
 export function configurePrivateProverArtifactRoot(root: string | null): void {
   if (root !== null && !root.startsWith("/")) {
     throw new Error("Private prover artifact root must be an absolute path");
   }
   localProverArtifactRoot = root?.replace(/\/+$/u, "") ?? null;
+  artifactCache.clear();
 }
 
 function proverArtifact(
@@ -132,30 +138,62 @@ async function privateManifest(
   return manifestPromise;
 }
 
-export async function provePrivateAction(
+async function preparedPrivateProver(
   circuitName: string,
-  input: Record<string, unknown>,
-): Promise<{ proof: Uint8Array; publicSignals: bigint[] }> {
+): Promise<PreparedPrivateProverArtifacts> {
   const config = await getPrivateConfig();
   const manifest = await privateManifest(config);
   const circuit = manifest.circuits.find((entry) =>
     entry.name === circuitName && entry.prover === "browser"
   );
   if (!circuit) throw new Error(`Private circuit ${circuitName} is unavailable`);
+  const wasm = proverArtifact(config, circuit.artifacts.wasm);
+  const provingKey = proverArtifact(
+    config,
+    circuit.artifacts.proving_key,
+  );
+  const verificationKey = privateArtifactUrl(
+    config,
+    circuit.artifacts.verification_key,
+  );
+  return artifactCache.prepare(
+    JSON.stringify([
+      circuitName,
+      wasm,
+      provingKey,
+      verificationKey,
+      localProverArtifactRoot === null,
+    ]),
+    {
+      wasm,
+      provingKey,
+      verificationKey,
+      preloadBinaries: localProverArtifactRoot === null,
+    },
+  );
+}
+
+export async function preparePrivateProver(circuitName: string): Promise<void> {
+  await preparedPrivateProver(circuitName);
+}
+
+export async function provePrivateAction(
+  circuitName: string,
+  input: Record<string, unknown>,
+): Promise<{ proof: Uint8Array; publicSignals: bigint[] }> {
+  const artifacts = await preparedPrivateProver(circuitName);
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(
     input,
-    proverArtifact(config, circuit.artifacts.wasm),
-    proverArtifact(config, circuit.artifacts.proving_key),
+    artifacts.wasm,
+    artifacts.provingKey,
   );
-  const verificationResponse = await fetch(
-    privateArtifactUrl(config, circuit.artifacts.verification_key),
-    { cache: "force-cache" },
-  );
-  if (!verificationResponse.ok) {
-    throw new Error("Private verification key is unavailable");
-  }
-  const verificationKey = await verificationResponse.json() as Record<string, unknown>;
-  if (!(await snarkjs.groth16.verify(verificationKey, publicSignals, proof))) {
+  if (
+    !(await snarkjs.groth16.verify(
+      artifacts.verificationKey,
+      publicSignals,
+      proof,
+    ))
+  ) {
     throw new Error("Private proof failed local verification");
   }
   return {
