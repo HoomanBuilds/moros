@@ -43,6 +43,7 @@ import {
   FREE_REFLECTOR_RISK_GROUPS,
   REFLECTOR_CEX_ORACLE,
   REFLECTOR_FIAT_ORACLE,
+  reflectorResolverRoutes,
 } from "./oracle-config.mjs";
 
 const RPC_URL =
@@ -61,7 +62,7 @@ const SOURCE_COMMIT = process.env.MOROS_SOURCE_COMMIT || "";
 const DEPLOYMENT_NAME =
   process.env.MOROS_DEPLOYMENT_NAME || "Moros Testnet";
 const SALT_NAMESPACE =
-  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet-release";
+  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet";
 const COLLATERAL =
   process.env.COLLATERAL_ID ||
   "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
@@ -98,6 +99,7 @@ const MINIMUM_IDLE_BPS = 2_000;
 const PRIVATE_BATCH_GRACE = 600;
 const PRIVATE_EPOCH_DURATION = 60;
 const PRIVATE_REFUND_DELAY = 600;
+const RESOLVER_REGISTRY_DELAY = 300;
 const MINIMUM_FUNDING_WINDOW = 240;
 const MINIMUM_OPEN_WINDOW = 600;
 const RETRYABLE_TRANSACTION =
@@ -106,6 +108,7 @@ const RETRYABLE_TRANSACTION =
 const contractFiles = {
   verifier: "zk_verifier.wasm",
   resolver: "resolver.wasm",
+  resolverRegistry: "resolver_registry.wasm",
   sharedVault: "shielded_collateral_vault.wasm",
   liquidityPool: "pooled_liquidity_vault.wasm",
   factory: "market_factory.wasm",
@@ -458,7 +461,14 @@ async function main() {
   const artifacts = wasmArtifacts();
   const identity = testnetPrivacyIdentity(PRIVACY_SECRET);
   const salts = Object.fromEntries(
-    ["verifier", "resolver", "sharedVault", "liquidityPool", "factory"].map((name) => [
+    [
+      "verifier",
+      "resolver",
+      "resolverRegistry",
+      "sharedVault",
+      "liquidityPool",
+      "factory",
+    ].map((name) => [
       name,
       deterministicSalt(`${SALT_NAMESPACE}:${name}`),
     ]),
@@ -553,6 +563,19 @@ async function main() {
   await deployContract({
     server,
     source,
+    artifact: artifacts.resolverRegistry,
+    contractId: ids.resolverRegistry,
+    salt: salts.resolverRegistry,
+    args: {
+      governance: sourceAddress,
+      delay: BigInt(RESOLVER_REGISTRY_DELAY),
+      initial_routes: reflectorResolverRoutes(ids.resolver),
+    },
+  });
+
+  await deployContract({
+    server,
+    source,
     artifact: artifacts.sharedVault,
     contractId: ids.sharedVault,
     salt: salts.sharedVault,
@@ -607,12 +630,10 @@ async function main() {
         collateral: COLLATERAL,
         shared_vault: ids.sharedVault,
         liquidity_pool: ids.liquidityPool,
-        resolver: ids.resolver,
+        resolver_registry: ids.resolverRegistry,
         network_domain: networkDomain(PASSPHRASE),
         market_wasm_hash: artifacts.market.hash,
         liquidity_wasm_hash: artifacts.liquidityVault.hash,
-        allowed_assets: FREE_REFLECTOR_ASSETS,
-        asset_risk_groups: FREE_REFLECTOR_RISK_GROUPS,
         liquidity_tiers: [
           200_000_000n,
           500_000_000n,
@@ -642,6 +663,11 @@ async function main() {
     ids.resolver,
     source,
   );
+  const resolverRegistry = await clientFor(
+    artifacts.resolverRegistry,
+    ids.resolverRegistry,
+    source,
+  );
   const vault = await clientFor(
     artifacts.sharedVault,
     ids.sharedVault,
@@ -657,14 +683,39 @@ async function main() {
     ids.liquidityPool,
     source,
   );
-  const [resolverConfig, vaultInfo, poolInfo, factoryConfig] = await Promise.all([
+  const [
+    resolverConfig,
+    registryConfig,
+    vaultInfo,
+    poolInfo,
+    factoryConfig,
+    registryRoutes,
+  ] = await Promise.all([
     resolver.config(),
+    resolverRegistry.config(),
     vault.info(),
     liquidityPool.info(),
     factory.config(),
+    Promise.all(
+      FREE_REFLECTOR_RISK_GROUPS.map(async ({ asset }) =>
+        contractResultValue(
+          (await resolverRegistry.active_route({ asset })).result,
+        ),
+      ),
+    ),
   ]);
   const resolverValue = contractResultValue(resolverConfig.result);
   if (
+    registryConfig.result.governance !== sourceAddress ||
+    Number(registryConfig.result.delay) !== RESOLVER_REGISTRY_DELAY ||
+    registryRoutes.length !== FREE_REFLECTOR_RISK_GROUPS.length ||
+    registryRoutes.some((route, index) =>
+      route.resolver !== ids.resolver ||
+      route.risk_group !== FREE_REFLECTOR_RISK_GROUPS[index].risk_group ||
+      route.registration_required ||
+      !route.enabled ||
+      Number(route.revision) !== 1
+    ) ||
     vaultInfo.result.factory !== ids.factory ||
     vaultInfo.result.verifier !== ids.verifier ||
     vaultInfo.result.token !== COLLATERAL ||
@@ -673,7 +724,7 @@ async function main() {
     poolInfo.result.token !== COLLATERAL ||
     factoryConfig.result.shared_vault !== ids.sharedVault ||
     factoryConfig.result.liquidity_pool !== ids.liquidityPool ||
-    factoryConfig.result.resolver !== ids.resolver ||
+    factoryConfig.result.resolver_registry !== ids.resolverRegistry ||
     factoryConfig.result.collateral !== COLLATERAL ||
     resolverValue.quorum !== 1
   ) {
@@ -705,6 +756,7 @@ async function main() {
     contracts: {
       verifier: ids.verifier,
       resolver: ids.resolver,
+      resolverRegistry: ids.resolverRegistry,
       sharedVault: ids.sharedVault,
       liquidityPool: ids.liquidityPool,
       factory: ids.factory,
@@ -746,6 +798,19 @@ async function main() {
       minimumFundingWindow: MINIMUM_FUNDING_WINDOW,
       minimumOpenWindow: MINIMUM_OPEN_WINDOW,
       maximumMarketDuration: 7_776_000,
+    },
+    resolverRegistryPolicy: {
+      changeDelay: RESOLVER_REGISTRY_DELAY,
+      routes: FREE_REFLECTOR_RISK_GROUPS.map(
+        ({ asset, risk_group }) => ({
+          asset,
+          resolver: ids.resolver,
+          riskGroup: risk_group,
+          registrationRequired: false,
+          enabled: true,
+          revision: 1,
+        }),
+      ),
     },
     liquidityPolicy: {
       depositCap: 1_000_000_000_000n,

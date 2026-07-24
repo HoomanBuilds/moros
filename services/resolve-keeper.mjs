@@ -59,6 +59,10 @@ const COLLATERAL_ID = PRIVATE_DEPLOYMENT?.collateral?.contract;
 if (!/^C[A-Z2-7]{55}$/.test(COLLATERAL_ID || "")) {
   throw new Error("deployment collateral contract ID is invalid");
 }
+const RESOLVER_REGISTRY = PRIVATE_DEPLOYMENT?.contracts?.resolverRegistry;
+if (!/^C[A-Z2-7]{55}$/.test(RESOLVER_REGISTRY || "")) {
+  throw new Error("deployment resolver registry contract ID is invalid");
+}
 const INTERVAL_MS = Number(process.env.RESOLVE_INTERVAL_MS || 300000);
 const TTL_REFRESH_MS = Number(process.env.TTL_REFRESH_MS || 604800000);
 const PYTH_TOKEN = process.env.PYTH_ACCESS_TOKEN || "";
@@ -76,6 +80,7 @@ let status = {
   network: network.id,
   mode: ORACLE_MODE,
   resolver: RESOLVER,
+  resolverRegistry: RESOLVER_REGISTRY,
   marketsScanned: 0,
   dueMarkets: 0,
   resolvedMarkets: 0,
@@ -221,6 +226,18 @@ async function refreshTargetTtl(target, nowMs) {
   return refreshed;
 }
 
+async function refreshRegistryTtl(nowMs) {
+  if (
+    nowMs - (lastTtlRefresh.get(RESOLVER_REGISTRY) || 0) <
+      TTL_REFRESH_MS
+  ) {
+    return 0;
+  }
+  await touchContract(RESOLVER_REGISTRY);
+  lastTtlRefresh.set(RESOLVER_REGISTRY, nowMs);
+  return 1;
+}
+
 async function marketTargets() {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/markets_meta?market_state=eq.active&factory_id=eq.${PRIVATE_DEPLOYMENT.contracts.factory}&pool_id=eq.${PRIVATE_DEPLOYMENT.contracts.sharedVault}&select=market_id,pool_id,liquidity_vault_id,proposal_id,factory_id,market_state,resolver_type,collateral_sac`, {
     headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
@@ -248,6 +265,14 @@ async function tick() {
     ttlRefreshed: 0,
     errors: [],
   };
+  try {
+    report.ttlRefreshed += await refreshRegistryTtl(Date.now());
+  } catch (error) {
+    report.errors.push({
+      registry: RESOLVER_REGISTRY,
+      message: `Registry TTL refresh: ${error.message}`,
+    });
+  }
   for (const target of targets) {
     const id = target.marketId;
     try {

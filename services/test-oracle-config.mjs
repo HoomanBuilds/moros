@@ -5,6 +5,7 @@ import {
   REFLECTOR_CEX_ASSETS,
   REFLECTOR_FIAT_ASSETS,
   reflectorConfig,
+  reflectorResolverRoutes,
   resolutionPhase,
   resolvableAssets,
   selectFreeResolver,
@@ -35,6 +36,15 @@ assert.equal(resolutionPhase(1_300, 1_000, 1_300, 3_600), "resolve");
 assert.equal(resolutionPhase(4_900, 1_000, 1_300, 3_600), "void");
 assert.throws(() => resolutionPhase(1, 2, 1, 300), /invalid resolution timing/);
 const deployedResolver = `C${"A".repeat(55)}`;
+const routes = reflectorResolverRoutes(deployedResolver);
+assert.equal(routes.length, FREE_REFLECTOR_ASSETS.length);
+assert.deepEqual(routes[0], {
+  asset: FREE_REFLECTOR_ASSETS[0],
+  resolver: deployedResolver,
+  risk_group: "CRYPTO",
+  registration_required: false,
+});
+assert.throws(() => reflectorResolverRoutes("invalid"), /invalid/);
 assert.equal(
   selectFreeResolver({ contracts: { resolver: deployedResolver } }),
   deployedResolver,

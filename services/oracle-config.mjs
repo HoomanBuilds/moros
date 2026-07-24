@@ -106,6 +106,18 @@ export function reflectorRiskGroups(network = "testnet") {
 
 export const FREE_REFLECTOR_RISK_GROUPS = reflectorRiskGroups("testnet");
 
+export function reflectorResolverRoutes(resolver, network = "testnet") {
+  if (!/^C[A-Z2-7]{55}$/.test(resolver || "")) {
+    throw new Error("resolver contract ID is invalid");
+  }
+  return reflectorRiskGroups(network).map(({ asset, risk_group }) => ({
+    asset,
+    resolver,
+    risk_group,
+    registration_required: false,
+  }));
+}
+
 export const PYTH_PRO_FEEDS = {
   BTC: 1,
   ETH: 2,

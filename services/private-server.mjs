@@ -150,6 +150,7 @@ async function main() {
   if (
     !deployment.contracts?.sharedVault ||
     !deployment.contracts?.liquidityPool ||
+    !deployment.contracts?.resolverRegistry ||
     !deployment.contracts?.factory
   ) {
     throw new Error(`invalid private ${network.id} deployment manifest`);
@@ -208,6 +209,7 @@ async function main() {
     poolInfo.token !== deployment.collateral.contract ||
     factoryInfo.liquidity_pool !== deployment.contracts.liquidityPool ||
     factoryInfo.shared_vault !== deployment.contracts.sharedVault ||
+    factoryInfo.resolver_registry !== deployment.contracts.resolverRegistry ||
     Number(vaultInfo.levels) !== deployment.privacy.treeLevels ||
     Buffer.from(vaultInfo.network_domain).toString("hex") !==
       deployment.networkDomain ||
