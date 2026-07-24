@@ -52,6 +52,36 @@ try {
   assert.equal(first.outputs.length, 4);
   assert.equal(first.outputs[0].actionId, "01".repeat(32));
 
+  const concurrentStateFile = resolve(directory, "concurrent-outputs.json");
+  let concurrentReads = 0;
+  const concurrent = new PrivateOutputIndexer({
+    client: {
+      ...client,
+      output: async ({ index }) => {
+        concurrentReads++;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return { result: records[index] };
+      },
+    },
+    stateFile: concurrentStateFile,
+    vaultId: "CBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG",
+    levels: 8,
+  });
+  const concurrentSnapshots = await Promise.all([
+    concurrent.sync(),
+    concurrent.sync(),
+    concurrent.sync(),
+  ]);
+  assert.equal(concurrentReads, 4);
+  assert.ok(concurrentSnapshots.every((snapshot) =>
+    snapshot.currentRoot === root.toString() &&
+    snapshot.outputs.length === 4
+  ));
+  assert.equal(
+    JSON.parse(readFileSync(concurrentStateFile, "utf8")).outputs.length,
+    4,
+  );
+
   const resumed = new PrivateOutputIndexer({
     client,
     stateFile,

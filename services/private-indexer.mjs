@@ -66,9 +66,19 @@ export class PrivateOutputIndexer {
     this.vaultId = vaultId;
     this.levels = levels;
     this.state = readState(stateFile, vaultId, levels);
+    this.syncQueue = Promise.resolve();
   }
 
-  async sync() {
+  sync() {
+    const operation = this.syncQueue.then(
+      () => this.syncCurrent(),
+      () => this.syncCurrent(),
+    );
+    this.syncQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  async syncCurrent() {
     const info = invocationResultValue(await this.client.info());
     if (
       Number(info.levels) !== this.levels ||
@@ -77,8 +87,9 @@ export class PrivateOutputIndexer {
       throw new Error("vault tree state is incompatible with the local index");
     }
     const nextLeafIndex = Number(info.next_leaf_index);
+    const outputs = [...this.state.outputs];
     for (
-      let leafIndex = this.state.outputs.length;
+      let leafIndex = outputs.length;
       leafIndex < nextLeafIndex;
       leafIndex++
     ) {
@@ -92,18 +103,22 @@ export class PrivateOutputIndexer {
       if (output.leafIndex !== leafIndex) {
         throw new Error(`vault output ${leafIndex} has the wrong index`);
       }
-      this.state.outputs.push(output);
+      outputs.push(output);
     }
     const tree = merkleTree(
-      this.state.outputs.map((output) => output.commitment),
+      outputs.map((output) => output.commitment),
       this.levels,
     );
     if (tree.root !== decimal(info.current_root, "current root")) {
       throw new Error("indexed commitments do not reconstruct the vault root");
     }
-    this.state.currentRoot = tree.root;
-    this.state.nextLeafIndex = nextLeafIndex;
-    this.state.updatedAt = new Date().toISOString();
+    this.state = {
+      ...this.state,
+      outputs,
+      currentRoot: tree.root,
+      nextLeafIndex,
+      updatedAt: new Date().toISOString(),
+    };
     saveState(this.stateFile, this.state);
     return this.snapshot();
   }
