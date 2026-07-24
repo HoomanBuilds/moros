@@ -95,11 +95,11 @@ const MAX_DEPLOYED_BPS = 8_000;
 const MAX_MARKET_BPS = 8_000;
 const MAX_GROUP_BPS = 8_000;
 const MINIMUM_IDLE_BPS = 2_000;
-const PRIVATE_BATCH_GRACE = 900;
+const PRIVATE_BATCH_GRACE = 600;
 const PRIVATE_EPOCH_DURATION = 60;
 const PRIVATE_REFUND_DELAY = 600;
 const MINIMUM_FUNDING_WINDOW = 240;
-const MINIMUM_OPEN_WINDOW = 1_200;
+const MINIMUM_OPEN_WINDOW = 600;
 const RETRYABLE_TRANSACTION =
   /pending|timed out|timeout|tx_bad_seq|try again|rate limit/i;
 
