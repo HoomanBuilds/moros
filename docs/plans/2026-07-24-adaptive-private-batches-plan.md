@@ -9,7 +9,7 @@ Replace the exact-eight execution requirement with one adaptive private queue. K
 1. Preserve the current quote-wrapper, signer-isolation, recovery, and wallet-scan fixes in logical commits.
 2. Rename fixed batch policy fields to maximum batch policy fields across contract ABIs and application types.
 3. Remove the minimum-side requirement.
-4. Make an idle epoch start its 60-second cutoff when the first order is accepted.
+4. Make the first order flow relay an idempotent epoch-open call that persists its 60-second cutoff before proof generation.
 5. Seal at eight accepted orders or at the active cutoff.
 6. Permit one to eight accepted orders in batch submission.
 7. Handle zero quantity on either quote side without division or remainder failures.
@@ -31,6 +31,7 @@ Replace the exact-eight execution requirement with one adaptive private queue. K
 
 - One YES order executes after the active 60-second window and changes prices once.
 - One NO order executes after the active 60-second window and changes prices once.
+- Proof preparation and order acceptance use the same persisted cutoff and refund deadline even when several ledgers close between them.
 - Two to seven mixed orders execute together with complete FIFO inclusion.
 - Eight orders execute before the deadline when capacity is reached.
 - Empty markets do not create recurring settlement transactions.

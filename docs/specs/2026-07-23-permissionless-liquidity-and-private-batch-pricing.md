@@ -486,7 +486,7 @@ This fixed-lot rule lets a user later prove their correct private charge from th
 
 The rounding reserve is a temporary bridge, not a subsidy. Each batch records its contribution as a receivable. Normal resolution repays it from vested fee escrow before the LP and protocol split. VOID repays it from the returned market charge. A batch fails before nullifier consumption if its fee escrow cannot cover the contribution or the reserve cannot advance it.
 
-The adaptive testnet policy accepts one to eight orders. A batch executes early at eight or after the 60-second window that starts with its first accepted order. One-sided batches execute against pooled LMSR liquidity. The proof retains eight fixed slots with canonical inactive metadata and valid encrypted-zero padding. A singleton aggregate can reveal its side and quantity to observers even though no wallet identity is linked by the relayed transaction.
+The adaptive testnet policy accepts one to eight orders. A batch executes early at eight or after the 60-second window opened by its first order flow. A permissionless relayed call persists the cutoff and refund deadline before proof generation, so proof preparation and acceptance bind identical values without wallet authorization. One-sided batches execute against pooled LMSR liquidity. The proof retains eight fixed slots with canonical inactive metadata and valid encrypted-zero padding. A singleton aggregate can reveal its side and quantity to observers even though no wallet identity is linked by the relayed transaction.
 
 ### Slippage protection
 

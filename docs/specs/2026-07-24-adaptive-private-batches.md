@@ -11,8 +11,10 @@ Private orders must execute without requiring eight orders while preserving atom
 ## Batch policy
 
 - Each market has one private order queue and one LMSR price state.
-- A new batch waits for its first order before starting its execution window.
-- The first accepted order starts a 60-second window.
+- A new batch waits for the first order flow before starting its execution window.
+- Before proving the first order, the relayer calls the permissionless and idempotent epoch opener. Its confirmed ledger timestamp starts the 60-second window.
+- The opener persists the cutoff and refund deadline before proof generation. Order binding and acceptance read those same values and never recalculate them.
+- A client starts proof generation only when at least 30 seconds remain. Near-cutoff orders wait for the next epoch instead of risking a proof that expires during submission.
 - The batch executes early when eight orders are accepted.
 - A batch with one to seven orders executes when the window ends.
 - One-sided batches are valid because pooled LMSR liquidity is the counterparty.
@@ -44,7 +46,8 @@ Private orders must execute without requiring eight orders while preserving atom
 
 - Empty batches do not roll every 60 seconds.
 - An idle epoch remains open until its first order or market expiry.
-- The first order sets the batch cutoff, capped by market expiry.
+- The first order flow sets the batch cutoff through the relayed epoch opener, capped by market expiry.
+- Opening an epoch requires no wallet authorization and does not link the bettor's wallet to the market.
 - An empty epoch at market expiry can close without creating bettor refunds.
 - The final non-empty batch either executes before its recovery deadline or becomes refundable.
 
@@ -67,4 +70,3 @@ Private orders must execute without requiring eight orders while preserving atom
 - Market, portfolio, create, and landing UI: maximum batch size, countdown, singleton disclosure, claims, and refunds.
 - Fresh lifecycle harness: singleton, partial mixed, full, one-sided, failure, refund, resolution, claim, and LP harvest coverage.
 - VM and deployment scripts: clean runtime, fresh IDs, and no legacy services.
-
