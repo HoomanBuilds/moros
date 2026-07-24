@@ -197,6 +197,7 @@ type PrivateEpoch = {
   accepted_count: number;
   first_sequence: bigint;
   last_sequence: bigint;
+  opened_at: bigint;
   cutoff: bigint;
   refund_at: bigint;
   committee_epoch: bigint;
@@ -2352,7 +2353,7 @@ export async function placePrivateOrder({
       if (!currentRegistration || currentRegistration.finalized) {
         return { registration: currentRegistration };
       }
-      const currentEpoch =
+      let currentEpoch =
         await readPrivateContract<PrivateEpoch | undefined>(
           wallet.config.contracts.sharedVault,
           address,
@@ -2362,6 +2363,29 @@ export async function placePrivateOrder({
             epoch_number: currentRegistration.current_epoch,
           },
         );
+      if (
+        currentEpoch &&
+        enumName(currentEpoch.phase) === "Collecting" &&
+        currentEpoch.accepted_count === 0 &&
+        currentEpoch.opened_at === 0n
+      ) {
+        onStatus?.("Opening the private batch window");
+        await relayPrivateContractCall(
+          wallet.config.contracts.sharedVault,
+          address,
+          "open_epoch",
+          { market },
+        );
+        currentEpoch = await readPrivateContract<PrivateEpoch | undefined>(
+          wallet.config.contracts.sharedVault,
+          address,
+          "epoch",
+          {
+            market,
+            epoch_number: currentRegistration.current_epoch,
+          },
+        );
+      }
       return {
         registration: currentRegistration,
         epoch: currentEpoch,

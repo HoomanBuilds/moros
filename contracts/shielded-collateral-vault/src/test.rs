@@ -1081,6 +1081,7 @@ fn accept_test_order(
     commitments: [u32; 2],
 ) {
     let registration = setup.vault.registration(market).unwrap();
+    setup.vault.open_epoch(market);
     let epoch = setup
         .vault
         .epoch(market, &registration.current_epoch)
@@ -1504,6 +1505,37 @@ fn invalid_order_points_fail_before_note_consumption() {
             .accepted_count,
         0
     );
+}
+
+#[test]
+fn opened_epoch_keeps_order_binding_stable_during_proof_generation() {
+    let setup = setup();
+    let (market_address, _liquidity_address, _resolver) = setup_private_market(&setup);
+    let opened = setup.vault.open_epoch(&market_address);
+    assert_ne!(opened.opened_at, 0);
+    let encrypted_order = order_ciphertext(&setup.env, 20);
+    let position_commitment = field(&setup.env, 201);
+    let action_id = id(&setup.env, 20);
+    let first = setup.vault.order_binding(
+        &market_address,
+        &opened.epoch,
+        &action_id,
+        &position_commitment,
+        &encrypted_order,
+    );
+    setup
+        .env
+        .ledger()
+        .with_mut(|ledger| ledger.timestamp = opened.opened_at + 10);
+    assert_eq!(setup.vault.open_epoch(&market_address), opened);
+    let second = setup.vault.order_binding(
+        &market_address,
+        &opened.epoch,
+        &action_id,
+        &position_commitment,
+        &encrypted_order,
+    );
+    assert_eq!(second, first);
 }
 
 #[test]

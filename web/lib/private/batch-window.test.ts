@@ -24,9 +24,18 @@ const collecting: PrivateBatchWindow = {
     cutoff: 200n,
   },
 };
+const nearCutoff: PrivateBatchWindow = {
+  registration: { ...registration, current_epoch: 3n },
+  epoch: {
+    epoch: 3n,
+    phase: ["Collecting"],
+    accepted_count: 0,
+    cutoff: 175n,
+  },
+};
 
 async function main() {
-  const snapshots = [closed, collecting];
+  const snapshots = [closed, nearCutoff, collecting];
   let waits = 0;
   const opened = await waitForPrivateBatch({
     read: async () => snapshots.shift() ?? collecting,
@@ -35,10 +44,10 @@ async function main() {
     },
     sleep: async () => {},
     nowSeconds: () => 150n,
-    maximumAttempts: 2,
+    maximumAttempts: 3,
   });
   assert.equal(opened.epoch.epoch, 3n);
-  assert.equal(waits, 1);
+  assert.equal(waits, 2);
 
   await assert.rejects(
     waitForPrivateBatch({

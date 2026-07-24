@@ -44,6 +44,13 @@ assert.equal(
   }).args.length,
   15,
 );
+assert.equal(
+  decodeRelayRequest({
+    method: "open_epoch",
+    args: [argument],
+  }).args.length,
+  1,
+);
 
 const limiter = new FixedWindowRateLimiter({ limit: 2, windowMs: 1_000 });
 assert.equal(limiter.take("client", 1_000).allowed, true);

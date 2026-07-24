@@ -821,6 +821,34 @@ impl ShieldedCollateralVault {
             .unwrap_or_else(|_| panic_with_error!(&env, Error::InvalidProofStatement))
     }
 
+    pub fn open_epoch(env: Env, market: Address) -> EpochState {
+        let registration = Self::market_registration(&env, &market);
+        if registration.finalized {
+            panic_with_error!(&env, Error::InvalidEpoch);
+        }
+        let epoch_key = DataKey::Epoch(market.clone(), registration.current_epoch);
+        let mut epoch: EpochState = env
+            .storage()
+            .persistent()
+            .get(&epoch_key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidEpoch));
+        if epoch.phase != EpochPhase::Collecting {
+            panic_with_error!(&env, Error::InvalidPhase);
+        }
+        if epoch.opened_at == 0 {
+            let client = MarketClient::new(&env, &market);
+            if client.outcome().is_some()
+                || client.state_version() != epoch.market_state_version
+            {
+                panic_with_error!(&env, Error::StaleState);
+            }
+            Self::start_epoch_window(&env, &registration, &mut epoch);
+            env.storage().persistent().set(&epoch_key, &epoch);
+        }
+        Self::bump_persistent(&env, &epoch_key);
+        epoch
+    }
+
     pub fn order_binding(
         env: Env,
         market: Address,
@@ -830,17 +858,18 @@ impl ShieldedCollateralVault {
         encrypted_order: EncryptedOrder,
     ) -> OrderBinding {
         let registration = Self::market_registration(&env, &market);
-        let mut epoch = Self::epoch_state(&env, &market, epoch_number);
+        let epoch = Self::epoch_state(&env, &market, epoch_number);
         if registration.finalized
             || registration.current_epoch != epoch_number
             || epoch.phase != EpochPhase::Collecting
             || epoch.accepted_count >= registration.maximum_batch_size
+            || epoch.opened_at == 0
+            || env.ledger().timestamp() >= epoch.cutoff
             || !Self::valid_encrypted_order(&env, &encrypted_order)
             || !Self::canonical_nonzero_field(&env, &position_commitment)
         {
             panic_with_error!(&env, Error::InvalidOrder);
         }
-        Self::start_epoch_window(&env, &registration, &mut epoch);
         Self::build_order_binding(
             &env,
             &registration,
@@ -1486,13 +1515,12 @@ impl ShieldedCollateralVault {
         if epoch.phase != EpochPhase::Collecting {
             panic_with_error!(&env, Error::InvalidPhase);
         }
-        if env.ledger().timestamp() >= epoch.cutoff {
+        if epoch.opened_at == 0 || env.ledger().timestamp() >= epoch.cutoff {
             panic_with_error!(&env, Error::TooEarly);
         }
         if epoch.accepted_count >= registration.maximum_batch_size {
             panic_with_error!(&env, Error::EpochFull);
         }
-        Self::start_epoch_window(&env, &registration, &mut epoch);
         let client = MarketClient::new(&env, &market);
         if client.outcome().is_some() || client.state_version() != epoch.market_state_version {
             panic_with_error!(&env, Error::StaleState);
@@ -2567,7 +2595,7 @@ impl ShieldedCollateralVault {
         registration: &MarketRegistration,
         epoch: &mut EpochState,
     ) {
-        if epoch.accepted_count != 0 {
+        if epoch.opened_at != 0 || epoch.accepted_count != 0 {
             return;
         }
         let now = env.ledger().timestamp();

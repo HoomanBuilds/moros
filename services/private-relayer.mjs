@@ -9,6 +9,7 @@ export const PRIVATE_RELAY_METHODS = Object.freeze({
   request_liquidity_exit: 12,
   cancel_liquidity_exit: 7,
   match_liquidity_exit: 15,
+  open_epoch: 1,
   accept_order: 6,
   refund_order: 5,
   recover_execution_change: 5,
