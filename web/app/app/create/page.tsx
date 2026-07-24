@@ -67,7 +67,7 @@ import {
 } from "@/lib/markets/categories";
 
 const STEPS: { key: ProposalStep; label: string }[] = [
-  { key: "configuration", label: "Checking private testnet policy" },
+  { key: "configuration", label: "Checking private network policy" },
   { key: "proposal", label: "Creating the market proposal" },
   { key: "liquidity", label: "Registering with the liquidity pool" },
   { key: "listing", label: "Publishing the market" },
@@ -444,7 +444,7 @@ export default function CreatePage() {
             Create a prediction
           </h1>
           <p className="max-w-2xl text-base leading-relaxed text-foreground/60 sm:text-lg">
-            Choose a market type, define an outcome, and deploy a shielded USDC market on Stellar testnet.
+            Choose a market type, define an outcome, and deploy a shielded USDC market on {NETWORK.name}.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -520,7 +520,7 @@ export default function CreatePage() {
                 <div id="event-market-status" className="flex items-start gap-3 rounded-lg border border-amber-300/20 bg-amber-300/[0.04] p-4 text-sm text-foreground/60">
                   <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-200" aria-hidden="true" />
                   <p>
-                    Sports, politics, weather, economics, and other event markets stay unavailable during this testnet release. They will open only after their evidence observers, challenges, arbitration, and refund monitoring are running.
+                    Sports, politics, weather, economics, and other event markets stay unavailable during this {NETWORK.id} release. They will open only after their evidence observers, challenges, arbitration, and refund monitoring are running.
                   </p>
                 </div>
               )}
@@ -674,7 +674,7 @@ export default function CreatePage() {
               <SectionHeading
                 number={3}
                 title="Define the resolution"
-                description={isPriceMarket ? "This testnet market uses a free public Stellar oracle feed at expiry." : "Set the evidence hierarchy, exact YES rule, and every refund condition before deployment."}
+                description={isPriceMarket ? `This ${NETWORK.id} market uses a free public Stellar oracle feed at expiry.` : "Set the evidence hierarchy, exact YES rule, and every refund condition before deployment."}
                 complete={resolutionComplete}
               />
 
@@ -1077,7 +1077,7 @@ export default function CreatePage() {
                 <p className="mt-2 text-sm leading-relaxed text-foreground/55">
                   {isPriceMarket
                     ? ORACLE_MODE === "free"
-                      ? `After expiry, the matching free public ${feedName} feed resolves this testnet market.`
+                      ? `After expiry, the matching free public ${feedName} feed resolves this ${NETWORK.id} market.`
                       : "After expiry, Reflector and Pyth Pro must agree before the market resolves."
                     : "Event markets remain disabled until independent evidence, challenge, arbitration, timeout, and refund operations are running."}
                 </p>
@@ -1093,7 +1093,7 @@ export default function CreatePage() {
               <div>
                 <Tag>What gets deployed</Tag>
                 <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-                  A creator-free proposal reserves a deterministic USDC market and isolated liquidity vault. The pooled LP activates it only after full funding. Private batches use the disclosed single-VM testnet coordinator.
+                  A creator-free proposal reserves a deterministic USDC market and isolated liquidity vault. The pooled LP activates it only after full funding. Private batches use the disclosed {NETWORK.id === "testnet" ? "single-VM testnet coordinator" : "threshold mainnet coordinator"}.
                 </p>
               </div>
             </div>

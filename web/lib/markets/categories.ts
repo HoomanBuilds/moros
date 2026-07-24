@@ -1,3 +1,5 @@
+import { NETWORK, type NetworkId } from "@/lib/network";
+
 export const CRYPTO_PRICE_ASSETS = [
   "BTC",
   "ETH",
@@ -17,14 +19,57 @@ export const CRYPTO_PRICE_ASSETS = [
   "EURC",
 ] as const;
 
-export const FX_PRICE_ASSETS = ["EUR", "GBP", "CHF", "CAD", "MXN", "ARS", "BRL", "THB"] as const;
+const TESTNET_FX_PRICE_ASSETS = [
+  "EUR",
+  "GBP",
+  "CHF",
+  "CAD",
+  "MXN",
+  "ARS",
+  "BRL",
+  "THB",
+] as const;
+const MAINNET_FX_PRICE_ASSETS = [
+  "EUR",
+  "GBP",
+  "CAD",
+  "BRL",
+  "JPY",
+  "CNY",
+  "MXN",
+  "KRW",
+  "TRY",
+  "ARS",
+  "PEN",
+  "VES",
+  "CLP",
+  "CRC",
+  "CDF",
+  "COP",
+  "HKD",
+  "INR",
+  "NGN",
+  "PHP",
+  "RUB",
+  "ZAR",
+  "KES",
+] as const;
+
+export function fxPriceAssets(network: NetworkId): readonly string[] {
+  return network === "mainnet"
+    ? MAINNET_FX_PRICE_ASSETS
+    : TESTNET_FX_PRICE_ASSETS;
+}
+
+export const FX_PRICE_ASSETS: readonly string[] =
+  fxPriceAssets(NETWORK.id);
 export const GOLD_PRICE_ASSETS = ["XAU"] as const;
 
 export const PRICE_CATEGORY_ASSETS = {
   "Crypto price": CRYPTO_PRICE_ASSETS,
   FX: FX_PRICE_ASSETS,
   "Gold price": GOLD_PRICE_ASSETS,
-} as const;
+};
 
 export type PriceCategory = keyof typeof PRICE_CATEGORY_ASSETS;
 

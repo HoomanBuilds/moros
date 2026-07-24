@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { NETWORK } from "@/lib/network";
 
 const words = ["side", "position", "edge"];
 
@@ -211,7 +212,7 @@ export function HeroSection() {
       >
         <div className="max-w-[1400px] mx-auto flex flex-wrap items-start gap-x-10 gap-y-6 lg:gap-20">
           {[
-            { value: "Live", label: "on Stellar testnet" },
+            { value: "Live", label: `on ${NETWORK.name}` },
             { value: "8 orders", label: "one atomic batch" },
             { value: "LMSR", label: "on-chain odds" },
           ].map((stat) => (

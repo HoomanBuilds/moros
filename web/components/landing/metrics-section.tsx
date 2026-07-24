@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { NETWORK } from "@/lib/network";
 
 const metrics = [
   {
@@ -267,7 +268,7 @@ export function MetricsSection() {
             }`}>
               Proven
               <br />
-              <span className="text-muted-foreground">on testnet.</span>
+              <span className="text-muted-foreground">on {NETWORK.id}.</span>
             </h2>
           </div>
         </div>
@@ -333,11 +334,11 @@ export function MetricsSection() {
         <div className={`mt-16 pt-8 border-t border-foreground/10 flex flex-wrap items-center gap-x-12 gap-y-4 text-sm font-mono text-muted-foreground transition-all duration-1000 delay-500 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}>
-          <span>Live on Stellar testnet</span>
+          <span>Live on {NETWORK.name}</span>
           <span>circom + Groth16 order circuits</span>
           <span>Reflector-oracle resolution</span>
-          <span>Single-VM coordinator limitation</span>
-          <span className="text-foreground">Testnet only</span>
+          <span>{NETWORK.id === "testnet" ? "Single-VM coordinator limitation" : "Threshold coordinator"}</span>
+          <span className="text-foreground">{NETWORK.name}</span>
         </div>
       </div>
     </section>

@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { NETWORK } from "@/lib/network";
 
 const regions = [
   { name: "Shared vault", detail: "Soroban private notes", status: "live" },
   { name: "Proof gateway", detail: "BN254 Groth16", status: "live" },
-  { name: "Coordinator", detail: "single VM testnet", status: "limited" },
+  {
+    name: "Coordinator",
+    detail: NETWORK.id === "testnet" ? "single VM testnet" : "threshold mainnet",
+    status: NETWORK.id === "testnet" ? "limited" : "live",
+  },
   { name: "Resolver", detail: "Reflector oracle", status: "live" },
-  { name: "Stellar Testnet", detail: "live deploy", status: "live" },
+  { name: NETWORK.name, detail: "live deploy", status: "live" },
 ];
 
 export function InfrastructureSection() {

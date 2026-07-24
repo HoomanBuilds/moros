@@ -173,7 +173,7 @@ export function ResolutionPanel() {
         <div>
           <Tag>Event resolution</Tag>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            This inactive event foundation uses bonded proposals, challenges, and independent arbitration. New event markets are not enabled on the current testnet.
+            This inactive event foundation uses bonded proposals, challenges, and independent arbitration. New event markets are not enabled on the current network.
           </p>
         </div>
         {bond !== null && (

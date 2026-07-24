@@ -32,7 +32,9 @@ export async function runBet(
   { side, amount, address, collateral, marketId, poolId, backupKey, onStage }:
   { side: BetSide; amount: string; address: string; collateral: CollateralAsset; marketId: string; poolId: string; backupKey: PrivateArchiveKeys; onStage: (s: BetStage) => void }
 ) {
-  if (collateral.sac !== NETWORK.collateral.sac) throw new Error("Moros testnet markets require Stellar USDC");
+  if (collateral.sac !== NETWORK.collateral.sac) {
+    throw new Error(`Moros ${NETWORK.id} markets require Stellar USDC`);
+  }
   const privateConfig = await getPrivateConfig();
   configurePositionBook(privateConfig.contracts.sharedVault);
   if (poolId === privateConfig.contracts.sharedVault) {

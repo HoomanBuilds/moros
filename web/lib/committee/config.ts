@@ -1,1 +1,9 @@
-export const COMMITTEE_URL = process.env.NEXT_PUBLIC_COMMITTEE_URL ?? "http://127.0.0.1:8787";
+import { NETWORK } from "@/lib/network";
+
+if (!NETWORK.privateServiceUrl) {
+  throw new Error(
+    `NEXT_PUBLIC_${NETWORK.id.toUpperCase()}_PRIVATE_SERVICE_URL is required`,
+  );
+}
+
+export const COMMITTEE_URL = NETWORK.privateServiceUrl;

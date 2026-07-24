@@ -8,8 +8,6 @@ export type CollateralAsset = {
   native: boolean;
 };
 
-const NETWORK_ID: NetworkId = process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
-
 const ASSETS: Record<NetworkId, { usdc: CollateralAsset }> = {
   testnet: {
     usdc: {
@@ -36,6 +34,7 @@ const DEFAULTS = {
     name: "Stellar testnet",
     rpcUrl: "https://soroban-testnet.stellar.org",
     horizonUrl: "https://horizon-testnet.stellar.org",
+    privateServiceUrl: "http://127.0.0.1:8787",
     passphrase: "Test SDF Network ; September 2015",
     explorerNetwork: "testnet",
   },
@@ -43,23 +42,89 @@ const DEFAULTS = {
     name: "Stellar mainnet",
     rpcUrl: "https://mainnet.sorobanrpc.com",
     horizonUrl: "https://horizon.stellar.org",
+    privateServiceUrl: "",
     passphrase: "Public Global Stellar Network ; September 2015",
     explorerNetwork: "public",
   },
 } as const;
 
-const selected = DEFAULTS[NETWORK_ID];
+type PublicNetworkEnv = Record<string, string | undefined>;
 
-export const NETWORK = {
-  id: NETWORK_ID,
-  name: selected.name,
-  rpcUrl: process.env.NEXT_PUBLIC_STELLAR_RPC_URL || selected.rpcUrl,
-  horizonUrl: process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL || selected.horizonUrl,
-  passphrase: selected.passphrase,
-  collateral: ASSETS[NETWORK_ID].usdc,
-  explorer: (id: string) => `https://stellar.expert/explorer/${selected.explorerNetwork}/contract/${id}`,
-  transactionExplorer: (hash: string) => `https://stellar.expert/explorer/${selected.explorerNetwork}/tx/${hash}`,
+const BUILD_ENV: PublicNetworkEnv = {
+  NEXT_PUBLIC_STELLAR_NETWORK:
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK,
+  NEXT_PUBLIC_TESTNET_STELLAR_RPC_URL:
+    process.env.NEXT_PUBLIC_TESTNET_STELLAR_RPC_URL,
+  NEXT_PUBLIC_MAINNET_STELLAR_RPC_URL:
+    process.env.NEXT_PUBLIC_MAINNET_STELLAR_RPC_URL,
+  NEXT_PUBLIC_STELLAR_RPC_URL:
+    process.env.NEXT_PUBLIC_STELLAR_RPC_URL,
+  NEXT_PUBLIC_TESTNET_STELLAR_HORIZON_URL:
+    process.env.NEXT_PUBLIC_TESTNET_STELLAR_HORIZON_URL,
+  NEXT_PUBLIC_MAINNET_STELLAR_HORIZON_URL:
+    process.env.NEXT_PUBLIC_MAINNET_STELLAR_HORIZON_URL,
+  NEXT_PUBLIC_STELLAR_HORIZON_URL:
+    process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL,
+  NEXT_PUBLIC_TESTNET_PRIVATE_SERVICE_URL:
+    process.env.NEXT_PUBLIC_TESTNET_PRIVATE_SERVICE_URL,
+  NEXT_PUBLIC_MAINNET_PRIVATE_SERVICE_URL:
+    process.env.NEXT_PUBLIC_MAINNET_PRIVATE_SERVICE_URL,
+  NEXT_PUBLIC_PRIVATE_SERVICE_URL:
+    process.env.NEXT_PUBLIC_PRIVATE_SERVICE_URL,
+  NEXT_PUBLIC_COMMITTEE_URL:
+    process.env.NEXT_PUBLIC_COMMITTEE_URL,
 };
+
+export function networkConfig(env: PublicNetworkEnv = BUILD_ENV) {
+  const selectedId = env.NEXT_PUBLIC_STELLAR_NETWORK || "testnet";
+  if (selectedId !== "testnet" && selectedId !== "mainnet") {
+    throw new Error(
+      "NEXT_PUBLIC_STELLAR_NETWORK must be testnet or mainnet",
+    );
+  }
+  const id: NetworkId = selectedId;
+  const selected = DEFAULTS[id];
+  const scopedRpc = id === "testnet"
+    ? env.NEXT_PUBLIC_TESTNET_STELLAR_RPC_URL
+    : env.NEXT_PUBLIC_MAINNET_STELLAR_RPC_URL;
+  const scopedHorizon = id === "testnet"
+    ? env.NEXT_PUBLIC_TESTNET_STELLAR_HORIZON_URL
+    : env.NEXT_PUBLIC_MAINNET_STELLAR_HORIZON_URL;
+  const scopedPrivateService = id === "testnet"
+    ? env.NEXT_PUBLIC_TESTNET_PRIVATE_SERVICE_URL
+    : env.NEXT_PUBLIC_MAINNET_PRIVATE_SERVICE_URL;
+  return {
+    id,
+    name: selected.name,
+    rpcUrl:
+      scopedRpc ||
+      (id === "testnet"
+        ? env.NEXT_PUBLIC_STELLAR_RPC_URL
+        : "") ||
+      selected.rpcUrl,
+    horizonUrl:
+      scopedHorizon ||
+      (id === "testnet"
+        ? env.NEXT_PUBLIC_STELLAR_HORIZON_URL
+        : "") ||
+      selected.horizonUrl,
+    privateServiceUrl:
+      scopedPrivateService ||
+      (id === "testnet"
+        ? env.NEXT_PUBLIC_PRIVATE_SERVICE_URL ||
+          env.NEXT_PUBLIC_COMMITTEE_URL
+        : "") ||
+      selected.privateServiceUrl,
+    passphrase: selected.passphrase,
+    collateral: ASSETS[id].usdc,
+    explorer: (contractId: string) =>
+      `https://stellar.expert/explorer/${selected.explorerNetwork}/contract/${contractId}`,
+    transactionExplorer: (hash: string) =>
+      `https://stellar.expert/explorer/${selected.explorerNetwork}/tx/${hash}`,
+  };
+}
+
+export const NETWORK = networkConfig();
 
 export function collateralFromRecord(record?: {
   collateralCode?: string | null;

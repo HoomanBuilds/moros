@@ -68,20 +68,21 @@ export function AboutPanel() {
             <p><span className="text-foreground">YES:</span> {data?.resolutionRules}</p>
             <p><span className="text-foreground">VOID:</span> {data?.voidRules}</p>
             <p>
-              Event market creation is disabled on this testnet until independent evidence, challenge, arbitration, timeout, and refund operations are running.
+              Event market creation is disabled on {NETWORK.name} until independent evidence, challenge, arbitration, timeout, and refund operations are running.
             </p>
           </div>
         ) : (
           <p className="text-sm leading-relaxed text-muted-foreground">
             Resolves <span className="text-foreground">YES</span> if {asset} settles at or above{" "}
-            <span className="text-foreground">{strike}</span> at expiry. {ORACLE_MODE === "free" ? "The current testnet beta reads the matching free Reflector CEX or fiat contract on Stellar." : "The paid-mode adapter requires Reflector and Pyth Pro to agree within the configured tolerance."} Invalid or stale data leaves the market pending instead of guessing a result.
+            <span className="text-foreground">{strike}</span> at expiry. {ORACLE_MODE === "free" ? `The current ${NETWORK.id} release reads the matching free Reflector CEX or fiat contract on Stellar.` : "The paid-mode adapter requires Reflector and Pyth Pro to agree within the configured tolerance."} Invalid or stale data leaves the market pending instead of guessing a result.
           </p>
         )}
         <p className="text-sm leading-relaxed text-muted-foreground">
           Your side and quantity stay encrypted on-chain. Up to {data?.maximumBatchSize ?? 8} orders execute atomically at one
           clearing price per side. A batch executes when full or after its 60-second window, including one-sided activity. A batch
-          that cannot execute becomes refundable after its deadline. Claims are proof-bound and relayer-submittable. The current single-VM coordinator can
-          recover individual order values, so this testnet is not threshold privacy.
+          that cannot execute becomes refundable after its deadline. Claims are proof-bound and relayer-submittable. {NETWORK.id === "testnet"
+            ? "The current single-VM coordinator can recover individual order values, so this testnet is not threshold privacy."
+            : "No individual threshold coordinator member can decrypt an order alone."}
         </p>
       </div>
 
@@ -135,7 +136,11 @@ export function AboutPanel() {
         <Row label="Pool collateral">{data ? `${data.poolSize.toFixed(2)} ${data.collateral.code}` : "--"}</Row>
         <Row label="Platform fee">{feeLabel}</Row>
         {isEvent && <Row label="Rules integrity">{data?.rulesVerified ? "Verified against on-chain hash" : "Verification failed"}</Row>}
-        <Row label="Privacy">Encrypted side and quantity; single-VM testnet coordinator</Row>
+        <Row label="Privacy">
+          {NETWORK.id === "testnet"
+            ? "Encrypted side and quantity; single-VM testnet coordinator"
+            : "Encrypted side and quantity; threshold coordinator"}
+        </Row>
         <Row label="Market contract"><ContractLink id={marketId} /></Row>
         <Row label="Shielded pool"><ContractLink id={poolId} /></Row>
       </div>

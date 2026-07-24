@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ConnectButton } from "@/components/wallet/connect-button";
 import { MobileNav } from "@/components/app/mobile-nav";
+import { NETWORK } from "@/lib/network";
 
 export function Topbar() {
   return (
@@ -19,7 +20,7 @@ export function Topbar() {
         <div className="flex items-center gap-4 lg:gap-6">
           <span className="hidden sm:flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
-            <span className="text-xs font-mono text-muted-foreground">Stellar testnet</span>
+            <span className="text-xs font-mono text-muted-foreground">{NETWORK.name}</span>
           </span>
           <ConnectButton />
         </div>

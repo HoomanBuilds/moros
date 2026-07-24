@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { NETWORK } from "@/lib/network";
 
 export function CtaSection() {
   const [isVisible, setIsVisible] = useState(false);
@@ -71,7 +72,7 @@ export function CtaSection() {
                 </div>
 
                 <p className="text-sm text-muted-foreground mt-8 font-mono">
-                  Testnet only, unaudited.
+                  {NETWORK.name}, unaudited.
                 </p>
               </div>
 

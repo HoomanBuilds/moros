@@ -4,7 +4,7 @@ import { COMMITTEE_URL } from "@/lib/committee/config";
 import { NETWORK } from "@/lib/network";
 
 export type PrivateDeploymentConfig = {
-  network: "testnet";
+  network: "testnet" | "mainnet";
   networkDomain: string;
   verifierDomain: string;
   artifactBase: string;
@@ -30,7 +30,7 @@ export type PrivateDeploymentConfig = {
     committeePublicKeyX: string;
     committeePublicKeyY: string;
     treasuryKey: string;
-    testnetSingleVmCommittee: true;
+    testnetSingleVmCommittee: boolean;
   };
   marketPolicy: {
     allowedAssets: string[];
@@ -57,7 +57,7 @@ export type PrivateDeploymentConfig = {
     withdrawalWindow: number;
     maxWithdrawalBps: number;
   };
-  mainnetReady: false;
+  mainnetReady: boolean;
 };
 
 export type IndexedPrivateOutput = {
@@ -149,10 +149,12 @@ export async function getPrivateConfig(): Promise<PrivateDeploymentConfig> {
   if (!response.ok) throw new Error(await errorMessage(response));
   const config = await response.json() as PrivateDeploymentConfig;
   if (
-    config.network !== "testnet" ||
-    config.mainnetReady !== false ||
+    config.network !== NETWORK.id ||
+    config.mainnetReady !== (NETWORK.id === "mainnet") ||
     config.collateral.code !== "USDC" ||
     config.collateral.contract !== NETWORK.collateral.sac ||
+    config.privacy.testnetSingleVmCommittee !==
+      (NETWORK.id === "testnet") ||
     !/^[0-9a-f]{64}$/u.test(config.networkDomain) ||
     !/^[0-9a-f]{64}$/u.test(config.verifierDomain) ||
     !/^C[A-Z2-7]{55}$/u.test(config.contracts.liquidityPool) ||

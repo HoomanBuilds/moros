@@ -122,8 +122,8 @@ async function privateManifest(
       const manifest = await response.json() as PrivateArtifactManifest;
       if (
         manifest.format !== 1 ||
-        manifest.network !== "testnet" ||
-        manifest.mainnet_ready !== false ||
+        manifest.network !== config.network ||
+        manifest.mainnet_ready !== config.mainnetReady ||
         manifest.curve !== "bn254" ||
         manifest.proof_system !== "groth16"
       ) {

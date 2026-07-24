@@ -6,6 +6,7 @@ import {
   PYTH_PRO_RESOLVABLE_ASSETS,
   assetsForCategory,
   eventGuidance,
+  fxPriceAssets,
   isMarketCategory,
   isPriceCategory,
 } from "./categories";
@@ -21,6 +22,10 @@ assert.ok(assetsForCategory("FX").includes("EUR"));
 assert.deepEqual(assetsForCategory("Sports"), []);
 assert.ok(assetsForCategory("FX", "pyth_pro").includes("GBP"));
 assert.equal(assetsForCategory("FX", "pyth_pro").includes("CHF"), false);
+assert.ok(["JPY", "INR"].every((asset) => fxPriceAssets("mainnet").includes(asset)));
+assert.equal(fxPriceAssets("mainnet").includes("CHF"), false);
+assert.equal(fxPriceAssets("mainnet").includes("THB"), false);
+assert.ok(["CHF", "THB"].every((asset) => fxPriceAssets("testnet").includes(asset)));
 assert.ok(PYTH_PRO_RESOLVABLE_ASSETS.every((asset) => FREE_RESOLVABLE_ASSETS.includes(asset)));
 assert.ok(EVENT_CATEGORIES.every((category) => eventGuidance(category).source.startsWith("https://")));
 assert.ok(EVENT_CATEGORIES.every((category) => eventGuidance(category).subjectLabel.length > 3));

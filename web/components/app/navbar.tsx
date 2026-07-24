@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ConnectButton } from "@/components/wallet/connect-button";
 import { MobileNav } from "@/components/app/mobile-nav";
 import { navGroups, isActive } from "@/components/app/nav-links";
+import { NETWORK } from "@/lib/network";
 import { cn } from "@/lib/utils";
 
 export function Navbar() {
@@ -47,7 +48,7 @@ export function Navbar() {
         <div className="flex items-center gap-4 lg:gap-6">
           <span className="hidden items-center gap-2 sm:flex">
             <span className="h-2 w-2 rounded-full bg-[#eca8d6]" />
-            <span className="font-mono text-xs text-muted-foreground">Stellar testnet</span>
+            <span className="font-mono text-xs text-muted-foreground">{NETWORK.name}</span>
           </span>
           <ConnectButton />
         </div>

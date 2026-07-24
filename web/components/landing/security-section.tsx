@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { Shield, Lock, Eye, FileCheck } from "lucide-react";
+import { NETWORK } from "@/lib/network";
 
 const securityFeatures = [
   {
@@ -12,8 +13,10 @@ const securityFeatures = [
   },
   {
     icon: Lock,
-    title: "Encrypted testnet batching",
-    description: "Sides and quantities stay encrypted on-chain. The current single-VM coordinator can recover individual order values.",
+    title: `Encrypted ${NETWORK.id} batching`,
+    description: NETWORK.id === "testnet"
+      ? "Sides and quantities stay encrypted on-chain. The current single-VM coordinator can recover individual order values."
+      : "Sides and quantities stay encrypted on-chain. No individual threshold coordinator member can decrypt an order alone.",
     image: "/images/encrypted.jpg",
   },
   {
@@ -30,7 +33,7 @@ const securityFeatures = [
   },
 ];
 
-const certifications = ["BN254", "Groth16", "circom", "Testnet only"];
+const certifications = ["BN254", "Groth16", "circom", NETWORK.name];
 
 export function SecuritySection() {
   const [isVisible, setIsVisible] = useState(false);
@@ -84,7 +87,9 @@ export function SecuritySection() {
             isVisible ? "opacity-100" : "opacity-0"
           }`}>
             <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl">
-              Proof validity, nullifiers, accounting, and payouts are enforced on-chain. The current coordinator runs on one VM and is not threshold privacy. Unaudited research prototype - testnet only.
+              Proof validity, nullifiers, accounting, and payouts are enforced on-chain. {NETWORK.id === "testnet"
+                ? "The current coordinator runs on one VM and is not threshold privacy."
+                : "The mainnet profile requires a threshold coordinator."} Unaudited {NETWORK.id} release.
             </p>
           </div>
         </div>

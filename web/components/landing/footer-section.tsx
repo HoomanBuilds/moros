@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { BRAND } from "@/lib/brand";
+import { NETWORK } from "@/lib/network";
 
 const footerLinks = {
   Product: [
@@ -107,7 +108,7 @@ export function FooterSection() {
 
               <span className="inline-flex items-center gap-2 text-sm text-white/40">
                 <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
-                Stellar testnet - unaudited
+                {NETWORK.name} - unaudited
               </span>
             </div>
 

@@ -449,7 +449,7 @@ function PositionCard({
 
         {loading && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="size-3" />Reading on-chain position state</p>}
         {error && <p className="text-sm text-red-400">Could not read this position from Stellar. No action is enabled until the state is verified.</p>}
-        {state && !state.supported && <p className="text-sm text-amber-300">This older test record is not part of the active USDC testnet release. Moros will not guess its pool or collateral.</p>}
+        {state && !state.supported && <p className="text-sm text-amber-300">This older record is not part of the active USDC release. Moros will not guess its pool or collateral.</p>}
 
         {state?.supported && <PositionActionButton position={position} state={state} onCompleted={onCompleted} />}
 

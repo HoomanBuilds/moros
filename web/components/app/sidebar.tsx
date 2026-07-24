@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AccentDot } from "@/components/app/app-kit";
 import { navGroups, isActive } from "@/components/app/nav-links";
+import { NETWORK } from "@/lib/network";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -48,7 +49,7 @@ export function Sidebar() {
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-foreground/20" />
           <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
-            Testnet
+            {NETWORK.id}
           </span>
         </div>
         <div className="flex items-center gap-2">
