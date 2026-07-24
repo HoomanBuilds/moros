@@ -7,6 +7,7 @@ The active Moros runtime consists of `private-server.mjs` and `resolve-keeper.mj
 - `private-server.mjs` indexes shielded outputs, activates funded proposals, coordinates fixed private batches, serves encrypted allocation witnesses, relays proof-bound transactions, and discovers LP exits.
 - `resolve-keeper.mjs` resolves eligible price markets and refreshes contract TTLs.
 - `deploy-private-testnet.mjs` deploys and verifies the canonical testnet contract graph.
+- `deploy-private-mainnet.mjs` runs the strict mainnet preflight, then deploys and verifies a fresh mainnet contract graph.
 
 `server.mjs` and `committee/member.mjs` belong to the earlier isolated-pool prototype. The VM installer disables those units. They are not part of the canonical shared-vault runtime.
 
@@ -22,6 +23,8 @@ Configure both profiles once:
 
     MOROS_TESTNET_RPC_URL=https://soroban-testnet.stellar.org
     MOROS_MAINNET_RPC_URL=https://mainnet.sorobanrpc.com
+    MOROS_TESTNET_RPC_FALLBACK_URL=https://soroban-testnet.stellar.org
+    MOROS_MAINNET_RPC_FALLBACK_URL=https://mainnet.sorobanrpc.com
     MOROS_TESTNET_DEPLOYMENT=deployments/private-testnet.json
     MOROS_MAINNET_DEPLOYMENT=deployments/private-mainnet.json
     MOROS_TESTNET_ZK_PUBLIC_DIR=circuits/private-build/public
@@ -36,18 +39,19 @@ Configure both profiles once:
     PRIVATE_SYNC_SUPABASE_SERVICE_ROLE_KEY=<server-only service role key>
     ORACLE_MODE=free
 
-Restart both services after changing `MOROS_NETWORK`. The runtime rejects an RPC passphrase mismatch, a deployment manifest for the wrong network, or a mainnet manifest without `mainnetReady: true`. The generic `RPC_URL`, `HORIZON_URL`, `MOROS_PUBLIC_DEPLOYMENT`, `FUNDER_SK`, and `MOROS_PRIVACY_SK` variables remain compatibility overrides, but network-scoped values are preferred.
+Restart both services after changing `MOROS_NETWORK`. The runtime rejects an RPC passphrase mismatch, a deployment manifest for the wrong network, or a mainnet manifest without `mainnetReady: true`. Mainnet ignores generic legacy network variables and requires mainnet-scoped configuration. RPC requests try the selected provider, the configured fallback provider, and the public network endpoint in order.
 
 The selected privacy secret must reproduce the identity recorded during that network deployment. On testnet it may be omitted when the selected funder secret supplied the deployment identity. Keep every secret out of git, logs, browser variables, and shared configuration.
 
-The deployment command can use a separate Stellar deployer:
+The deployment command can use a separate Stellar deployer secret or a local Stellar CLI identity:
 
-    DEPLOYER_SK=<dedicated contract deployer secret>
-    ROUNDING_FUNDER_SK=<testnet USDC reserve funder secret>
-    MOROS_DEPLOYMENT_NAME=Moros Testnet
-    MOROS_DEPLOYMENT_SALT=moros-testnet-resolver-registry
+    MOROS_MAINNET_DEPLOYER_SK=<dedicated contract deployer secret>
+    MOROS_MAINNET_DEPLOYER_IDENTITY=<local Stellar CLI identity>
+    MOROS_MAINNET_ROUNDING_FUNDER_SK=<mainnet USDC reserve funder secret>
+    MOROS_MAINNET_DEPLOYMENT_NAME=Moros Mainnet
+    MOROS_MAINNET_DEPLOYMENT_SALT=moros-mainnet-release
 
-The public name remains `Moros Testnet`. Contract names do not include dates or version suffixes.
+Contract names do not include dates or version suffixes.
 
 ## Oracle modes
 
@@ -91,7 +95,7 @@ LP exit listings contain public ledger identifiers only. Ownership is recovered 
 - Pending orders remain encrypted and refundable under the configured close and finalization rules when they cannot execute.
 - Runtime queues, used nullifiers, encrypted allocations, and output indexes persist across restarts.
 
-The current testnet coordinator holds the combined committee secret on one VM. This is an explicit testnet limitation, not threshold privacy. A mainnet manifest must not be marked ready until independently operated threshold committee members and redundant services are deployed.
+The initial coordinator holds the combined committee secret on one VM. This is explicitly recorded as `committeeMode: single_vm` and is not presented as threshold privacy.
 
 ## Running and testing
 
@@ -109,18 +113,17 @@ Check the active entry points:
     node --check private-server.mjs
     node --check resolve-keeper.mjs
     node --check deploy-private-testnet.mjs
+    node --check deploy-private-mainnet.mjs
     bash -n deploy-vm.sh
 
-## VM packaging
+## VM deployment
 
-The package contains only the active runtime, canonical deployment, and proving artifacts. The proving artifacts must match the verification keys in the canonical deployment:
-
-    ./services/deploy-vm.sh package
-
-After copying and unpacking `deploy-bundle.tar.gz` on the selected network VM:
+Pull the release commit on the VM, keep its ignored testnet proving artifacts in place, configure `services/.env`, and run:
 
     ./services/deploy-vm.sh provision
     ./services/deploy-vm.sh service
+
+For mainnet, provisioning verifies and hard-links the accepted proving bytes into the mainnet artifact directory using `deployments/private-mainnet-proving.json`. This avoids copying a second large proving bundle.
 
 The service command installs and starts only `zkmarket-private` and `zkmarket-resolve-keeper`. It stops and removes earlier intake and committee-member units to prevent stale contract wiring.
 
@@ -128,9 +131,9 @@ Terminate TLS in front of the public service. Back up the private runtime direct
 
 ## Operational limits
 
-- Contracts, circuits, and services are unaudited.
-- The current trusted setup is for development.
-- The single-VM testnet coordinator can recover individual encrypted order values.
+- Contracts, circuits, and services have completed the team's internal review, not an independent external audit.
+- The accepted initial mainnet proving setup is a single-contributor setup.
+- The single-VM coordinator can recover individual encrypted order values.
 - Price resolution and proof relaying require an operator or user to submit transactions.
 - Event markets remain disabled until their evidence, challenge, arbitration, timeout, and refund operations are implemented and monitored.
-- Mainnet requires an independent trusted setup, external security review, redundant monitored services, and independently operated threshold committee members.
+- An independent trusted setup, external security review, redundant monitored services, and independently operated threshold committee members remain post-launch hardening work.
