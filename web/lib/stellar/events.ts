@@ -17,7 +17,7 @@ function bytesToHex(bytes: Uint8Array): string {
     .join("");
 }
 
-export async function getRecentOrders(limit = 30, poolId: string = NETWORK.poolId): Promise<ShieldedOrder[]> {
+export async function getRecentOrders(limit: number, poolId: string): Promise<ShieldedOrder[]> {
   const latest = await server.getLatestLedger();
   const startLedger = Math.max(latest.sequence - LEDGER_WINDOW, 1);
   const res = await server.getEvents({

@@ -23,7 +23,7 @@ export type MarketDescriptor = {
 type Ids = { marketId: string; poolId: string; collateral?: CollateralAsset; descriptor?: MarketDescriptor };
 type ActiveMarket = { marketId: string; poolId: string; collateral: CollateralAsset; descriptor?: MarketDescriptor };
 
-const Ctx = createContext<ActiveMarket>({ marketId: NETWORK.marketId, poolId: NETWORK.poolId, collateral: NETWORK.collateral });
+const Ctx = createContext<ActiveMarket>({ marketId: "", poolId: "", collateral: NETWORK.collateral });
 
 export function MarketProvider({ marketId, poolId, collateral, descriptor, children }: Ids & { children: ReactNode }) {
   return <Ctx.Provider value={{ marketId, poolId, collateral: collateral ?? NETWORK.collateral, descriptor }}>{children}</Ctx.Provider>;

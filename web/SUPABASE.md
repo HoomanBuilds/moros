@@ -24,7 +24,7 @@ The social layer is public and opt-in, tied only to a connected wallet address, 
 1. Create a separate Supabase project.
 2. Apply `supabase/migrations/20260723000000_opaque_private_activity_sync.sql`.
 3. Set `PRIVATE_SYNC_SUPABASE_URL` and `PRIVATE_SYNC_SUPABASE_SERVICE_ROLE_KEY` only in the server deployment.
-4. Set `NEXT_PUBLIC_SHARED_VAULT_ID` to the deployed shared vault.
+4. Start the private service with the canonical deployment manifest so the browser receives the active shared vault.
 
 The browser never opens a Supabase session for private activity. A dedicated API route accepts fixed-shape requests signed by an archive key derived in the browser from a deterministic wallet recovery signature. The server writes with the private project's service role.
 

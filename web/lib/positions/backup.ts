@@ -22,11 +22,10 @@ import { createAsyncValueCache } from "./unlock-cache";
 const unlockedKeys = createAsyncValueCache<string, PrivateArchiveKeys>();
 
 async function archiveVault(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_SHARED_VAULT_ID;
-  const deploymentVault = configured
-    ? undefined
-    : (await getPrivateConfig()).contracts.sharedVault;
-  return resolveArchiveVault(configured, deploymentVault);
+  return resolveArchiveVault(
+    undefined,
+    (await getPrivateConfig()).contracts.sharedVault,
+  );
 }
 
 export async function unlockPositionBackup(address: string): Promise<PrivateArchiveKeys> {

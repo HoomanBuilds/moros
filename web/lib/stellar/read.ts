@@ -3,19 +3,19 @@ import { NETWORK } from "@/lib/network";
 import type { CollateralAsset } from "@/lib/network";
 import { readContract } from "./client";
 
-export async function getMarketState(marketId: string = NETWORK.marketId): Promise<[bigint, bigint, bigint]> {
+export async function getMarketState(marketId: string): Promise<[bigint, bigint, bigint]> {
   return readContract(marketId, "get_state");
 }
-export async function getPriceYes(marketId: string = NETWORK.marketId): Promise<bigint> {
+export async function getPriceYes(marketId: string): Promise<bigint> {
   return readContract(marketId, "price_yes");
 }
-export async function getOutcome(marketId: string = NETWORK.marketId): Promise<unknown> {
+export async function getOutcome(marketId: string): Promise<unknown> {
   return readContract(marketId, "outcome");
 }
-export async function getMarketInfo(marketId: string = NETWORK.marketId): Promise<{ asset: string; threshold: bigint; expiry: bigint; finalize_after?: bigint }> {
+export async function getMarketInfo(marketId: string): Promise<{ asset: string; threshold: bigint; expiry: bigint; finalize_after?: bigint }> {
   return readContract(marketId, "market_info");
 }
-export async function getMarketResolver(marketId: string = NETWORK.marketId): Promise<string | null> {
+export async function getMarketResolver(marketId: string): Promise<string | null> {
   return readContract(marketId, "resolver");
 }
 export async function getEventRulesHash(resolverId: string, marketId: string): Promise<string | null> {

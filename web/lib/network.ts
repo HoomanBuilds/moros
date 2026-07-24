@@ -38,8 +38,6 @@ const DEFAULTS = {
     horizonUrl: "https://horizon-testnet.stellar.org",
     passphrase: "Test SDF Network ; September 2015",
     explorerNetwork: "testnet",
-    marketId: "CAXGT3SHUEVWLHA7PZKPNZCVGMEWLWCZTK6EQZWQABOL4NDBEPLRCU64",
-    poolId: "CADIVW7SHMAFKTVU2P7IZ6UONFJWDXNQJFB4RRBE7KZFGXVSXWJEPKKP",
   },
   mainnet: {
     name: "Stellar mainnet",
@@ -47,8 +45,6 @@ const DEFAULTS = {
     horizonUrl: "https://horizon.stellar.org",
     passphrase: "Public Global Stellar Network ; September 2015",
     explorerNetwork: "public",
-    marketId: "",
-    poolId: "",
   },
 } as const;
 
@@ -60,8 +56,6 @@ export const NETWORK = {
   rpcUrl: process.env.NEXT_PUBLIC_STELLAR_RPC_URL || selected.rpcUrl,
   horizonUrl: process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL || selected.horizonUrl,
   passphrase: selected.passphrase,
-  marketId: process.env.NEXT_PUBLIC_SEED_MARKET_ID || selected.marketId,
-  poolId: process.env.NEXT_PUBLIC_SEED_POOL_ID || selected.poolId,
   collateral: ASSETS[NETWORK_ID].usdc,
   explorer: (id: string) => `https://stellar.expert/explorer/${selected.explorerNetwork}/contract/${id}`,
   transactionExplorer: (hash: string) => `https://stellar.expert/explorer/${selected.explorerNetwork}/tx/${hash}`,

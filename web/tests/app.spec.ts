@@ -1,5 +1,4 @@
 import { test, expect } from "@playwright/test";
-import { NETWORK } from "../lib/network";
 
 test("markets page renders its discovery controls", async ({ page }) => {
   await page.goto("/app");
@@ -34,7 +33,7 @@ test("liquidity uses one automatic private pool", async ({ page }) => {
 });
 
 test("market terminal fails closed for an unknown market", async ({ page }) => {
-  await page.goto(`/app/market/${NETWORK.marketId.slice(0, -1)}A`);
+  await page.goto(`/app/market/C${"A".repeat(55)}`);
   await expect(page.getByRole("heading", { name: "Market not found", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Browse markets", exact: true })).toHaveAttribute("href", "/app");
 });

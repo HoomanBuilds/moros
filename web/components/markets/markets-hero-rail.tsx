@@ -2,11 +2,12 @@
 import Link from "next/link";
 import { ArrowUpRight, ShieldCheck, Boxes } from "lucide-react";
 import { Panel } from "@/components/app/app-kit";
-import { NETWORK } from "@/lib/network";
+import { useMarkets } from "@/lib/markets/registry";
 
 const ACCENT = "#eca8d6";
 
 export function MarketsHeroRail() {
+  const market = useMarkets()[0];
   return (
     <div className="flex flex-col gap-4">
       <Panel className="flex flex-col justify-between gap-6 p-6" >
@@ -20,11 +21,11 @@ export function MarketsHeroRail() {
           </p>
         </div>
         <Link
-          href={`/app/market/${NETWORK.marketId}`}
+          href={market ? `/app/market/${market.marketId}` : "/app/create"}
           className="inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-background"
           style={{ backgroundColor: ACCENT }}
         >
-          Place a private bet
+          {market ? "Place a private bet" : "Create a market"}
           <ArrowUpRight className="h-3.5 w-3.5" />
         </Link>
       </Panel>

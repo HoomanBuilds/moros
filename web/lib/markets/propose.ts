@@ -11,8 +11,10 @@ import {
   getPrivateConfig,
   type PrivateDeploymentConfig,
 } from "@/lib/private/client";
-import type { DeploymentMetadata } from "./deploy";
-import { strikeToRaw } from "./deploy";
+import {
+  strikeToRaw,
+  type DeploymentMetadata,
+} from "./proposal-types";
 
 export type ProposalStep =
   | "configuration"
