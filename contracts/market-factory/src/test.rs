@@ -88,8 +88,8 @@ fn config(env: &Env, collateral: Address) -> FactoryConfig {
         committee_public_key_y,
         maximum_fee_bps: 500,
         lp_fee_share_bps: 5_000,
-        fixed_batch_size: 8,
-        minimum_side_count: 2,
+        maximum_batch_size: 8,
+        minimum_side_count: 0,
         maximum_price_movement: 1i128 << 30,
     }
 }
@@ -310,7 +310,7 @@ fn constructor_rejects_a_batch_size_without_a_proving_key() {
         .register_stellar_asset_contract_v2(token_admin)
         .address();
     let mut bad = config(&env, collateral);
-    bad.fixed_batch_size = 9;
+    bad.maximum_batch_size = 9;
     env.register(MarketFactory, (bad,));
 }
 

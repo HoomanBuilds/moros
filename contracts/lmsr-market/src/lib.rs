@@ -8,7 +8,7 @@ use soroban_sdk::{
     panic_with_error, token, Address, BytesN, Env, Symbol,
 };
 
-const MAX_PRIVATE_BATCH_SIZE: u32 = 64;
+const MAX_PRIVATE_BATCH_ORDERS: u32 = 64;
 const MAX_PRIVATE_ORDER_QUANTITY: u32 = 1_000;
 
 /// Which outcome a trade is on.
@@ -58,7 +58,7 @@ pub struct PrivateMarketConfig {
     pub fee_bps: u32,
     pub lp_fee_share_bps: u32,
     pub lot_size: i128,
-    pub fixed_batch_size: u32,
+    pub maximum_batch_size: u32,
     pub minimum_side_count: u32,
     pub maximum_price_movement: i128,
 }
@@ -163,7 +163,7 @@ enum DataKey {
     FeeBps,
     LpFeeShareBps,
     LotSize,
-    FixedBatchSize,
+    MaximumBatchSize,
     MinimumSideCount,
     MaximumPriceMovement,
     StateVersion,
@@ -292,7 +292,7 @@ pub struct PrivateActivated {
     pub fee_bps: u32,
     pub lp_fee_share_bps: u32,
     pub lot_size: i128,
-    pub fixed_batch_size: u32,
+    pub maximum_batch_size: u32,
     pub minimum_side_count: u32,
     pub maximum_price_movement: i128,
 }
@@ -532,7 +532,7 @@ impl LmsrMarket {
             fee_bps: storage.get(&DataKey::FeeBps).unwrap_or(0),
             lp_fee_share_bps: storage.get(&DataKey::LpFeeShareBps).unwrap_or(0),
             lot_size: storage.get(&DataKey::LotSize).unwrap_or(0),
-            fixed_batch_size: storage.get(&DataKey::FixedBatchSize).unwrap_or(0),
+            maximum_batch_size: storage.get(&DataKey::MaximumBatchSize).unwrap_or(0),
             minimum_side_count: storage.get(&DataKey::MinimumSideCount).unwrap_or(0),
             maximum_price_movement: storage.get(&DataKey::MaximumPriceMovement).unwrap_or(0),
         })
@@ -572,13 +572,9 @@ impl LmsrMarket {
             || config.lp_fee_share_bps > 10_000
             || config.lot_size <= 0
             || config.lot_size > MAX_Q
-            || config.fixed_batch_size < 8
-            || config.fixed_batch_size > MAX_PRIVATE_BATCH_SIZE
-            || config.minimum_side_count < 2
-            || config
-                .minimum_side_count
-                .checked_mul(2)
-                .is_none_or(|count| count > config.fixed_batch_size)
+            || config.maximum_batch_size == 0
+            || config.maximum_batch_size > MAX_PRIVATE_BATCH_ORDERS
+            || config.minimum_side_count != 0
             || config.maximum_price_movement <= 0
             || config.maximum_price_movement > math::SCALE
             || Self::is_zero_bytes(&config.rules_hash)
@@ -599,7 +595,7 @@ impl LmsrMarket {
         storage.set(&DataKey::FeeBps, &config.fee_bps);
         storage.set(&DataKey::LpFeeShareBps, &config.lp_fee_share_bps);
         storage.set(&DataKey::LotSize, &config.lot_size);
-        storage.set(&DataKey::FixedBatchSize, &config.fixed_batch_size);
+        storage.set(&DataKey::MaximumBatchSize, &config.maximum_batch_size);
         storage.set(&DataKey::MinimumSideCount, &config.minimum_side_count);
         storage.set(
             &DataKey::MaximumPriceMovement,
@@ -616,7 +612,7 @@ impl LmsrMarket {
             fee_bps: config.fee_bps,
             lp_fee_share_bps: config.lp_fee_share_bps,
             lot_size: config.lot_size,
-            fixed_batch_size: config.fixed_batch_size,
+            maximum_batch_size: config.maximum_batch_size,
             minimum_side_count: config.minimum_side_count,
             maximum_price_movement: config.maximum_price_movement,
         }
@@ -1017,14 +1013,10 @@ impl LmsrMarket {
             .checked_add(no_count)
             .ok_or(Error::InvalidParams)?;
         let maximum_batch_quantity = config
-            .fixed_batch_size
+            .maximum_batch_size
             .checked_mul(MAX_PRIVATE_ORDER_QUANTITY)
             .ok_or(Error::InvalidParams)?;
-        if batch_size < config.fixed_batch_size
-            || batch_size > maximum_batch_quantity
-            || yes_count < config.minimum_side_count
-            || no_count < config.minimum_side_count
-        {
+        if batch_size == 0 || batch_size > maximum_batch_quantity {
             return Err(Error::InvalidParams);
         }
 
@@ -1068,12 +1060,26 @@ impl LmsrMarket {
         let no_weight = math::multiply_fixed(delta_no, no_price);
         let (yes_market_cost, no_market_cost) =
             Self::allocate_side_costs(aggregate_market_charge, yes_weight, no_weight)?;
-        let yes_charge_per_position = yes_market_cost
-            .checked_div(i128::from(yes_count))
-            .ok_or(Error::InvalidParams)?;
-        let no_charge_per_position = no_market_cost
-            .checked_div(i128::from(no_count))
-            .ok_or(Error::InvalidParams)?;
+        let yes_charge_per_position = if yes_count == 0 {
+            if yes_market_cost != 0 {
+                return Err(Error::InvalidParams);
+            }
+            0
+        } else {
+            yes_market_cost
+                .checked_div(i128::from(yes_count))
+                .ok_or(Error::InvalidParams)?
+        };
+        let no_charge_per_position = if no_count == 0 {
+            if no_market_cost != 0 {
+                return Err(Error::InvalidParams);
+            }
+            0
+        } else {
+            no_market_cost
+                .checked_div(i128::from(no_count))
+                .ok_or(Error::InvalidParams)?
+        };
         let rounding_contribution = yes_market_cost
             .checked_sub(
                 yes_charge_per_position

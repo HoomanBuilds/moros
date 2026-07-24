@@ -29,8 +29,14 @@ template PrivateBatch() {
     signal input yesAmount[8];
     signal input noAmount[8];
 
-    acceptedCount === 8;
-    lastSequence === firstSequence + 7;
+    component acceptedCountZero = IsZero();
+    acceptedCountZero.in <== acceptedCount;
+    acceptedCountZero.out === 0;
+    component acceptedCountBound = LessThan(4);
+    acceptedCountBound.in[0] <== acceptedCount;
+    acceptedCountBound.in[1] <== 9;
+    acceptedCountBound.out === 1;
+    lastSequence === firstSequence + acceptedCount - 1;
     quote[1] === quote[2] + quote[3];
 
     component epochRange = Num2Bits(64);
@@ -135,6 +141,8 @@ template PrivateBatch() {
     component noMessage[8];
     component yesAmountZero[8];
     component noAmountZero[8];
+    component slotActive[8];
+    signal active[8];
     signal side[8];
     signal quantity[8];
     signal chargePerUnit[8];
@@ -143,11 +151,18 @@ template PrivateBatch() {
     signal positionPayout[8];
     var yesTotal = 0;
     var noTotal = 0;
-    var yesOrderTotal = 0;
     component payout = PositionCeilDivConstant(4294967296, 84, 33);
     payout.numerator <== lotSize * 10000000;
 
     for (var index = 0; index < 8; index++) {
+        slotActive[index] = LessThan(4);
+        slotActive[index].in[0] <== index;
+        slotActive[index].in[1] <== acceptedCount;
+        active[index] <== slotActive[index].out;
+        actionId[index][0] * (1 - active[index]) === 0;
+        actionId[index][1] * (1 - active[index]) === 0;
+        positionCommitment[index] * (1 - active[index]) === 0;
+
         acceptedLeaves[index] = AcceptedOrderLeaf();
         acceptedLeaves[index].market[0] <== market[0];
         acceptedLeaves[index].market[1] <== market[1];
@@ -226,12 +241,11 @@ template PrivateBatch() {
         noAmountZero[index] = IsZero();
         yesAmountZero[index].in <== yesAmount[index];
         noAmountZero[index].in <== noAmount[index];
-        yesAmountZero[index].out + noAmountZero[index].out === 1;
-        side[index] <== 1 - yesAmountZero[index].out;
+        yesAmountZero[index].out + noAmountZero[index].out === 2 - active[index];
+        side[index] <== active[index] * (1 - yesAmountZero[index].out);
         quantity[index] <== yesAmount[index] + noAmount[index];
         yesTotal += yesAmount[index];
         noTotal += noAmount[index];
-        yesOrderTotal += side[index];
 
         chargePerUnit[index] <== quote[12]
             + side[index] * (quote[11] - quote[12]);
@@ -258,23 +272,15 @@ template PrivateBatch() {
     }
     quote[2] === yesTotal;
     quote[3] === noTotal;
-    component minimumYesOrders = LessThan(4);
-    minimumYesOrders.in[0] <== 1;
-    minimumYesOrders.in[1] <== yesOrderTotal;
-    minimumYesOrders.out === 1;
-    component minimumNoOrders = LessThan(4);
-    minimumNoOrders.in[0] <== yesOrderTotal;
-    minimumNoOrders.in[1] <== 7;
-    minimumNoOrders.out === 1;
 
     signal acceptedTreeLeaves[64];
     signal allocationTreeLeaves[64];
     signal includedTreeLeaves[64];
     for (var index = 0; index < 64; index++) {
         if (index < 8) {
-            acceptedTreeLeaves[index] <== acceptedLeaves[index].out;
-            allocationTreeLeaves[index] <== allocationLeaves[index].out;
-            includedTreeLeaves[index] <== includedLeaves[index].out;
+            acceptedTreeLeaves[index] <== active[index] * acceptedLeaves[index].out;
+            allocationTreeLeaves[index] <== active[index] * allocationLeaves[index].out;
+            includedTreeLeaves[index] <== active[index] * includedLeaves[index].out;
         } else {
             acceptedTreeLeaves[index] <== 0;
             allocationTreeLeaves[index] <== 0;
@@ -363,11 +369,17 @@ template PrivateBatch() {
     component yesRemainderBound = LessThan(14);
     yesRemainderBound.in[0] <== yesRemainder;
     yesRemainderBound.in[1] <== quote[2];
-    yesRemainderBound.out === 1;
+    component yesCountZero = IsZero();
+    yesCountZero.in <== quote[2];
+    yesRemainderBound.out + yesCountZero.out === 1;
+    yesRemainder * yesCountZero.out === 0;
     component noRemainderBound = LessThan(14);
     noRemainderBound.in[0] <== noRemainder;
     noRemainderBound.in[1] <== quote[3];
-    noRemainderBound.out === 1;
+    component noCountZero = IsZero();
+    noCountZero.in <== quote[3];
+    noRemainderBound.out + noCountZero.out === 1;
+    noRemainder * noCountZero.out === 0;
     quote[8] === quote[9] + quote[10];
     quote[13] === yesRemainder + noRemainder;
     quote[15] === quote[14] * quote[1];

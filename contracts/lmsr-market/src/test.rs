@@ -433,8 +433,8 @@ fn setup_private(
             fee_bps: 400,
             lp_fee_share_bps: 5_000,
             lot_size: S,
-            fixed_batch_size: 8,
-            minimum_side_count: 2,
+            maximum_batch_size: 8,
+            minimum_side_count: 0,
             maximum_price_movement: S / 4,
         },
     );
@@ -547,7 +547,7 @@ fn private_batch_quote_matches_the_shared_integer_fixture_and_rejects_stale_stat
 fn private_batch_quote_prices_variable_hidden_quantities() {
     let env = Env::default();
     let (market, _liquidity, _token, shared_vault, _resolver) = setup_private(&env);
-    assert!(market.try_quote_private_batch(&0, &2, &5).is_err());
+    assert!(market.try_quote_private_batch(&0, &0, &0).is_err());
     assert!(market.try_quote_private_batch(&0, &2, &7_999).is_err());
     let quote = market.quote_private_batch(&0, &5, &7);
     assert_eq!(quote.batch_size, 12);
@@ -565,6 +565,24 @@ fn private_batch_quote_prices_variable_hidden_quantities() {
     let state = market.scenario_state();
     assert_eq!(state.payout_if_yes, 50_000_000);
     assert_eq!(state.payout_if_no, 70_000_000);
+}
+
+#[test]
+fn private_singleton_batches_move_price_and_handle_an_empty_side() {
+    let env = Env::default();
+    let (market, _liquidity, _token, shared_vault, _resolver) = setup_private(&env);
+    let yes = market.quote_private_batch(&0, &1, &0);
+    assert_eq!(yes.batch_size, 1);
+    assert_eq!(yes.no_market_cost, 0);
+    assert_eq!(yes.no_charge_per_position, 0);
+    assert!(yes.post_yes_price > yes.pre_yes_price);
+    market.apply_private_batch(&shared_vault, &0, &1, &0);
+
+    let no = market.quote_private_batch(&1, &0, &1);
+    assert_eq!(no.batch_size, 1);
+    assert_eq!(no.yes_market_cost, 0);
+    assert_eq!(no.yes_charge_per_position, 0);
+    assert!(no.post_yes_price < no.pre_yes_price);
 }
 
 #[test]
@@ -594,16 +612,14 @@ fn direct_donations_never_become_private_market_lp_equity() {
 }
 
 #[test]
-fn private_one_sided_batch_is_rejected_and_empty_market_returns_lp_principal() {
+fn private_one_sided_market_executes_then_voids_and_returns_lp_principal() {
     let env = Env::default();
     let (market, liquidity, token, shared_vault, resolver) = setup_private(&env);
     let donor = Address::generate(&env);
     let donation = 7_000_000;
     StellarAssetClient::new(&env, &token).mint(&donor, &donation);
     TokenClient::new(&env, &token).transfer(&donor, &market.address, &donation);
-    assert!(market
-        .try_apply_private_batch(&shared_vault, &0, &8, &0)
-        .is_err());
+    market.apply_private_batch(&shared_vault, &0, &8, &0);
     assert!(market.try_apply_batch(&shared_vault, &(8 * S), &0).is_err());
     env.ledger().with_mut(|ledger| ledger.timestamp = 2_100);
     market.resolve(&resolver, &Outcome::Yes);

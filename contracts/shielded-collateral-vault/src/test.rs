@@ -813,8 +813,8 @@ fn setup_private_market(setup: &Setup) -> (Address, Address, Address) {
             fee_bps: 400,
             lp_fee_share_bps: 5_000,
             lot_size: S,
-            fixed_batch_size: 8,
-            minimum_side_count: 2,
+            maximum_batch_size: 8,
+            minimum_side_count: 0,
             maximum_price_movement: S / 4,
         },
     );
@@ -1105,7 +1105,7 @@ fn accept_test_order(
         &0,
         &Some(market.clone()),
         &operation_binding,
-        &epoch.refund_at,
+        &binding.refund_at,
     );
     setup.verifier.set_expected(&digest);
     let append = setup.vault.info().current_root.to_u128().unwrap() as u32;
@@ -1507,7 +1507,27 @@ fn invalid_order_points_fail_before_note_consumption() {
 }
 
 #[test]
-fn short_epoch_never_moves_price_and_every_order_reaches_private_refund() {
+fn singleton_epoch_executes_after_its_window() {
+    let setup = setup();
+    let (market_address, _liquidity_address, _resolver) = setup_private_market(&setup);
+    deposit(&setup, 10, 2, [11, 12], 25_000_000);
+    accept_test_order(&setup, &market_address, 20, 3, 100, [200, 201]);
+    let epoch = setup.vault.epoch(&market_address, &0).unwrap();
+    setup
+        .env
+        .ledger()
+        .with_mut(|ledger| ledger.timestamp = epoch.cutoff);
+    let sealed = setup.vault.seal_epoch(&market_address, &0);
+    assert_eq!(sealed.accepted_count, 1);
+    let submission = valid_submission(&setup, &market_address, 1, 0);
+    let batch = setup.vault.submit_batch(&market_address, &0, &submission);
+    assert_eq!(batch.quote.yes_count, 1);
+    assert_eq!(batch.quote.no_count, 0);
+    assert!(batch.quote.post_yes_price > batch.quote.pre_yes_price);
+}
+
+#[test]
+fn missed_batch_never_moves_price_and_every_order_reaches_private_refund() {
     let setup = setup();
     let (market_address, _liquidity_address, _resolver) = setup_private_market(&setup);
     deposit(&setup, 10, 2, [11, 12], 25_000_000);

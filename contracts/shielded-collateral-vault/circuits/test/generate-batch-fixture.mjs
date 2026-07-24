@@ -38,123 +38,147 @@ function fixedTree(firstLeaves) {
   return nodes[0];
 }
 
-const actionId = [];
-const positionCommitment = [];
-const ciphertext = [];
-const acceptedLeaves = [];
-const allocationLeaves = [];
-const includedLeaves = [];
-let aggregateYesC1 = IDENTITY;
-let aggregateYesC2 = IDENTITY;
-let aggregateNoC1 = IDENTITY;
-let aggregateNoC2 = IDENTITY;
-const yesAmount = [];
-const noAmount = [];
+function buildFixture(acceptedCount) {
+  const actionId = [];
+  const positionCommitment = [];
+  const ciphertext = [];
+  const acceptedLeaves = [];
+  const allocationLeaves = [];
+  const includedLeaves = [];
+  let aggregateYesC1 = IDENTITY;
+  let aggregateYesC2 = IDENTITY;
+  let aggregateNoC1 = IDENTITY;
+  let aggregateNoC2 = IDENTITY;
+  const yesAmount = [];
+  const noAmount = [];
 
-for (let index = 0; index < 8; index++) {
-  const sequence = FIRST_SEQUENCE + BigInt(index);
-  const action = [101n + BigInt(index), 201n + BigInt(index)];
-  const position = 1_001n + BigInt(index);
-  const yesRandomness = 301n + BigInt(index);
-  const noRandomness = 401n + BigInt(index);
-  const yesC1 = multiplyPoint(BASE8, yesRandomness);
-  const yesShared = multiplyPoint(COMMITTEE_KEY, 8n * yesRandomness);
-  const yesQuantity = SIDES[index] === 1n ? QUANTITIES[index] : 0n;
-  const yesC2 = addPoints(yesShared, multiplyPoint(BASE8, yesQuantity));
-  const noC1 = multiplyPoint(BASE8, noRandomness);
-  const noShared = multiplyPoint(COMMITTEE_KEY, 8n * noRandomness);
-  const noQuantity = SIDES[index] === 0n ? QUANTITIES[index] : 0n;
-  const noC2 = addPoints(noShared, multiplyPoint(BASE8, noQuantity));
-  const encrypted = [...yesC1, ...yesC2, ...noC1, ...noC2];
-  yesAmount.push(yesQuantity);
-  noAmount.push(noQuantity);
+  for (let index = 0; index < 8; index++) {
+    const active = index < acceptedCount;
+    const sequence = FIRST_SEQUENCE + BigInt(index);
+    const action = active
+      ? [101n + BigInt(index), 201n + BigInt(index)]
+      : [0n, 0n];
+    const position = active ? 1_001n + BigInt(index) : 0n;
+    const yesRandomness = 301n + BigInt(index);
+    const noRandomness = 401n + BigInt(index);
+    const yesC1 = multiplyPoint(BASE8, yesRandomness);
+    const yesShared = multiplyPoint(COMMITTEE_KEY, 8n * yesRandomness);
+    const yesQuantity =
+      active && SIDES[index] === 1n ? QUANTITIES[index] : 0n;
+    const yesC2 = addPoints(yesShared, multiplyPoint(BASE8, yesQuantity));
+    const noC1 = multiplyPoint(BASE8, noRandomness);
+    const noShared = multiplyPoint(COMMITTEE_KEY, 8n * noRandomness);
+    const noQuantity =
+      active && SIDES[index] === 0n ? QUANTITIES[index] : 0n;
+    const noC2 = addPoints(noShared, multiplyPoint(BASE8, noQuantity));
+    const encrypted = [...yesC1, ...yesC2, ...noC1, ...noC2];
+    yesAmount.push(yesQuantity);
+    noAmount.push(noQuantity);
 
-  actionId.push(action);
-  positionCommitment.push(position);
-  ciphertext.push(encrypted);
-  acceptedLeaves.push(
-    poseidon2Hash([
-      1009n,
-      ...MARKET,
-      EPOCH,
-      sequence,
-      ...action,
-      position,
-      ...encrypted,
-      COMMITTEE_EPOCH,
-    ]),
-  );
-  allocationLeaves.push(
-    poseidon2Hash([
-      1012n,
-      ...MARKET,
-      EPOCH,
-      sequence,
-      position,
-      SIDES[index],
-      (SIDES[index] === 1n ? YES_CHARGE : NO_CHARGE) * QUANTITIES[index],
-      FEE * QUANTITIES[index],
-      PAYOUT * QUANTITIES[index],
-    ]),
-  );
-  includedLeaves.push(
-    poseidon2Hash([1013n, ...MARKET, EPOCH, sequence, position]),
-  );
-  aggregateYesC1 = addPoints(aggregateYesC1, yesC1);
-  aggregateYesC2 = addPoints(aggregateYesC2, yesC2);
-  aggregateNoC1 = addPoints(aggregateNoC1, noC1);
-  aggregateNoC2 = addPoints(aggregateNoC2, noC2);
+    actionId.push(action);
+    positionCommitment.push(position);
+    ciphertext.push(encrypted);
+    if (active) {
+      acceptedLeaves.push(
+        poseidon2Hash([
+          1009n,
+          ...MARKET,
+          EPOCH,
+          sequence,
+          ...action,
+          position,
+          ...encrypted,
+          COMMITTEE_EPOCH,
+        ]),
+      );
+      allocationLeaves.push(
+        poseidon2Hash([
+          1012n,
+          ...MARKET,
+          EPOCH,
+          sequence,
+          position,
+          SIDES[index],
+          (SIDES[index] === 1n ? YES_CHARGE : NO_CHARGE) *
+            QUANTITIES[index],
+          FEE * QUANTITIES[index],
+          PAYOUT * QUANTITIES[index],
+        ]),
+      );
+      includedLeaves.push(
+        poseidon2Hash([1013n, ...MARKET, EPOCH, sequence, position]),
+      );
+    }
+    aggregateYesC1 = addPoints(aggregateYesC1, yesC1);
+    aggregateYesC2 = addPoints(aggregateYesC2, yesC2);
+    aggregateNoC1 = addPoints(aggregateNoC1, noC1);
+    aggregateNoC2 = addPoints(aggregateNoC2, noC2);
+  }
+
+  const yesTotal = yesAmount.reduce((total, amount) => total + amount, 0n);
+  const noTotal = noAmount.reduce((total, amount) => total + amount, 0n);
+  const batchSize = yesTotal + noTotal;
+  const yesMarketCost = YES_CHARGE * yesTotal;
+  const noMarketCost = NO_CHARGE * noTotal;
+  const feeEscrow = FEE * batchSize;
+
+  return {
+    networkDomain: [1n, 2n],
+    vault: [3n, 4n],
+    market: MARKET,
+    epoch: EPOCH,
+    acceptedRoot: fixedTree(acceptedLeaves),
+    acceptedCount: BigInt(acceptedCount),
+    firstSequence: FIRST_SEQUENCE,
+    lastSequence: FIRST_SEQUENCE + BigInt(acceptedCount - 1),
+    committeeEpoch: COMMITTEE_EPOCH,
+    committeeConfigHash: [5n, 6n],
+    committeePublicKey: COMMITTEE_KEY,
+    aggregateCiphertext: [
+      ...aggregateYesC1,
+      ...aggregateYesC2,
+      ...aggregateNoC1,
+      ...aggregateNoC2,
+    ],
+    decryptionProofHash: [7n, 8n],
+    committeeStatementHash: [9n, 10n],
+    allocationRoot: fixedTree(allocationLeaves),
+    includedRoot: fixedTree(includedLeaves),
+    lotSize: SCALE,
+    quote: [
+      0n,
+      batchSize,
+      yesTotal,
+      noTotal,
+      SCALE / 2n,
+      SCALE / 2n,
+      SCALE / 2n,
+      SCALE / 2n,
+      yesMarketCost + noMarketCost,
+      yesMarketCost,
+      noMarketCost,
+      YES_CHARGE,
+      NO_CHARGE,
+      0n,
+      FEE,
+      feeEscrow,
+      feeEscrow / 2n,
+      feeEscrow - feeEscrow / 2n,
+    ],
+    committeeSecret: COMMITTEE_SECRET,
+    actionId,
+    positionCommitment,
+    ciphertext,
+    yesAmount,
+    noAmount,
+  };
 }
 
-const fixture = {
-  networkDomain: [1n, 2n],
-  vault: [3n, 4n],
-  market: MARKET,
-  epoch: EPOCH,
-  acceptedRoot: fixedTree(acceptedLeaves),
-  acceptedCount: 8n,
-  firstSequence: FIRST_SEQUENCE,
-  lastSequence: FIRST_SEQUENCE + 7n,
-  committeeEpoch: COMMITTEE_EPOCH,
-  committeeConfigHash: [5n, 6n],
-  committeePublicKey: COMMITTEE_KEY,
-  aggregateCiphertext: [
-    ...aggregateYesC1,
-    ...aggregateYesC2,
-    ...aggregateNoC1,
-    ...aggregateNoC2,
-  ],
-  decryptionProofHash: [7n, 8n],
-  committeeStatementHash: [9n, 10n],
-  allocationRoot: fixedTree(allocationLeaves),
-  includedRoot: fixedTree(includedLeaves),
-  lotSize: SCALE,
-  quote: [
-    0n,
-    24n,
-    14n,
-    10n,
-    SCALE / 2n,
-    SCALE / 2n,
-    SCALE / 2n,
-    SCALE / 2n,
-    120_000_000n,
-    70_000_000n,
-    50_000_000n,
-    YES_CHARGE,
-    NO_CHARGE,
-    0n,
-    FEE,
-    2_400_000n,
-    1_200_000n,
-    1_200_000n,
-  ],
-  committeeSecret: COMMITTEE_SECRET,
-  actionId,
-  positionCommitment,
-  ciphertext,
-  yesAmount,
-  noAmount,
-};
-
-writeFileSync(new URL("batch.json", import.meta.url), `${decimalJson(fixture)}\n`);
+writeFileSync(
+  new URL("batch.json", import.meta.url),
+  `${decimalJson(buildFixture(8))}\n`,
+);
+writeFileSync(
+  new URL("batch_singleton.json", import.meta.url),
+  `${decimalJson(buildFixture(1))}\n`,
+);

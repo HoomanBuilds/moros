@@ -77,8 +77,10 @@ function assertPublicSignals(name, expected) {
   }
 }
 
-function expectInvalid(name, label, mutate) {
-  const fixture = JSON.parse(readFileSync(resolve(here, `${name}.json`), "utf8"));
+function expectInvalid(name, label, mutate, fixtureName = name) {
+  const fixture = JSON.parse(
+    readFileSync(resolve(here, `${fixtureName}.json`), "utf8"),
+  );
   mutate(fixture);
   const input = resolve(build, `${name}-${label}.json`);
   const output = resolve(build, `${name}-${label}.wtns`);
@@ -144,6 +146,7 @@ for (const name of ["treasury", "exit_request", "exit_cancel", "exit_match"]) {
 }
 compile("batch");
 validWitness("batch");
+validWitness("batch", "batch_singleton");
 const batchFixture = JSON.parse(readFileSync(resolve(here, "batch.json"), "utf8"));
 assertPublicSignals("batch", [
   ...batchFixture.networkDomain,
@@ -278,6 +281,21 @@ expectInvalid("batch", "allocation-charge", (fixture) => {
     BigInt(fixture.quote[11]) + 1n
   ).toString();
 });
+expectInvalid("batch", "empty", (fixture) => {
+  fixture.acceptedCount = "0";
+});
+expectInvalid("batch", "too-many", (fixture) => {
+  fixture.acceptedCount = "9";
+});
+expectInvalid("batch", "inactive-action", (fixture) => {
+  fixture.actionId[1][0] = "1";
+}, "batch_singleton");
+expectInvalid("batch", "inactive-position", (fixture) => {
+  fixture.positionCommitment[1] = "1";
+}, "batch_singleton");
+expectInvalid("batch", "inactive-quantity", (fixture) => {
+  fixture.yesAmount[1] = "1";
+}, "batch_singleton");
 expectInvalid("treasury", "wrong-recipient", (fixture) => {
   fixture.outSpendPublicKey[0] = (
     BigInt(fixture.outSpendPublicKey[0]) + 1n

@@ -11,8 +11,8 @@ mod test;
 
 const MAX_ALLOWED_ASSETS: u32 = 64;
 const MAX_LIQUIDITY_TIERS: u32 = 8;
-const PRIVATE_BATCH_SIZE: u32 = 8;
-const PRIVATE_MINIMUM_SIDE_COUNT: u32 = 2;
+const PRIVATE_MAXIMUM_BATCH_SIZE: u32 = 8;
+const PRIVATE_MINIMUM_SIDE_COUNT: u32 = 0;
 const MAX_USDC_AMOUNT: i128 = 1_000_000_000_000_000_000;
 const MAX_LOT_SIZE: i128 = 1i128 << 60;
 const FIXED_SCALE: i128 = 1i128 << 32;
@@ -74,7 +74,7 @@ pub struct FactoryConfig {
     pub committee_public_key_y: U256,
     pub maximum_fee_bps: u32,
     pub lp_fee_share_bps: u32,
-    pub fixed_batch_size: u32,
+    pub maximum_batch_size: u32,
     pub minimum_side_count: u32,
     pub maximum_price_movement: i128,
 }
@@ -115,7 +115,7 @@ pub struct ProposalPreimage {
     pub committee_public_key_x: U256,
     pub committee_public_key_y: U256,
     pub lp_fee_share_bps: u32,
-    pub fixed_batch_size: u32,
+    pub maximum_batch_size: u32,
     pub minimum_side_count: u32,
     pub maximum_price_movement: i128,
     pub risk_group: Symbol,
@@ -176,7 +176,7 @@ pub struct PrivateMarketConfig {
     pub fee_bps: u32,
     pub lp_fee_share_bps: u32,
     pub lot_size: i128,
-    pub fixed_batch_size: u32,
+    pub maximum_batch_size: u32,
     pub minimum_side_count: u32,
     pub maximum_price_movement: i128,
 }
@@ -325,7 +325,7 @@ impl MarketFactory {
             )
             || config.maximum_fee_bps > 1_000
             || config.lp_fee_share_bps > 10_000
-            || config.fixed_batch_size != PRIVATE_BATCH_SIZE
+            || config.maximum_batch_size != PRIVATE_MAXIMUM_BATCH_SIZE
             || config.minimum_side_count != PRIVATE_MINIMUM_SIDE_COUNT
             || config.maximum_price_movement <= 0
             || config.maximum_price_movement > FIXED_SCALE
@@ -620,7 +620,7 @@ impl MarketFactory {
             fee_bps: proposal.fee_bps,
             lp_fee_share_bps: config.lp_fee_share_bps,
             lot_size: proposal.lot_size,
-            fixed_batch_size: config.fixed_batch_size,
+            maximum_batch_size: config.maximum_batch_size,
             minimum_side_count: config.minimum_side_count,
             maximum_price_movement: config.maximum_price_movement,
         };
@@ -857,7 +857,7 @@ impl MarketFactory {
             committee_public_key_x: config.committee_public_key_x.clone(),
             committee_public_key_y: config.committee_public_key_y.clone(),
             lp_fee_share_bps: config.lp_fee_share_bps,
-            fixed_batch_size: config.fixed_batch_size,
+            maximum_batch_size: config.maximum_batch_size,
             minimum_side_count: config.minimum_side_count,
             maximum_price_movement: config.maximum_price_movement,
             risk_group: Self::risk_group_for(env, config, &request.asset),

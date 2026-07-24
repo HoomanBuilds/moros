@@ -28,8 +28,8 @@ const MAX_PRIVATE_ORDER_QUANTITY: u32 = 1_000;
 const ACCEPTED_TREE_LEVELS: u32 = 6;
 const ACCEPTED_LEAF_HASH_TAG: u32 = 1009;
 const MAX_PROOF_LENGTH: u32 = 512;
-const MAX_PRIVATE_BATCH_SIZE: u32 = 8;
-const PRIVATE_MINIMUM_SIDE_COUNT: u32 = 2;
+const MAX_PRIVATE_BATCH_ORDERS: u32 = 8;
+const PRIVATE_MINIMUM_SIDE_COUNT: u32 = 0;
 const MAX_ACTION_LIFETIME: u64 = 86_400;
 const MAX_AMOUNT: i128 = 1_000_000_000_000_000_000;
 const MAX_KEEP_ALIVE_ITEMS: u32 = 16;
@@ -165,7 +165,7 @@ pub struct MarketPrivateConfig {
     pub fee_bps: u32,
     pub lp_fee_share_bps: u32,
     pub lot_size: i128,
-    pub fixed_batch_size: u32,
+    pub maximum_batch_size: u32,
     pub minimum_side_count: u32,
     pub maximum_price_movement: i128,
 }
@@ -194,7 +194,7 @@ pub struct MarketRegistration {
     pub expiry: u64,
     pub finalize_after: u64,
     pub lot_size: i128,
-    pub fixed_batch_size: u32,
+    pub maximum_batch_size: u32,
     pub minimum_side_count: u32,
     pub fee_bps: u32,
     pub lp_fee_share_bps: u32,
@@ -246,7 +246,7 @@ pub struct OrderBinding {
     pub position_commitment: U256,
     pub lot_size: i128,
     pub fee_bps: u32,
-    pub fixed_batch_size: u32,
+    pub maximum_batch_size: u32,
     pub minimum_side_count: u32,
     pub maximum_price_movement: i128,
     pub rules_hash: BytesN<32>,
@@ -830,16 +830,17 @@ impl ShieldedCollateralVault {
         encrypted_order: EncryptedOrder,
     ) -> OrderBinding {
         let registration = Self::market_registration(&env, &market);
-        let epoch = Self::epoch_state(&env, &market, epoch_number);
+        let mut epoch = Self::epoch_state(&env, &market, epoch_number);
         if registration.finalized
             || registration.current_epoch != epoch_number
             || epoch.phase != EpochPhase::Collecting
-            || epoch.accepted_count >= registration.fixed_batch_size
+            || epoch.accepted_count >= registration.maximum_batch_size
             || !Self::valid_encrypted_order(&env, &encrypted_order)
             || !Self::canonical_nonzero_field(&env, &position_commitment)
         {
             panic_with_error!(&env, Error::InvalidOrder);
         }
+        Self::start_epoch_window(&env, &registration, &mut epoch);
         Self::build_order_binding(
             &env,
             &registration,
@@ -892,8 +893,8 @@ impl ShieldedCollateralVault {
             .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidConfiguration));
         let info = client.market_info();
         if private.batcher != env.current_contract_address()
-            || private.fixed_batch_size < 8
-            || private.fixed_batch_size > MAX_PRIVATE_BATCH_SIZE
+            || private.maximum_batch_size == 0
+            || private.maximum_batch_size > MAX_PRIVATE_BATCH_ORDERS
             || private.minimum_side_count != PRIVATE_MINIMUM_SIDE_COUNT
             || env.ledger().timestamp() >= info.expiry
             || info
@@ -915,7 +916,7 @@ impl ShieldedCollateralVault {
             expiry: info.expiry,
             finalize_after: info.finalize_after,
             lot_size: private.lot_size,
-            fixed_batch_size: private.fixed_batch_size,
+            maximum_batch_size: private.maximum_batch_size,
             minimum_side_count: private.minimum_side_count,
             fee_bps: private.fee_bps,
             lp_fee_share_bps: private.lp_fee_share_bps,
@@ -1488,9 +1489,10 @@ impl ShieldedCollateralVault {
         if env.ledger().timestamp() >= epoch.cutoff {
             panic_with_error!(&env, Error::TooEarly);
         }
-        if epoch.accepted_count >= registration.fixed_batch_size {
+        if epoch.accepted_count >= registration.maximum_batch_size {
             panic_with_error!(&env, Error::EpochFull);
         }
+        Self::start_epoch_window(&env, &registration, &mut epoch);
         let client = MarketClient::new(&env, &market);
         if client.outcome().is_some() || client.state_version() != epoch.market_state_version {
             panic_with_error!(&env, Error::StaleState);
@@ -1523,7 +1525,7 @@ impl ShieldedCollateralVault {
             0,
             Some(market.clone()),
             operation_binding,
-            epoch.refund_at,
+            binding.refund_at,
             transition,
             1,
         );
@@ -1555,7 +1557,7 @@ impl ShieldedCollateralVault {
             position_commitment,
             encrypted_order,
             accepted_at: env.ledger().timestamp(),
-            refund_at: epoch.refund_at,
+            refund_at: registration.finalize_after,
             status: OrderStatus::Pending,
         };
         let order_key = DataKey::Order(market.clone(), sequence);
@@ -1598,7 +1600,7 @@ impl ShieldedCollateralVault {
             panic_with_error!(&env, Error::InvalidPhase);
         }
         if env.ledger().timestamp() < epoch.cutoff
-            && epoch.accepted_count < registration.fixed_batch_size
+            && epoch.accepted_count < registration.maximum_batch_size
         {
             panic_with_error!(&env, Error::TooEarly);
         }
@@ -1678,7 +1680,7 @@ impl ShieldedCollateralVault {
             .and_then(|distance| distance.checked_add(1))
             .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidBatch));
         let maximum_batch_quantity = registration
-            .fixed_batch_size
+            .maximum_batch_size
             .checked_mul(MAX_PRIVATE_ORDER_QUANTITY)
             .unwrap_or_else(|| panic_with_error!(&env, Error::Arithmetic));
         let aggregate_quantity = submission
@@ -1686,12 +1688,11 @@ impl ShieldedCollateralVault {
             .checked_add(submission.no_count)
             .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidBatch));
         if env.ledger().timestamp() >= epoch.refund_at
-            || epoch.accepted_count != registration.fixed_batch_size
+            || epoch.accepted_count == 0
+            || epoch.accepted_count > registration.maximum_batch_size
             || sequence_count != u64::from(epoch.accepted_count)
             || aggregate_quantity == 0
             || aggregate_quantity > maximum_batch_quantity
-            || submission.yes_count < registration.minimum_side_count
-            || submission.no_count < registration.minimum_side_count
         {
             panic_with_error!(&env, Error::InvalidBatch);
         }
@@ -2538,15 +2539,7 @@ impl ShieldedCollateralVault {
         epoch: u64,
         market_state_version: u64,
     ) -> EpochState {
-        let now = env.ledger().timestamp();
-        let cutoff = now
-            .checked_add(registration.epoch_duration)
-            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic))
-            .min(registration.expiry);
-        let refund_at = cutoff
-            .checked_add(registration.refund_delay)
-            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
-        if cutoff <= now || refund_at > registration.finalize_after {
+        if env.ledger().timestamp() >= registration.expiry {
             panic_with_error!(env, Error::InvalidEpoch);
         }
         EpochState {
@@ -2558,15 +2551,39 @@ impl ShieldedCollateralVault {
             accepted_count: 0,
             first_sequence: 0,
             last_sequence: 0,
-            opened_at: now,
-            cutoff,
-            refund_at,
+            opened_at: 0,
+            cutoff: registration.expiry,
+            refund_at: registration.finalize_after,
             committee_epoch: registration.committee_epoch,
             committee_config_hash: registration.committee_config_hash.clone(),
             committee_public_key_x: registration.committee_public_key_x.clone(),
             committee_public_key_y: registration.committee_public_key_y.clone(),
             allocation_root: None,
         }
+    }
+
+    fn start_epoch_window(
+        env: &Env,
+        registration: &MarketRegistration,
+        epoch: &mut EpochState,
+    ) {
+        if epoch.accepted_count != 0 {
+            return;
+        }
+        let now = env.ledger().timestamp();
+        let cutoff = now
+            .checked_add(registration.epoch_duration)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic))
+            .min(registration.expiry);
+        let refund_at = cutoff
+            .checked_add(registration.refund_delay)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Arithmetic));
+        if cutoff <= now || refund_at > registration.finalize_after {
+            panic_with_error!(env, Error::InvalidEpoch);
+        }
+        epoch.opened_at = now;
+        epoch.cutoff = cutoff;
+        epoch.refund_at = refund_at;
     }
 
     fn accepted_leaf_hash(env: &Env, leaf: &AcceptedLeaf) -> U256 {
@@ -2636,7 +2653,7 @@ impl ShieldedCollateralVault {
             position_commitment,
             lot_size: registration.lot_size,
             fee_bps: registration.fee_bps,
-            fixed_batch_size: registration.fixed_batch_size,
+            maximum_batch_size: registration.maximum_batch_size,
             minimum_side_count: registration.minimum_side_count,
             maximum_price_movement: registration.maximum_price_movement,
             rules_hash: registration.rules_hash.clone(),
@@ -3163,7 +3180,7 @@ impl ShieldedCollateralVault {
             env,
             &mut fields,
             5,
-            U256::from_u32(env, binding.fixed_batch_size),
+            U256::from_u32(env, binding.maximum_batch_size),
         );
         Self::set_operation_field(
             env,
