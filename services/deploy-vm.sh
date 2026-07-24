@@ -110,7 +110,7 @@ UNIT
   sudo systemctl daemon-reload
   sudo systemctl enable --now zkmarket-resolve-keeper
   sudo systemctl enable --now zkmarket-private
-  for legacy in zkmarket-server zkmarket-member1 zkmarket-member2 zkmarket-member3; do
+  for legacy in moros-resolve-keeper zkmarket-server zkmarket-member1 zkmarket-member2 zkmarket-member3; do
     sudo systemctl disable --now "$legacy" 2>/dev/null || true
     sudo rm -f "/etc/systemd/system/$legacy.service"
   done
