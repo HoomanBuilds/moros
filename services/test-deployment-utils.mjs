@@ -27,6 +27,14 @@ assert.notEqual(
   deriveContractId(deployer, salt, Networks.PUBLIC),
   first,
 );
+assert.notDeepEqual(
+  deterministicSalt("shared-vault", "mainnet"),
+  salt,
+);
+assert.throws(
+  () => deterministicSalt("shared-vault", "local"),
+  /testnet or mainnet/,
+);
 assert.equal(networkDomain(Networks.TESTNET).length, 32);
 assert.equal(PRIVATE_TREE_LEVELS, 20);
 assert.equal(

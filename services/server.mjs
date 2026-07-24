@@ -15,6 +15,7 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
+import { startRpcFailover } from "./rpc-failover.mjs";
 
 const network = networkConfig();
 const PORT = Number(process.env.PORT || 8787);
@@ -28,7 +29,7 @@ const MEMBERS = (process.env.MEMBERS || "").split(",").filter(Boolean);
 const THRESHOLD = Number(process.env.THRESHOLD || 2);
 const MARKET = process.env.MARKET || "";
 const DRY = process.env.DRY_RUN === "1";
-const RPC_URL = network.rpcUrl;
+const RPC_URL = await startRpcFailover(network);
 const NETWORK_PASSPHRASE = network.passphrase;
 const FUNDER_SK = network.funderSecret;
 const READER_ADDRESS = process.env.READER_ADDRESS || (FUNDER_SK ? Keypair.fromSecret(FUNDER_SK).publicKey() : "");
@@ -351,6 +352,7 @@ async function batchPool(pool) {
       commitments,
       signerAddrs: Object.keys(memberAddrs).slice(0, THRESHOLD),
       sourceSk: FUNDER_SK,
+      rpcUrl: RPC_URL,
       attest: async ({ address, entryXdr, validUntilLedger }) => {
         const url = memberAddrs[address];
         if (!url) throw new Error(`no member service for signer ${address}`);

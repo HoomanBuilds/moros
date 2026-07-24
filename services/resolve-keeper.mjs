@@ -33,9 +33,10 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
+import { startRpcFailover } from "./rpc-failover.mjs";
 
 const network = networkConfig();
-const RPC = network.rpcUrl;
+const RPC = await startRpcFailover(network);
 const PASSPHRASE = network.passphrase;
 const ORACLE_MODE = process.env.ORACLE_MODE || "free";
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));

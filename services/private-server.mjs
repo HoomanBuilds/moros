@@ -42,11 +42,12 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
+import { startRpcFailover } from "./rpc-failover.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const network = networkConfig();
 const PORT = Number(process.env.PRIVATE_PORT || process.env.PORT || 8787);
-const RPC_URL = network.rpcUrl;
+const RPC_URL = await startRpcFailover(network);
 const NETWORK_PASSPHRASE = network.passphrase;
 const DEPLOYMENT_PATH = resolve(
   cfg.repo,

@@ -1,4 +1,4 @@
-import { Networks } from "@stellar/stellar-sdk";
+import { Networks, rpc } from "@stellar/stellar-sdk";
 
 const PROFILES = {
   testnet: {
@@ -9,6 +9,8 @@ const PROFILES = {
     horizonUrl: "https://horizon-testnet.stellar.org",
     deploymentPath: "deployments/private-testnet.json",
     artifactPath: "circuits/private-build/public",
+    collateralContract:
+      "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
     mainnetReady: false,
   },
   mainnet: {
@@ -19,6 +21,8 @@ const PROFILES = {
     horizonUrl: "https://horizon.stellar.org",
     deploymentPath: "deployments/private-mainnet.json",
     artifactPath: "circuits/private-mainnet-build/public",
+    collateralContract:
+      "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
     mainnetReady: true,
   },
 };
@@ -37,32 +41,45 @@ export function networkConfig(env = process.env) {
   if (passphrase !== profile.passphrase) {
     throw new Error(`${id} network passphrase does not match MOROS_NETWORK`);
   }
+  const allowLegacy = id === "testnet";
+  const rpcUrl =
+    scoped(env, id, "RPC_URL") ||
+    (allowLegacy ? env.RPC_URL : "") ||
+    profile.rpcUrl;
+  const rpcFallbackUrl = scoped(env, id, "RPC_FALLBACK_URL");
   return {
     ...profile,
-    rpcUrl:
-      scoped(env, id, "RPC_URL") ||
-      env.RPC_URL ||
-      profile.rpcUrl,
+    rpcUrl,
+    rpcUrls: [
+      ...new Set([rpcUrl, rpcFallbackUrl, profile.rpcUrl].filter(Boolean)),
+    ],
     horizonUrl:
       scoped(env, id, "HORIZON_URL") ||
-      env.HORIZON_URL ||
+      (allowLegacy ? env.HORIZON_URL : "") ||
       profile.horizonUrl,
     deploymentPath:
       scoped(env, id, "DEPLOYMENT") ||
-      env.MOROS_PUBLIC_DEPLOYMENT ||
+      (allowLegacy ? env.MOROS_PUBLIC_DEPLOYMENT : "") ||
       profile.deploymentPath,
     artifactPath:
       scoped(env, id, "ZK_PUBLIC_DIR") ||
-      env.MOROS_ZK_PUBLIC_DIR ||
+      (allowLegacy ? env.MOROS_ZK_PUBLIC_DIR : "") ||
       profile.artifactPath,
+    deployerSecret:
+      scoped(env, id, "DEPLOYER_SK") ||
+      (allowLegacy ? env.DEPLOYER_SK : "") ||
+      "",
     funderSecret:
       scoped(env, id, "FUNDER_SK") ||
-      env.FUNDER_SK ||
+      (allowLegacy ? env.FUNDER_SK : "") ||
+      "",
+    roundingFunderSecret:
+      scoped(env, id, "ROUNDING_FUNDER_SK") ||
+      (allowLegacy ? env.ROUNDING_FUNDER_SK : "") ||
       "",
     privacySecret:
       scoped(env, id, "PRIVACY_SK") ||
-      env.MOROS_PRIVACY_SK ||
-      (id === "testnet" ? env.MOROS_TESTNET_PRIVACY_SK : "") ||
+      (allowLegacy ? env.MOROS_PRIVACY_SK : "") ||
       "",
   };
 }
@@ -86,4 +103,17 @@ export async function assertRpcNetwork(server, network) {
     throw new Error(`RPC endpoint is not connected to ${network.id}`);
   }
   return actual;
+}
+
+export async function selectRpcUrl(
+  network,
+  createServer = (url) => new rpc.Server(url),
+) {
+  for (const url of network.rpcUrls || [network.rpcUrl]) {
+    try {
+      await assertRpcNetwork(createServer(url), network);
+      return url;
+    } catch {}
+  }
+  throw new Error(`no healthy ${network.id} RPC endpoint is available`);
 }

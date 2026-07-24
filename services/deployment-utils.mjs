@@ -28,9 +28,12 @@ function sha256(value) {
   return createHash("sha256").update(value).digest();
 }
 
-export function deterministicSalt(label) {
+export function deterministicSalt(label, network = "testnet") {
   if (!label) throw new Error("deployment salt label is required");
-  return sha256(`Moros testnet contract salt:${label}`);
+  if (network !== "testnet" && network !== "mainnet") {
+    throw new Error("deployment salt network must be testnet or mainnet");
+  }
+  return sha256(`Moros ${network} contract salt:${label}`);
 }
 
 export function deriveContractId(deployer, salt, networkPassphrase) {

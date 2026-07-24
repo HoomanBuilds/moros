@@ -18,6 +18,7 @@ import {
   assertRpcNetwork,
   networkConfig,
 } from "./network-config.mjs";
+import { startRpcFailover } from "./rpc-failover.mjs";
 
 const CONTRACT_ID = /^C[A-Z2-7]{55}$/u;
 const SYMBOL = /^[A-Z0-9_]{1,32}$/u;
@@ -56,7 +57,9 @@ function signingOptions(source, network) {
 }
 
 async function main() {
-  const network = networkConfig();
+  const selectedNetwork = networkConfig();
+  const rpcUrl = await startRpcFailover(selectedNetwork);
+  const network = { ...selectedNetwork, rpcUrl };
   const repo = fileURLToPath(new URL("..", import.meta.url));
   const deployment = assertDeploymentNetwork(
     JSON.parse(

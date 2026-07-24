@@ -31,6 +31,7 @@ export type PrivateDeploymentConfig = {
     committeePublicKeyX: string;
     committeePublicKeyY: string;
     treasuryKey: string;
+    committeeMode?: "single_vm" | "threshold";
     testnetSingleVmCommittee: boolean;
   };
   marketPolicy: {
@@ -164,13 +165,14 @@ export async function getPrivateConfig(): Promise<PrivateDeploymentConfig> {
   });
   if (!response.ok) throw new Error(await errorMessage(response));
   const config = await response.json() as PrivateDeploymentConfig;
+  const committeeMode = config.privacy.committeeMode ??
+    (config.privacy.testnetSingleVmCommittee ? "single_vm" : "threshold");
   if (
     config.network !== NETWORK.id ||
     config.mainnetReady !== (NETWORK.id === "mainnet") ||
     config.collateral.code !== "USDC" ||
     config.collateral.contract !== NETWORK.collateral.sac ||
-    config.privacy.testnetSingleVmCommittee !==
-      (NETWORK.id === "testnet") ||
+    committeeMode !== "single_vm" ||
     !/^[0-9a-f]{64}$/u.test(config.networkDomain) ||
     !/^[0-9a-f]{64}$/u.test(config.verifierDomain) ||
     !/^C[A-Z2-7]{55}$/u.test(config.contracts.resolverRegistry) ||
