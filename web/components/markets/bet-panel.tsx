@@ -320,7 +320,7 @@ export function BetPanel() {
                 <span className="text-foreground">Same clearing price</span>
               </div>
               <p className="text-[10px] leading-snug text-muted-foreground/70">
-                Eight orders clear together, with at least two orders on each side. Your side and quantity stay encrypted. Every unit on the same side receives the same batch price.
+                {data?.fixedBatchSize ?? 8} orders clear together, with at least {data?.minimumSideCount ?? 2} orders on each side. Your side and quantity stay encrypted. Every unit on the same side receives the same batch price.
               </p>
             </>
           ) : (

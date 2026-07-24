@@ -78,8 +78,8 @@ export function AboutPanel() {
           </p>
         )}
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Your side and quantity stay encrypted on-chain. Exactly eight orders execute atomically, with at
-          least two orders on each side and one clearing price. An incomplete batch is refundable after its
+          Your side and quantity stay encrypted on-chain. Exactly {data?.fixedBatchSize ?? 8} orders execute atomically, with at
+          least {data?.minimumSideCount ?? 2} orders on each side and one clearing price. An incomplete batch is refundable after its
           deadline. Claims are proof-bound and relayer-submittable. The current single-VM coordinator can
           recover individual order values, so this testnet is not threshold privacy.
         </p>
