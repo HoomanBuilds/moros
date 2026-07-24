@@ -16,8 +16,11 @@ export class PrivateProverArtifactCache {
     string,
     Promise<PreparedPrivateProverArtifacts>
   >();
+  private readonly fetcher: typeof fetch;
 
-  constructor(private readonly fetcher: typeof fetch = fetch) {}
+  constructor(fetcher: typeof fetch = fetch) {
+    this.fetcher = (input, init) => fetcher.call(globalThis, input, init);
+  }
 
   prepare(
     key: string,

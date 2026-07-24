@@ -34,6 +34,18 @@ async function main() {
   assert(first.wasm instanceof Uint8Array);
   assert(first.provingKey instanceof Uint8Array);
 
+  const invocationContexts: unknown[] = [];
+  const invocationSensitive = new PrivateProverArtifactCache(
+    function (this: typeof globalThis, input: RequestInfo | URL) {
+      invocationContexts.push(this);
+      return String(input).endsWith(".json")
+        ? Promise.resolve(Response.json({ protocol: "groth16" }))
+        : Promise.resolve(new Response(Uint8Array.from([1])));
+    } as typeof fetch,
+  );
+  await invocationSensitive.prepare("bound", sources);
+  assert(invocationContexts.every((context) => context === globalThis));
+
   const local = await cache.prepare("local", {
     ...sources,
     preloadBinaries: false,
