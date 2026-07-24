@@ -8,117 +8,98 @@
   <b>Private binary prediction markets on Stellar.</b>
 </p>
 
-Moros lets any connected user create a market, place an encrypted YES or NO position, and claim a proof-bound payout. New markets use Circle USDC on Stellar. XLM is required only for Stellar fees and reserves. Legacy testnet markets that used XLM remain readable and are labeled with their actual collateral.
+Moros lets any connected user propose a price market, trade encrypted YES or NO positions, provide pooled liquidity, and claim a proof-bound payout. Markets use Circle USDC on Stellar. XLM is required only for network fees and account reserves.
 
-Moros is currently an unaudited testnet beta. Do not use it with real funds.
+Moros is an unaudited testnet beta. Do not use it with real funds. Old testnet deployments and registry records are not loaded into the current application.
 
 ## Current product
 
-- User-created oracle-backed price markets
-- Circle USDC collateral for every new market
-- On-chain LMSR pricing and creator-funded liquidity
-- Browser-generated Groth16 proofs over BLS12-381
-- Encrypted order sides with 2-of-3 threshold batch settlement
-- Proof-based redemption and refunds
-- A 2% platform fee on winning profit only
+- User-created crypto, FX, and gold price markets
+- Circle USDC collateral
+- Creator-free market proposals
+- Permissionless pooled liquidity with isolated per-market risk
+- Reusable private USDC balances
+- Variable position quantities from 1 through 1,000
+- Browser-generated BN254 Groth16 proofs
+- Eight-order atomic batches with one clearing price
+- Proof-based claims, refunds, transfers, LP funding, and withdrawals
 - Wallet-authenticated comments with optional images
-- Free Reflector price resolution for the current testnet beta
-- Optional Pyth Pro support kept behind an explicit operator switch
+- Free Reflector price resolution on testnet
+- Optional Pyth Pro support behind an explicit operator switch
+
+Sports, politics, weather, economics, and other event markets remain disabled. Their creation flow will not open until evidence observers, challenges, arbitration, timeout handling, refunds, and production monitoring are operational.
 
 ## Market lifecycle
 
-### 1. Create
+### 1. Propose
 
-Any connected user can create a market from /app/create.
+Any connected user can propose a supported market from `/app/create`. The proposer chooses an asset, USD strike, and exact future settlement time. The browser hashes the canonical rules and submits the proposal through the market factory.
 
-For a price market, the creator chooses a supported asset, strike, close time, and resolution time. The market uses the active price resolver.
+The proposer does not need USDC and does not fund the market. A proposal becomes active only when the pooled liquidity system can allocate the configured USDC target to its isolated market vault. Unsupported assets, fees, liquidity targets, and timing values fail before funding.
 
-The event resolver contract supports rules for future sports, politics, and other objective markets:
+### 2. Fund liquidity
 
-- A precise binary question
-- An official resolution source
-- Exact YES conditions
-- Cancellation, ambiguity, and void rules
+Any user may shield USDC and deposit it into the shared permissionless liquidity pool. LP shares represent a pro rata claim on current pool equity, including realized market profit, loss, and vested LP fees. Returns are not guaranteed.
 
-The canonical rules are hashed in the browser and registered on-chain. Event creation is currently disabled because the independent observer, challenge, and arbitration operations are not yet running. The UI does not advertise a market type that the backend cannot resolve.
+The pool keeps at least 20% idle under the current testnet policy and deploys at most 80% across eligible markets. Each market receives an isolated allocation. One market cannot spend another market's reserved capital.
 
-Creation deploys and links an LMSR market and a shielded pool through several wallet transactions. The current beta uses 13.8629437 testnet USDC for the fully funded LMSR worst-case subsidy, which fits within one 20 USDC Circle faucet request. A market is listed only after its contracts, resolver, committee, fee, and liquidity setup complete.
+Public deposits and final withdrawals are visible Stellar boundaries. Internal LP ownership, market allocation, exits, and redemption use private notes and proof relaying.
 
-### 2. Place a private position
+### 3. Place private positions
 
-The browser creates an order commitment and proves that its encrypted side is valid. The proof is generated locally with public artifacts from web/public/zk.
+A user first shields any positive supported USDC amount into one reusable private balance. The same private balance can fund positions, LP shares, transfers, claims, refunds, and later withdrawals.
 
-The user deposits one of the supported USDC privacy buckets:
+Each position has a private side and a user-selected whole-number quantity. The browser generates a proof locally and relays the proof-bound action. Proving WASM and proving keys are intentionally public. Security depends on private witness values and the immutable on-chain verification keys, not on hiding proving artifacts.
 
-- 1
-- 5
-- 10
-- 25
-- 50
-- 100
-- 250
-- 500
-- 1,000 USDC
+The public shield or withdrawal boundary reveals the transferred amount and wallet. Internal note ownership, balance changes, sides, quantities, allocations, and claims are not stored in plaintext in Supabase.
 
-The public transfer reveals the bucket, but not the YES or NO side. The private secret and nullifier stay in the browser.
+### 4. Execute an atomic batch
 
-The committee service verifies the encryption proof before accepting the ciphertext. The contract also records the exact commitment, stake, and pending status.
+Each batch contains exactly eight encrypted orders and requires at least two YES orders and two NO orders. Every order in the batch receives the same clearing price.
 
-### 3. Batch
+The visible LMSR price does not move while a batch is incomplete. The complete batch is proved and executed atomically, then the public price changes once. A later user cannot trade against a partially applied batch or gain a stale-price advantage from an earlier order.
 
-Normal batches contain four orders. The committee homomorphically adds ciphertexts and decrypts only the aggregate YES and NO totals. Each member proves its partial decryption, and a 2-of-3 signer threshold authorizes the on-chain update.
+Orders may use different quantities. A user may place multiple positions while the market and current batch window remain open. An incomplete batch never moves price. Its pending orders become privately refundable after the configured close and refund delay.
 
-After market close, a final batch may contain two to four orders. A batch of one is rejected because its aggregate would reveal the order side. A lone pending order becomes fully refundable after the final batch deadline.
+### 5. Resolve
 
-Once a shielded pool is linked, direct market trading is permanently disabled. This prevents outside trades from changing the clearing price and breaking shielded-pool solvency.
+The current testnet resolver uses free Reflector CEX feeds for crypto assets and the Reflector fiat feed for FX and XAU. Moros checks the requested pair, historical settlement time, freshness, decimals, and configured availability rules.
 
-### 4. Resolve
+Reflector is one provider family. Moros does not present its CEX and fiat contracts as independent-provider redundancy. If a usable price remains unavailable through the resolution timeout, the market becomes permissionlessly voidable.
 
-Price markets use the free testnet Reflector resolver by default. Reflector is one on-chain oracle contract backed by its own multi-node aggregation. Moros does not claim that this is an independent multi-provider quorum.
+Pyth Pro support remains available only as a paid operator mode. It has no default resolver or access token and cannot activate through a generic override.
 
-The resolver checks the historical price at the market expiry, freshness, decimals, confidence, and configured deviation limits. If usable data remains unavailable through the resolution timeout, anyone may void the market.
+### 6. Claim, refund, and harvest
 
-When event operations are enabled, the event resolver uses an optimistic bonded flow:
+Payouts are pull-based. Resolution does not push funds to every wallet.
 
-1. A proposer posts 10 testnet USDC with an outcome and public evidence.
-2. Another user may challenge during the one-hour beta window by posting the same bond and a different outcome.
-3. An undisputed proposal can be finalized after the window.
-4. A dispute is decided by independent committee votes with a 2-of-3 threshold.
-5. An unresolved dispute eventually becomes permissionlessly voidable and both bonds are returned.
+- A winning user generates a private claim proof.
+- A losing position has no payout action.
+- A void market returns each position's terminal value without vesting platform or LP fees.
+- An order from an incomplete batch becomes privately refundable.
+- Nullifiers and state-bound proofs prevent replay.
+- The runtime harvests terminal market capital back into the pooled LP after resolution or voiding.
 
-The event resolver can select YES, NO, or VOID.
-
-### 5. Claim or refund
-
-Payouts are pull-based. Resolution does not automatically send funds to every wallet.
-
-- A winning user generates a redemption proof and claims the payout.
-- The pool claims its winning LMSR shares once before paying users.
-- A losing position cannot redeem a winning payout.
-- A void market returns the full order stake with no platform fee.
-- A pending order that missed the final batch can be fully refunded after the deadline.
-- Every order, refund, and redemption is bound to state and rejects replay.
-
-If all included positions are on only one side, resolution voids the market and every included order receives its full stake back. This prevents a one-sided testnet market from producing misleading rewards. A single pending order is also refundable if it cannot join a private batch before the deadline.
+The portfolio shows private activity recovered for the connected wallet. Claim and refund actions appear only when the position is eligible.
 
 ## Fees
 
-Moros charges 200 basis points, or 2%, on winning profit only.
+New private markets use an execution-time fee based on the batch clearing probability:
 
-    fee = max(payout - stake, 0) * 2%
+    trade_fee = quantity * lot_size * fee_rate * p * (1 - p)
 
-Returned principal, losing-order refunds, and void refunds are not charged. The treasury and fee rate are immutable for each pool. The contract caps deployment-time fees at 10%.
+The current market proposal fee parameter is 2%, capped by the factory at 10%. The probability term makes the charged amount smaller than 2% of the maximum position payout and symmetric for YES and NO at complementary prices.
 
-Moros does not take a percentage of the whole market pool. Pool-wide fees could seize creator liquidity or unclaimed user collateral and make solvency harder to reason about.
+After reimbursement of exact batch rounding capital, 80% of vested execution fees goes to pooled LP equity and 20% goes to the Moros protocol treasury. VOID and incomplete-batch refunds do not create platform revenue.
 
 ## Oracle modes
 
-The current beta must run in free mode:
+The current beta runs in free mode:
 
     ORACLE_MODE=free
     NEXT_PUBLIC_ORACLE_MODE=free
 
-The paid integration remains available for a future operator:
+The optional paid integration remains available:
 
     ORACLE_MODE=pyth_pro
     NEXT_PUBLIC_ORACLE_MODE=pyth_pro
@@ -126,64 +107,66 @@ The paid integration remains available for a future operator:
     NEXT_PUBLIC_PYTH_PRO_PRICE_RESOLVER_ID=<deployed paid resolver>
     PYTH_ACCESS_TOKEN=<paid access token>
 
-Paid mode has no default resolver or token. It cannot activate accidentally through the old generic resolver configuration.
-
-Public Band and DIA addresses listed in older documentation were not live after the latest Stellar testnet reset, so they are not configured as fake backups.
+Public Band and DIA addresses from older testnet deployments are not configured as backups.
 
 ## Architecture
 
 ### Contracts
 
-- contracts/lmsr-market: funded binary LMSR, lifecycle, batch settlement, resolution, and share claims
-- contracts/shielded-pool: USDC custody, commitments, order status, committee checks, refunds, position redemption, and fees
-- contracts/resolver: free Reflector price resolution, optional verified Pyth payloads, and stale-market voiding
-- contracts/event-resolver: bonded event proposals, challenges, committee votes, evidence, finalization, and timeout voiding
+- `contracts/market-factory`: creator-free proposals, capability gates, deterministic market deployment, and LP-backed activation
+- `contracts/lmsr-market`: binary LMSR pricing, atomic batches, lifecycle, resolution, and terminal LP accounting
+- `contracts/market-liquidity-vault`: isolated per-market LP capital and terminal redemption
+- `contracts/pooled-liquidity-vault`: shared LP shares, risk limits, allocation queue, NAV, withdrawals, and harvests
+- `contracts/shielded-collateral-vault`: reusable private USDC notes, orders, claims, refunds, LP actions, outputs, roots, and nullifiers
+- `contracts/zk-verifier`: immutable BN254 Groth16 verification keys and typed proof verification
+- `contracts/resolver`: free Reflector resolution, optional verified Pyth data, and stale-market voiding
+- `contracts/event-resolver`: inactive event-resolution foundation for future operational work
 
-### Circuits
+### Proof circuits
 
-- order_commit: derives the order commitment
-- encrypt_order: proves commitment membership and binds the encrypted YES and NO amounts to the committee key
-- position_redeem: proves order ownership, outcome, clearing-price payout, stake, recipient, nullifier, and exact fee
+The private stack includes typed circuits for deposits, transfers, withdrawals, orders, claims, refunds, execution change, LP funding, LP redemption, LP exits, treasury actions, exit replacement, and complete batch execution.
 
-Circuits compile to Groth16 over BLS12-381. Browser WASM and proving keys are intentionally public. Proof soundness comes from private witness values and the on-chain verification key, not from hiding proving artifacts.
-
-The current setup uses a development trusted setup. An independent ceremony and external security review are required before mainnet.
+The circuits use Groth16 over BN254. Verification keys are finalized in the deployed verifier. The current proving setup is for development. An independent ceremony and external security review are required before mainnet.
 
 ### Services
 
-- services/server.mjs: verified pool registration, encrypted order intake, persistent queue, indexing, batching, and redemption relay
-- services/committee/member.mjs: DKG share custody, verified partial decryption, and exact batch attestation
-- services/resolve-keeper.mjs: permissionless price-resolution calls using the selected oracle mode
+Only two Moros services are active:
 
-Production registration validates market and pool linkage, collateral, resolver support, committee configuration, redeem key state, and the approved market and pool WASM hashes. Each committee member independently checks the pool WASM and its own committee membership before adding a user-created pool to its signing allowlist. ALLOW_UNVERIFIED_REGISTRATION=1 is for local tests only.
+- `services/private-server.mjs`: output indexing, private proof relaying, proposal activation, pooled LP allocation, fixed-batch coordination, encrypted allocation witnesses, terminal finalization, and LP harvest
+- `services/resolve-keeper.mjs`: supported price resolution and contract TTL maintenance
 
-### Web
+Both services load contract IDs and policy from `deployments/private-testnet.json`. Contract addresses are not duplicated in environment variables.
 
-- /app: live market catalog
-- /app/create: user-created oracle-backed price markets, with unsupported event categories clearly gated
-- /app/market/[id]: lifecycle-aware market terminal, betting, rules, comments, and resolution actions
-- /app/portfolio: position-specific redemption and refunds
+The current testnet coordinator holds the combined committee secret on one VM. This is a testnet limitation and is not threshold privacy. Mainnet requires independently operated committee members, threshold key custody, redundant services, monitoring, and recovery procedures.
 
-Social features use wallet-signature authentication with a public Supabase project. Comment images are validated before upload and associated with the authenticated wallet comment. Private activity uses a separate server-only Supabase project containing only opaque, fixed-size encrypted pages. Trade secrets never enter the public social database or plaintext private-sync columns.
+### Web and Supabase
 
-## Testnet deployments
+- `/app`: current-deployment market catalog
+- `/app/create`: creator-free price market proposals with exact local time selection
+- `/app/market/[id]`: lifecycle-aware market terminal, variable private positions, rules, comments, and resolution state
+- `/app/portfolio`: reusable private USDC balance, encrypted activity history, claims, and refunds
+- `/app/liquidity`: automatic pooled LP deposits, equity, fees, and withdrawals
 
-The active private testnet record is [deployments/private-testnet.json](deployments/private-testnet.json).
+Social records use wallet-signature authentication. Comment images are validated before upload and belong to the authenticated wallet comment.
+
+Private activity sync stores only fixed-size encrypted pages behind server-only credentials. The wallet derives the encryption and viewing material needed to recover its own activity. Supabase operators do not receive plaintext sides, quantities, note ownership, balances, claims, or LP allocations.
+
+## Testnet deployment
+
+The canonical record is [deployments/private-testnet.json](deployments/private-testnet.json).
 
 | Component | Testnet value |
 | --- | --- |
 | Circle USDC SAC | CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA |
-| Market factory | CAWTJYYQ3YEKNJ4RPYYOPOV3JMPGQG42AWTYOQXXFTOYCO7U7F4JVJ3C |
-| Shared collateral vault | CBVNCHDJOIDFWEW5UQX62CDGV6CS5V7N54DO4CNZS2QC73RDFSDRG7LE |
-| Pooled liquidity vault | CAMWZJPST7QO7Z2S4O4QZR57CJTYSDYXVTHLRNCZWMSNUOUYFLF3LGVO |
-| Groth16 verifier | CC2FGGBXS4LNY2YSDF4K3DLJAS4F3F7U64QIMUXQYUXSEMGSVKXDAKKX |
-| Free price resolver | CCQ6UZGXJOOXPM6MTGE3H2LSPW3CWDIPIDXHO4OLJWQ7AUBIQ7ZT5EZX |
-| Reflector CEX oracle | CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63 |
-| Reflector fiat oracle | CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W |
+| Market factory | CCPRPUNRJV2CCHN2ENZAJKSV3PVN2HH2LHXDDZZQNGFUEAZNCBVRB52D |
+| Shared collateral vault | CBGZDC64P5LGMGCKUUIQDCXNYE2E4LA66O2GHFQFG2QPX67KO6V2YZR2 |
+| Pooled liquidity vault | CDYJTE5J54ITTKVDYENR7UQTBVKTY4LOHQJAHF5YRVJZDA77YJI5S3WX |
+| Groth16 verifier | CBGUQRKJLNZZS4L2PZYKHAGR7CXOTJFISYM27D7HYDAIF32AXO47WKUL |
+| Free price resolver | CCZNETDY464HA2RCXPIEFM56W3NRT3GHQ7GUPWZS6LWMILCERDADSKJT |
 | Market WASM | 1b6661c230955a5452fa841a8df6dbed99b17165dede73b3b5e8b319ecf5a9d3 |
 | Liquidity vault WASM | 28ab6ba66df7e5512be4050e6000adc0786d8a75a9faf13e331c9907893b8b08 |
 
-The active testnet registry accepts only new Circle USDC markets created through this factory. Older XLM and legacy pool experiments are not active product markets.
+The application, services, keeper, and live tests reject registry records that do not match this factory, shared vault, Circle USDC SAC, and active market state.
 
 ## Local development
 
@@ -193,43 +176,38 @@ Requirements:
 - Rust and Cargo
 - Stellar CLI with Soroban contract support
 
-Install and test the web app:
+Run web checks:
 
     cd web
     npm install
     cp .env.example .env.local
-    npm run zk:sync
     npm run test:unit
-    PLAYWRIGHT_PORT=3101 npm run test:e2e
+    npm run test:e2e
     npm run build
 
-Run root contracts:
+Run contract checks:
 
     cd contracts
     cargo test --workspace
-    stellar contract build
-
-Run the separate shielded-pool suite:
-
-    cd contracts/shielded-pool/contract
-    cargo test
+    cargo clean
 
 Run service checks:
 
     cd services
     npm install
-    node test-server.mjs
+    npm test
+    npm run verify:oracles
 
-Copy services/.env.example to services/.env, keep both oracle mode variables set to free, and never put secret keys in committed files.
+Copy `services/.env.example` to `services/.env`, keep oracle mode set to free, and never put secret keys in committed files.
 
 ## Security status
 
-This branch is for testnet beta hardening and has not been merged into main.
-
-- Contracts and circuits are unaudited.
-- The committee is currently a fixed 2-of-3 set.
-- Threshold privacy fails if a quorum colludes.
-- Browser position recovery depends on locally stored private data.
-- Creator subsidy remains locked as market liquidity in the current beta design.
-- Settlement and payouts require users or keepers to call permissionless actions. Nothing on-chain runs automatically by itself.
-- Mainnet requires an independent trusted setup, external audit, independently operated committee members, production monitoring, and a separate deployment review.
+- Contracts, circuits, and services are unaudited.
+- The trusted setup is for development.
+- The single-VM testnet coordinator can recover individual encrypted order values.
+- Public deposits and final withdrawals expose their Stellar wallet and amount.
+- Reflector is the only active oracle provider family.
+- Event market creation is disabled.
+- Payouts require permissionless user or service transactions. Nothing on-chain runs by itself.
+- Mainnet is disabled in the current deployment manifest.
+- Mainnet requires an independent trusted setup, external security review, distributed committee custody, redundant operators, production monitoring, and a separate deployment review.
