@@ -15,6 +15,7 @@ RUNTIME_FILES=(
   "services/.env.example"
   "services/Caddyfile.moros"
   "services/README.md"
+  "services/committee/bn254-babyjub.mjs"
   "services/config.mjs"
   "services/deploy-vm.sh"
   "services/deployment-utils.mjs"
