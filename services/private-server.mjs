@@ -93,7 +93,7 @@ const PRIVACY_SECRET = configuredSecret({
 const ALLOWED_ORIGINS = new Set(
   (
     process.env.PUBLIC_ORIGINS ||
-    "http://localhost:3000,https://moros-six.vercel.app"
+    "http://localhost:3000,https://moros.fun,https://www.moros.fun,https://moros-six.vercel.app"
   )
     .split(",")
     .map((value) => value.trim())

@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="https://moros-six.vercel.app">Live App</a> |
-  <a href="https://moros-six.vercel.app/app/create">Create a Market</a> |
-  <a href="https://moros-six.vercel.app/app/portfolio">Portfolio</a> |
+  <a href="https://moros.fun">Live App</a> |
+  <a href="https://moros.fun/app/create">Create a Market</a> |
+  <a href="https://moros.fun/app/portfolio">Portfolio</a> |
   <a href="https://x.com/morosxyz">X</a>
 </p>
 
@@ -417,10 +417,10 @@ All listed core contract instances, Circle USDC SAC, and Reflector dependencies 
 
 | Route | Purpose |
 | --- | --- |
-| [App](https://moros-six.vercel.app/app) | Browse active and resolved markets |
-| [Create](https://moros-six.vercel.app/app/create) | Propose a supported price market |
-| [Portfolio](https://moros-six.vercel.app/app/portfolio) | Manage private USDC, positions, claims, refunds, and history |
-| [Liquidity](https://moros-six.vercel.app/app/liquidity) | Deposit into the pooled LP vault and manage private shares |
+| [App](https://moros.fun/app) | Browse active and resolved markets |
+| [Create](https://moros.fun/app/create) | Propose a supported price market |
+| [Portfolio](https://moros.fun/app/portfolio) | Manage private USDC, positions, claims, refunds, and history |
+| [Liquidity](https://moros.fun/app/liquidity) | Deposit into the pooled LP vault and manage private shares |
 | `/app/market/[id]` | View a market, place an encrypted order, and join its wallet-authenticated discussion |
 
 ## Repository structure
