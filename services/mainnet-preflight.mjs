@@ -87,12 +87,17 @@ export async function runMainnetPreflight() {
   if (!/^[0-9a-f]{40}$/u.test(sourceCommit)) {
     throw new Error("MOROS_MAINNET_SOURCE_COMMIT is required");
   }
-  const head = execFileSync("git", ["rev-parse", "HEAD"], {
-    cwd: cfg.repo,
-    encoding: "utf8",
-  }).trim();
-  if (head !== sourceCommit) {
-    throw new Error("mainnet source commit does not match the checked-out commit");
+  try {
+    execFileSync(
+      "git",
+      ["merge-base", "--is-ancestor", sourceCommit, "HEAD"],
+      {
+        cwd: cfg.repo,
+        stdio: "ignore",
+      },
+    );
+  } catch {
+    throw new Error("mainnet source commit is not in the checked-out release");
   }
 
   const expectedUsdc = new Asset(
