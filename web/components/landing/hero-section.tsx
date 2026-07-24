@@ -198,7 +198,7 @@ export function HeroSection() {
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            Bet on binary outcomes with zero-knowledge proofs. Your side and exact position amount are encrypted during batching, while the public chain records the collateral bucket and proof-bound claim.
+            Bet on binary outcomes with zero-knowledge proofs. Your side and quantity stay encrypted on-chain while one atomic batch sets the public odds.
           </p>
         </div>
         </div>
@@ -212,7 +212,7 @@ export function HeroSection() {
         <div className="max-w-[1400px] mx-auto flex flex-wrap items-start gap-x-10 gap-y-6 lg:gap-20">
           {[
             { value: "Live", label: "on Stellar testnet" },
-            { value: "t-of-n", label: "no-leak committee" },
+            { value: "8 orders", label: "one atomic batch" },
             { value: "LMSR", label: "on-chain odds" },
           ].map((stat) => (
             <div key={stat.label} className="flex flex-col gap-2">

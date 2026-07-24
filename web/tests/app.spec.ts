@@ -51,6 +51,7 @@ test("market creation exposes supported feeds and blocks unsupported events", as
   await expect(page.getByRole("button", { name: "Event outcomes - Soon", exact: true })).toBeDisabled();
   await expect(page.getByText(/sports, politics, weather, economics, and other event markets stay unavailable/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Sports", exact: true })).not.toBeVisible();
+  await expect(page.getByText(/single-VM testnet coordinator/i)).toBeVisible();
 });
 
 test("market creation accepts an exact local settlement time", async ({ page }) => {

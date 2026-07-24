@@ -1079,7 +1079,7 @@ export default function CreatePage() {
                     ? ORACLE_MODE === "free"
                       ? `After expiry, the matching free public ${feedName} feed resolves this testnet market.`
                       : "After expiry, Reflector and Pyth Pro must agree before the market resolves."
-                    : "After expiry, anyone can post a bonded result with evidence. Conflicts trigger committee arbitration. Cancelled or ambiguous events can be voided for full refunds."}
+                    : "Event markets remain disabled until independent evidence, challenge, arbitration, timeout, and refund operations are running."}
                 </p>
               </div>
             </div>
@@ -1093,7 +1093,7 @@ export default function CreatePage() {
               <div>
                 <Tag>What gets deployed</Tag>
                 <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-                  A USDC-backed LMSR market, paired shielded pool, and threshold committee. Position sides and amounts stay encrypted during batching, while the market remains fully collateralized.
+                  A creator-free proposal reserves a deterministic USDC market and isolated liquidity vault. The pooled LP activates it only after full funding. Private batches use the disclosed single-VM testnet coordinator.
                 </p>
               </div>
             </div>

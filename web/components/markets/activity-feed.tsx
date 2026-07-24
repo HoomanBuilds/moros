@@ -22,7 +22,7 @@ export function ActivityFeed() {
           Shielded activity
         </span>
         <p className="text-sm text-muted-foreground">
-          Every order is an on-chain commitment with a public collateral bucket. The side and exact position amount stay encrypted during batching.
+          Every order is an on-chain commitment with an encrypted payload. The side and quantity stay out of public plaintext.
         </p>
       </div>
 

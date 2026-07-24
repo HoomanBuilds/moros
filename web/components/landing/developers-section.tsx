@@ -13,8 +13,8 @@ const features = [
     description: "Rust contracts enforcing outcome-gated, replay-safe settlement."
   },
   {
-    title: "Committee services",
-    description: "Threshold ElGamal decryption and batch relaying."
+    title: "Private runtime",
+    description: "Output indexing, proof relaying, atomic batching, and LP automation."
   },
   {
     title: "Verifiable on-chain",
@@ -85,7 +85,7 @@ export function DevelopersSection() {
           }`}
         >
           <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-md">
-            Open circuits and contracts. Inspect the circom sources, the Soroban contracts, and the committee services.
+            Open circuits and contracts. Inspect the circom sources, Soroban contracts, and private runtime.
           </p>
           <div className="grid grid-cols-2 gap-6">
             {features.map((feature, index) => (

@@ -53,7 +53,9 @@ export function AboutPanel() {
     .filter((value): value is string => value !== null);
   const bannerSourceUrl = safeHttpUrl(data?.bannerSourceUrl);
   const bannerLicenseUrl = safeHttpUrl(data?.bannerLicenseUrl);
-  const feeLabel = data ? `${data.feeBps / 100}% of winning profit only` : "--";
+  const feeLabel = data
+    ? `${data.feeBps / 100}% execution parameter with p(1-p) pricing`
+    : "--";
 
   return (
     <Panel className="p-6 space-y-6">
@@ -66,7 +68,7 @@ export function AboutPanel() {
             <p><span className="text-foreground">YES:</span> {data?.resolutionRules}</p>
             <p><span className="text-foreground">VOID:</span> {data?.voidRules}</p>
             <p>
-              Anyone can propose a result with a USDC bond after betting closes. An unchallenged proposal finalizes after the challenge window. A conflicting bonded proposal goes to threshold committee arbitration.
+              Event market creation is disabled on this testnet until independent evidence, challenge, arbitration, timeout, and refund operations are running.
             </p>
           </div>
         ) : (
@@ -76,10 +78,10 @@ export function AboutPanel() {
           </p>
         )}
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Your side and exact position amount are encrypted inside a public collateral bucket. A threshold
-          committee decrypts only the net across a batch of at least two orders. A lone final order is
-          refunded after the deadline instead of being decrypted by itself. Redemption is proof-bound and
-          relayer-submittable, but a claim still identifies the winning order commitment on-chain.
+          Your side and quantity stay encrypted on-chain. Exactly eight orders execute atomically, with at
+          least two orders on each side and one clearing price. An incomplete batch is refundable after its
+          deadline. Claims are proof-bound and relayer-submittable. The current single-VM coordinator can
+          recover individual order values, so this testnet is not threshold privacy.
         </p>
       </div>
 
@@ -133,7 +135,7 @@ export function AboutPanel() {
         <Row label="Pool collateral">{data ? `${data.poolSize.toFixed(2)} ${data.collateral.code}` : "--"}</Row>
         <Row label="Platform fee">{feeLabel}</Row>
         {isEvent && <Row label="Rules integrity">{data?.rulesVerified ? "Verified against on-chain hash" : "Verification failed"}</Row>}
-        <Row label="Privacy">Encrypted side and amount · public stake bucket · t-of-n committee</Row>
+        <Row label="Privacy">Encrypted side and quantity; single-VM testnet coordinator</Row>
         <Row label="Market contract"><ContractLink id={marketId} /></Row>
         <Row label="Shielded pool"><ContractLink id={poolId} /></Row>
       </div>

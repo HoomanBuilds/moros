@@ -19,11 +19,11 @@ const primitives = [
     metric: { value: "192B", label: "Proof size" },
   },
   {
-    quote: "Threshold ElGamal splits outcome decryption across a committee, so no single party can read a position alone.",
-    author: "Threshold ElGamal",
-    role: "Decryption committee",
-    company: "ElGamal",
-    metric: { value: "t-of-n", label: "Committee threshold" },
+    quote: "Uniform private batches execute eight encrypted orders at one clearing price, so no user receives a partially updated market.",
+    author: "Uniform batch",
+    role: "Private execution",
+    company: "Atomic settlement",
+    metric: { value: "8", label: "Orders per batch" },
   },
   {
     quote: "LeanIMT commits every order into an append-only Merkle tree, so membership is provable without exposing the order itself.",

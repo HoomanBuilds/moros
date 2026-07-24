@@ -67,8 +67,8 @@ const SIDE_STYLE = {
 } as const;
 
 const LIFECYCLE: Record<PositionLifecycle, { label: string; detail: string; tone: string }> = {
-  awaiting_submission: { label: "Action required", detail: "The order is on-chain but still needs its private committee submission.", tone: "#f5b942" },
-  awaiting_batch: { label: "Awaiting batch", detail: "The committee has the encrypted order and is waiting for a private batch.", tone: "#69a7ff" },
+  awaiting_submission: { label: "Action required", detail: "The order is on-chain but still needs its private coordinator submission.", tone: "#f5b942" },
+  awaiting_batch: { label: "Awaiting batch", detail: "The coordinator has the encrypted order and is waiting for a complete private batch.", tone: "#69a7ff" },
   active: { label: "Active", detail: "The order is included and the market is still open.", tone: "#69a7ff" },
   closed: { label: "Resolving", detail: "Betting is closed. Final batching and oracle resolution are pending.", tone: "#f5b942" },
   recover_execution_change: { label: "USDC ready", detail: "The batch executed. Recover the unused order budget without revealing the position side.", tone: "#16c784" },
@@ -78,7 +78,7 @@ const LIFECYCLE: Record<PositionLifecycle, { label: string; detail: string; tone
   full_refund: { label: "Full refund", detail: "The position was voided or missed the final private batch.", tone: "#f5b942" },
   claimed: { label: "Claimed", detail: "Winnings and remaining collateral were paid.", tone: "#16c784" },
   recovered: { label: "Recovered", detail: "The losing position earned no winnings and its remaining USDC was recovered.", tone: "#a1a1aa" },
-  refunded: { label: "Refunded", detail: "The full public collateral bucket was returned.", tone: "#a1a1aa" },
+  refunded: { label: "Refunded", detail: "The full private position budget was returned.", tone: "#a1a1aa" },
 };
 
 const ACTIVE = new Set<PositionLifecycle>(["awaiting_submission", "awaiting_batch", "active", "closed", "recover_execution_change"]);

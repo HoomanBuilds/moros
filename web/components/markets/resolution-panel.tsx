@@ -173,7 +173,7 @@ export function ResolutionPanel() {
         <div>
           <Tag>Event resolution</Tag>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Results use a bonded proposal and challenge process. The bond is returned to an unchallenged correct proposer. A successful challenger receives both bonds after committee arbitration.
+            This inactive event foundation uses bonded proposals, challenges, and independent arbitration. New event markets are not enabled on the current testnet.
           </p>
         </div>
         {bond !== null && (
@@ -218,7 +218,7 @@ export function ResolutionPanel() {
 
           {proposal.challenger ? (
             <div className="space-y-3 rounded-md border border-amber-400/30 bg-amber-400/10 p-4 text-sm">
-              <p className="text-amber-200">Disputed as {challengedOutcome}. Threshold committee arbitration is required before the timeout.</p>
+              <p className="text-amber-200">Disputed as {challengedOutcome}. Independent arbitration is required before the timeout.</p>
               <p className="font-mono text-xs text-muted-foreground">Challenger {truncate(proposal.challenger)}</p>
               {proposal.challenged_evidence_ref && <EvidenceLink value={proposal.challenged_evidence_ref} />}
               {arbitrationTimedOut ? (
@@ -231,15 +231,15 @@ export function ResolutionPanel() {
                 </div>
               ) : isCommitteeMember ? (
                 <div className="space-y-3 border-t border-amber-200/20 pt-3">
-                  <p className="text-xs text-muted-foreground">Your committee vote is permanent. The market settles when {configQuery.data?.threshold} members agree.</p>
+                  <p className="text-xs text-muted-foreground">Your arbitration vote is permanent. The market settles when {configQuery.data?.threshold} members agree.</p>
                   <OutcomePicker selected={selected} outcomes={OUTCOMES} disabled={busy} onSelect={setSelected} />
                   <Button disabled={busy || !data.rulesVerified} onClick={() => submit("vote")}>
                     {busy && <Spinner />}
-                    Submit committee vote
+                    Submit arbitration vote
                   </Button>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">Independent committee members submit on-chain votes. No single member can resolve the dispute. If no quorum forms, anyone can void it in {formatCountdown(Math.max(0, arbitrationUntil - now))}.</p>
+                <p className="text-xs text-muted-foreground">Independent arbitrators submit on-chain votes. No single member can resolve the dispute. If no quorum forms, anyone can void it in {formatCountdown(Math.max(0, arbitrationUntil - now))}.</p>
               )}
             </div>
           ) : challengeOpen ? (

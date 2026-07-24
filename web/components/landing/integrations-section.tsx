@@ -8,7 +8,7 @@ const logos: Record<string, React.ReactNode> = {
   Reflector: <span className="font-mono text-sm">RFL</span>,
   circom: <span className="font-mono text-sm">CIR</span>,
   snarkjs: <span className="font-mono text-sm">SNJ</span>,
-  "Groth16/BLS12-381": <span className="font-mono text-sm">G16</span>,
+  "Groth16/BN254": <span className="font-mono text-sm">G16</span>,
 };
 
 const integrations = [
@@ -17,7 +17,7 @@ const integrations = [
   { name: "Reflector", category: "Oracle" },
   { name: "circom", category: "Circuits" },
   { name: "snarkjs", category: "Proving" },
-  { name: "Groth16/BLS12-381", category: "Curve" },
+  { name: "Groth16/BN254", category: "Proofs" },
 ];
 
 export function IntegrationsSection() {
@@ -143,7 +143,7 @@ export function IntegrationsSection() {
           <div className="flex flex-wrap gap-12">
             {[
               { value: "Groth16", label: "proof system" },
-              { value: "t-of-n", label: "threshold committee" },
+              { value: "8 orders", label: "atomic private batch" },
               { value: "Self-custody", label: "wallet signs every order" },
             ].map((stat) => (
               <div key={stat.label} className="flex items-baseline gap-3">
@@ -155,7 +155,7 @@ export function IntegrationsSection() {
 
           <a href="#" className="group inline-flex items-center gap-2 text-sm font-mono text-muted-foreground hover:text-foreground transition-colors">
             View the architecture
-            <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
+            <span className="group-hover:translate-x-1 transition-transform">&gt;</span>
           </a>
         </div>
       </div>

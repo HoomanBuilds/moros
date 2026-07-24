@@ -17,12 +17,12 @@ const steps = [
   },
   {
     number: "02",
-    title: "The committee nets the batch",
+    title: "The coordinator builds the batch",
     subtitle: "",
-    description: "A t-of-n committee sums everyone's encrypted orders and learns only the total.",
-    code: `const net = await committee.decryptAggregate({
-  minimumOrders: 2,
-  threshold: '2-of-3'
+    description: "Exactly eight encrypted orders clear atomically at one price, with at least two orders on each side.",
+    code: `const batch = await coordinator.build({
+  orders: 8,
+  minimumPerSide: 2
 })`,
   },
   {
@@ -40,8 +40,8 @@ const steps = [
     number: "04",
     title: "Claim with a proof",
     subtitle: "",
-    description: "After resolution, prove the exact payout and claim. Moros charges 2% only on winning profit.",
-    code: `const fee = max(payout - stake, 0) * 0.02
+    description: "After resolution, recover change and claim the winning terminal value with proof-bound actions.",
+    code: `const fee = lot * 0.02 * price * (1 - price)
 await relayer.submit({ proof, recipient })`,
   },
 ];

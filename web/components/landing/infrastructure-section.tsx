@@ -3,9 +3,9 @@
 import { useEffect, useState, useRef } from "react";
 
 const regions = [
-  { name: "Shielded pool", detail: "Soroban contract", status: "live" },
-  { name: "Order circuit", detail: "circom + Groth16", status: "live" },
-  { name: "Committee", detail: "Jubjub threshold-ElGamal", status: "live" },
+  { name: "Shared vault", detail: "Soroban private notes", status: "live" },
+  { name: "Proof gateway", detail: "BN254 Groth16", status: "live" },
+  { name: "Coordinator", detail: "single VM testnet", status: "limited" },
   { name: "Resolver", detail: "Reflector oracle", status: "live" },
   { name: "Stellar Testnet", detail: "live deploy", status: "live" },
 ];
@@ -36,7 +36,7 @@ export function InfrastructureSection() {
 
   return (
     <section id="infra" ref={sectionRef} className="relative py-32 lg:py-40 overflow-hidden">
-        {/* Background accent — retiré, remplacé par l'image sphère */}
+        {/* Background accent - retiré, remplacé par l'image sphère */}
       
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
         {/* Header */}
@@ -49,7 +49,7 @@ export function InfrastructureSection() {
           </span>
           
           <div className="grid lg:grid-cols-[auto_1fr] gap-8 lg:gap-16 items-stretch">
-            {/* Image globe — colonne gauche, pleine hauteur */}
+            {/* Image globe - colonne gauche, pleine hauteur */}
             <div className={`w-48 lg:w-72 xl:w-80 shrink-0 transition-all duration-1000 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}>
@@ -73,8 +73,8 @@ export function InfrastructureSection() {
               <p className={`mt-8 text-xl text-muted-foreground leading-relaxed max-w-lg transition-all duration-1000 delay-100 ${
                 isVisible ? "opacity-100" : "opacity-0"
               }`}>
-                Built on Stellar Soroban. Groth16 over BLS12-381, circom circuits,
-                a Jubjub threshold-ElGamal committee, and a Reflector-oracle resolver.
+                Built on Stellar Soroban with BN254 Groth16 circuits, a shared
+                shielded USDC vault, atomic batch execution, and Reflector resolution.
               </p>
             </div>
           </div>
@@ -149,7 +149,7 @@ export function InfrastructureSection() {
                 <span className="text-2xl text-muted-foreground">net settled</span>
               </div>
               <p className="text-muted-foreground max-w-md">
-                Only the committee-decrypted net order ever touches Soroban. Individual orders never appear on-chain.
+                Soroban records commitments and encrypted orders. Individual sides and quantities never appear on-chain in plaintext.
               </p>
             </div>
           </div>
@@ -159,8 +159,8 @@ export function InfrastructureSection() {
             <div className={`p-8 border border-foreground/10 bg-foreground/[0.02] transition-all duration-700 delay-100 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}>
-              <span className="text-5xl lg:text-6xl font-display">2 of 3</span>
-              <span className="block text-sm text-muted-foreground mt-2">Committee threshold (demo)</span>
+              <span className="text-5xl lg:text-6xl font-display">1 VM</span>
+              <span className="block text-sm text-muted-foreground mt-2">Coordinator limitation disclosed</span>
             </div>
 
             <div className={`p-8 border border-foreground/10 bg-foreground/[0.02] transition-all duration-700 delay-200 ${

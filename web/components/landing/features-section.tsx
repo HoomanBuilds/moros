@@ -5,10 +5,10 @@ import { useEffect, useRef, useState } from "react";
 const features = [
   {
     number: "01",
-    title: "Private by construction",
+    title: "Encrypted on-chain",
     description:
-      "A Groth16 proof hides your side and amount. Nobody - not even the operator - sees your individual order.",
-    stats: { value: "Groth16", label: "proof hides your side and amount" },
+      "Soroban stores commitments and ciphertexts instead of plaintext sides and quantities. Groth16 proves every private state change.",
+    stats: { value: "Groth16", label: "typed private state proofs" },
   },
   {
     number: "02",
@@ -19,17 +19,17 @@ const features = [
   },
   {
     number: "03",
-    title: "No-leak committee",
+    title: "Atomic batch fairness",
     description:
-      "A t-of-n threshold committee decrypts only the aggregate net, never any single trade.",
-    stats: { value: "t-of-n", label: "committee decrypts only the net" },
+      "Eight orders execute together at one clearing price. Incomplete batches never move the visible odds.",
+    stats: { value: "8 orders", label: "one atomic clearing price" },
   },
   {
     number: "04",
     title: "Self-custody",
     description:
-      "Your wallet signs every action; your order secrets stay in your browser.",
-    stats: { value: "Self-custody", label: "secrets stay in your browser" },
+      "Your wallet derives private note keys. Recovery pages are encrypted before they leave the browser.",
+    stats: { value: "Self-custody", label: "wallet-derived private recovery" },
   },
 ];
 
@@ -173,7 +173,7 @@ export function FeaturesSection() {
               >
                 Provably
                 <br />
-                <span className="text-muted-foreground">private.</span>
+                <span className="text-muted-foreground">valid.</span>
               </h2>
             </div>
             <div className="lg:col-span-5 lg:pb-4">
@@ -184,9 +184,9 @@ export function FeaturesSection() {
                     : "opacity-0 translate-y-4"
                 }`}
               >
-                Every order is proven valid before it&apos;s ever seen. A threshold
-                committee nets the batch, the LMSR sets fair odds, and your
-                keys never leave your wallet.
+                Every order is proven valid before it is accepted. Eight orders
+                clear atomically, the LMSR sets one price, and private recovery
+                keys are derived by your wallet.
               </p>
             </div>
           </div>

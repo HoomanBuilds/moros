@@ -11,11 +11,11 @@ const metrics = [
     sublabel: "circom + Groth16 circuit",
   },
   {
-    value: 2,
-    suffix: " of 3",
+    value: 8,
+    suffix: "",
     prefix: "",
-    label: "Committee threshold (demo)",
-    sublabel: "threshold-ElGamal decrypt",
+    label: "Orders per atomic batch",
+    sublabel: "minimum two on each side",
   },
   {
     value: 100,
@@ -336,7 +336,7 @@ export function MetricsSection() {
           <span>Live on Stellar testnet</span>
           <span>circom + Groth16 order circuits</span>
           <span>Reflector-oracle resolution</span>
-          <span>Threshold-decryption committee</span>
+          <span>Single-VM coordinator limitation</span>
           <span className="text-foreground">Testnet only</span>
         </div>
       </div>

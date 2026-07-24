@@ -7,19 +7,19 @@ const securityFeatures = [
   {
     icon: Shield,
     title: "Zero-knowledge order validity",
-    description: "Each order proves it's well-formed and in-range before the committee ever sees it.",
+    description: "Each order proves it is well-formed and in-range before the coordinator processes it.",
     image: "/images/isolated.jpg",
   },
   {
     icon: Lock,
-    title: "Threshold decryption (Chaum-Pedersen verified partials)",
-    description: "Committee members submit verifiable partial decryptions; no single member holds the whole key.",
+    title: "Encrypted testnet batching",
+    description: "Sides and quantities stay encrypted on-chain. The current single-VM coordinator can recover individual order values.",
     image: "/images/encrypted.jpg",
   },
   {
     icon: Eye,
-    title: "On-chain proof verification + t-of-n authorization",
-    description: "Soroban verifies the Groth16 proof and checks t-of-n committee signatures before funds move.",
+    title: "Typed on-chain proof verification",
+    description: "Soroban verifies the exact BN254 Groth16 statement before private notes or market funds can move.",
     image: "/images/audit.jpg",
   },
   {
@@ -30,7 +30,7 @@ const securityFeatures = [
   },
 ];
 
-const certifications = ["Groth16", "circom", "t-of-n", "Testnet only"];
+const certifications = ["BN254", "Groth16", "circom", "Testnet only"];
 
 export function SecuritySection() {
   const [isVisible, setIsVisible] = useState(false);
@@ -70,7 +70,7 @@ export function SecuritySection() {
             Security
           </span>
           
-          {/* Title — full width */}
+          {/* Title - full width */}
           <h2 className={`text-6xl md:text-7xl lg:text-[128px] font-display tracking-tight leading-[0.9] mb-12 transition-all duration-1000 ${
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}>
@@ -84,7 +84,7 @@ export function SecuritySection() {
             isVisible ? "opacity-100" : "opacity-0"
           }`}>
             <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl">
-              Every order is proven valid with a Groth16 circuit before the committee ever decrypts anything, and a t-of-n threshold means no single party can move funds alone. Unaudited research prototype - testnet only.
+              Proof validity, nullifiers, accounting, and payouts are enforced on-chain. The current coordinator runs on one VM and is not threshold privacy. Unaudited research prototype - testnet only.
             </p>
           </div>
         </div>
@@ -95,7 +95,7 @@ export function SecuritySection() {
           <div className={`lg:col-span-7 relative p-8 lg:p-12 border border-foreground/10 min-h-[400px] overflow-hidden transition-all duration-700 ${
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}>
-            {/* Dynamic feature image with cross-fade — desktop only */}
+            {/* Dynamic feature image with cross-fade - desktop only */}
             <div className="absolute inset-0 pointer-events-none items-center justify-end hidden lg:flex">
               {securityFeatures.map((feature, index) => (
                 <img
