@@ -65,6 +65,20 @@ const RUNTIME_ROOT = resolve(
 );
 const TICK_MS = Number(process.env.PRIVATE_TICK_MS || 10_000);
 const MAX_BODY = 256 * 1024;
+const STELLAR_RPC_METHODS = new Set([
+  "getEvents",
+  "getFeeStats",
+  "getHealth",
+  "getLatestLedger",
+  "getLedgerEntries",
+  "getLedgers",
+  "getNetwork",
+  "getTransaction",
+  "getTransactions",
+  "getVersionInfo",
+  "sendTransaction",
+  "simulateTransaction",
+]);
 const FUNDER_SECRET = configuredSecret({
   secret: network.funderSecret,
   identity: network.funderIdentity,
@@ -134,6 +148,14 @@ async function readBody(request) {
   } catch {
     throw new Error("request body is not valid JSON");
   }
+}
+
+function requestClientKey(request) {
+  const forwarded = request.headers["x-forwarded-for"];
+  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  return first?.split(",")[0]?.trim() ||
+    request.socket.remoteAddress ||
+    "unknown";
 }
 
 function serializeTransactions() {
@@ -421,6 +443,14 @@ async function main() {
   });
   const global = new FixedWindowRateLimiter({
     limit: Number(process.env.PRIVATE_GLOBAL_RELAY_LIMIT || 300),
+    windowMs: 60_000,
+  });
+  const rpcPerClient = new FixedWindowRateLimiter({
+    limit: Number(process.env.STELLAR_RPC_CLIENT_LIMIT || 180),
+    windowMs: 60_000,
+  });
+  const rpcGlobal = new FixedWindowRateLimiter({
+    limit: Number(process.env.STELLAR_RPC_GLOBAL_LIMIT || 1_200),
     windowMs: 60_000,
   });
   const runtime = {
@@ -737,6 +767,50 @@ async function main() {
       return;
     }
     try {
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/stellar/rpc"
+      ) {
+        const clientKey = requestClientKey(request);
+        if (
+          !rpcPerClient.take(clientKey).allowed ||
+          !rpcGlobal.take("stellar-rpc").allowed
+        ) {
+          sendJson(request, response, 429, { error: "rate limit exceeded" });
+          return;
+        }
+        const body = await readBody(request);
+        if (
+          body?.jsonrpc !== "2.0" ||
+          typeof body.method !== "string" ||
+          !STELLAR_RPC_METHODS.has(body.method) ||
+          (body.params !== undefined &&
+            (!body.params || typeof body.params !== "object"))
+        ) {
+          sendJson(request, response, 400, {
+            error: "unsupported Stellar RPC request",
+          });
+          return;
+        }
+        const upstream = await fetch(RPC_URL, {
+          method: "POST",
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(30_000),
+        });
+        const payload = await upstream.text();
+        response.writeHead(upstream.status, {
+          ...responseHeaders(request),
+          "cache-control": "no-store",
+          "content-length": Buffer.byteLength(payload),
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(payload);
+        return;
+      }
       if (
         request.method === "GET" &&
         (requestUrl.pathname === "/health" ||
