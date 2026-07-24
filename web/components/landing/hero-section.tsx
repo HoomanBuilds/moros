@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { NETWORK } from "@/lib/network";
 
 const words = ["side", "position", "edge"];
@@ -205,27 +203,6 @@ export function HeroSection() {
             and quantity stay encrypted on-chain while adaptive batches update
             public odds on Stellar.
           </p>
-          <div
-            className={`mt-8 flex flex-col sm:flex-row items-start gap-3 transition-all duration-1000 delay-300 ${
-              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-            }`}
-          >
-            <Button
-              asChild
-              size="lg"
-              className="rounded-full bg-white px-7 text-black hover:bg-white/90"
-            >
-              <Link href="/app">Explore markets</Link>
-            </Button>
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="rounded-full border-white/30 bg-black/20 px-7 text-white backdrop-blur-sm hover:bg-white/10 hover:text-white"
-            >
-              <Link href="/app/create">Create a market</Link>
-            </Button>
-          </div>
         </div>
         </div>
       </div>
