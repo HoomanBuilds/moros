@@ -84,7 +84,9 @@ UNIT
   sudo systemctl enable --now zkmarket-private
   for legacy in zkmarket-server zkmarket-member1 zkmarket-member2 zkmarket-member3; do
     sudo systemctl disable --now "$legacy" 2>/dev/null || true
+    sudo rm -f "/etc/systemd/system/$legacy.service"
   done
+  sudo systemctl daemon-reload
   sudo systemctl restart zkmarket-resolve-keeper zkmarket-private
   echo "[service] private logs: journalctl -u zkmarket-private -f"
   echo "[service] keeper logs: journalctl -u zkmarket-resolve-keeper -f"

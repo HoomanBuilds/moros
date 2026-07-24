@@ -110,7 +110,7 @@ After copying and unpacking `deploy-bundle.tar.gz` on the testnet VM:
     ./services/deploy-vm.sh provision
     ./services/deploy-vm.sh service
 
-The service command installs and starts only `zkmarket-private` and `zkmarket-resolve-keeper`. It disables earlier intake and committee-member units to prevent stale contract wiring.
+The service command installs and starts only `zkmarket-private` and `zkmarket-resolve-keeper`. It stops and removes earlier intake and committee-member units to prevent stale contract wiring.
 
 Terminate TLS in front of the public service. Back up the private runtime directory and keeper state. Monitor service health, Stellar RPC access, Supabase access, market activation, batch settlement, resolution, refunds, claims, and TTL refreshes.
 

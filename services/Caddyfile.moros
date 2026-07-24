@@ -15,7 +15,7 @@ moros-market.duckdns.org {
 	}
 
 	handle {
-		reverse_proxy localhost:8787
+		reverse_proxy localhost:8788
 	}
 }
 
