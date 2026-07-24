@@ -23,6 +23,7 @@ import { PrivateExitRegistry } from "./private-exit-registry.mjs";
 import { PrivateOutputIndexer } from "./private-indexer.mjs";
 import { PrivateMarketRegistry } from "./private-market-registry.mjs";
 import { PrivateProposalRegistry } from "./private-proposal-registry.mjs";
+import { syncPublicMarketState } from "./market-registry.mjs";
 import {
   FixedWindowRateLimiter,
   decodeRelayRequest,
@@ -128,38 +129,6 @@ function serializeTransactions() {
     queue = current.catch(() => {});
     return current;
   };
-}
-
-async function syncPublicMarketState(proposalId, state, poolId) {
-  const url =
-    process.env.MARKET_REGISTRY_SUPABASE_URL ||
-    process.env.PRIVATE_SYNC_SUPABASE_URL;
-  const key =
-    process.env.MARKET_REGISTRY_SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.PRIVATE_SYNC_SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return { configured: false };
-  const response = await fetch(
-    `${url.replace(/\/+$/u, "")}/rest/v1/markets_meta?proposal_id=eq.${proposalId}`,
-    {
-      method: "PATCH",
-      headers: {
-        apikey: key,
-        authorization: `Bearer ${key}`,
-        "content-type": "application/json",
-        prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        market_state: state,
-        pool_id: poolId || null,
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(
-      `public market registry update failed with HTTP ${response.status}`,
-    );
-  }
-  return { configured: true };
 }
 
 async function main() {
@@ -535,7 +504,10 @@ async function main() {
           liquidity_version: BigInt(info.state_version),
         })).signAndSend()
       );
-      await syncPublicMarketState(entry.proposalId, "cancelled");
+      await syncPublicMarketState({
+        proposalId: entry.proposalId,
+        state: "cancelled",
+      });
       return { phase: "Cancelled", market: entry.market };
     }
 
@@ -561,11 +533,11 @@ async function main() {
       await registry.register(entry.market);
       info = invocationResultValue(await liquidity.info());
       const harvested = await harvestTerminalAllocation(entry, info);
-      const sync = await syncPublicMarketState(
-        entry.proposalId,
-        "active",
-        vaultId,
-      );
+      const sync = await syncPublicMarketState({
+        proposalId: entry.proposalId,
+        state: "active",
+        poolId: vaultId,
+      });
       return {
         phase,
         market: entry.market,
@@ -576,7 +548,10 @@ async function main() {
     if (phase === "Cancelled") {
       info = invocationResultValue(await liquidity.info());
       const harvested = await harvestTerminalAllocation(entry, info);
-      const sync = await syncPublicMarketState(entry.proposalId, "cancelled");
+      const sync = await syncPublicMarketState({
+        proposalId: entry.proposalId,
+        state: "cancelled",
+      });
       return {
         phase,
         market: entry.market,

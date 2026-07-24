@@ -20,6 +20,8 @@ The active runtime requires:
     NETWORK_PASSPHRASE=Test SDF Network ; September 2015
     NETWORK=testnet
     FUNDER_SK=<testnet runtime and fee payer secret>
+    SUPABASE_URL=<public market registry project URL>
+    SUPABASE_SERVICE_ROLE_KEY=<public market registry service role key>
     PRIVATE_SYNC_SUPABASE_URL=<server-only private sync project URL>
     PRIVATE_SYNC_SUPABASE_SERVICE_ROLE_KEY=<server-only service role key>
     MOROS_PUBLIC_DEPLOYMENT=deployments/private-testnet.json
