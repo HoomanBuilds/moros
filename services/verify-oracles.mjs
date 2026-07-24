@@ -1,3 +1,4 @@
+import "./config.mjs";
 import assert from "node:assert/strict";
 import {
   Account,

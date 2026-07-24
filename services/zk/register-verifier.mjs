@@ -4,11 +4,13 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   Keypair,
-  Networks,
   TransactionBuilder,
   contract,
 } from "@stellar/stellar-sdk";
 import "../config.mjs";
+import { networkConfig } from "../network-config.mjs";
+import { configureRpcFailover } from "../rpc-failover.mjs";
+import { configuredSecret } from "../key-config.mjs";
 import {
   CIRCUITS,
   canonicalJson,
@@ -17,8 +19,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../..");
+const network = networkConfig();
 const buildRoot = resolve(
-  process.env.MOROS_ZK_BUILD_DIR || resolve(repo, "circuits/private-build"),
+  process.env.MOROS_ZK_BUILD_DIR ||
+    resolve(repo, network.artifactPath, ".."),
 );
 const manifestPath = resolve(
   process.env.MOROS_ZK_MANIFEST || resolve(buildRoot, "manifest.json"),
@@ -28,14 +32,15 @@ const verifierWasm = resolve(
     resolve(repo, "contracts/target/wasm32v1-none/release/zk_verifier.wasm"),
 );
 const verifierId = process.env.MOROS_VERIFIER_ID;
-const secret =
-  process.env.MOROS_VERIFIER_CONTROLLER_SECRET || process.env.FUNDER_SK;
-const rpcUrl = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
-const network = process.env.NETWORK || "testnet";
-
-if (network !== "testnet") {
-  throw new Error("the development verifier registration command is testnet only");
-}
+const secret = configuredSecret({
+  secret:
+    process.env.MOROS_VERIFIER_CONTROLLER_SECRET ||
+    network.deployerSecret ||
+    network.funderSecret,
+  identity: network.deployerIdentity || network.funderIdentity,
+  label: `${network.id} verifier controller`,
+});
+const rpcUrl = configureRpcFailover(network);
 if (!verifierId || !secret) {
   throw new Error(
     "set MOROS_VERIFIER_ID and MOROS_VERIFIER_CONTROLLER_SECRET or FUNDER_SK",
@@ -47,17 +52,17 @@ if (!existsSync(manifestPath) || !existsSync(verifierWasm)) {
 
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 if (
-  manifest.network !== "testnet" ||
-  manifest.mainnet_ready !== false ||
+  manifest.network !== network.id ||
+  manifest.mainnet_ready !== network.mainnetReady ||
   manifest.circuits.length !== CIRCUITS.length
 ) {
-  throw new Error("invalid testnet proving manifest");
+  throw new Error(`invalid ${network.id} proving manifest`);
 }
 
 const controller = Keypair.fromSecret(secret);
 const publicKey = controller.publicKey();
 const signTransaction = async (xdr, options = {}) => {
-  const passphrase = options.networkPassphrase || Networks.TESTNET;
+  const passphrase = options.networkPassphrase || network.passphrase;
   const transaction = TransactionBuilder.fromXDR(xdr, passphrase);
   transaction.sign(controller);
   return {
@@ -67,7 +72,7 @@ const signTransaction = async (xdr, options = {}) => {
 };
 const client = await contract.Client.fromWasm(readFileSync(verifierWasm), {
   contractId: verifierId,
-  networkPassphrase: Networks.TESTNET,
+  networkPassphrase: network.passphrase,
   publicKey,
   rpcUrl,
   signTransaction,
@@ -149,7 +154,7 @@ assert.equal(
 );
 
 const receipt = {
-  network: "testnet",
+  network: network.id,
   verifier: verifierId,
   circuits: finalInfo.circuits,
   domain: Buffer.from(finalInfo.domain).toString("hex"),
