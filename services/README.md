@@ -45,7 +45,7 @@ The deployment command can use a separate Stellar deployer:
     DEPLOYER_SK=<dedicated contract deployer secret>
     ROUNDING_FUNDER_SK=<testnet USDC reserve funder secret>
     MOROS_DEPLOYMENT_NAME=Moros Testnet
-    MOROS_DEPLOYMENT_SALT=moros-testnet-release
+    MOROS_DEPLOYMENT_SALT=moros-testnet-resolver-registry
 
 The public name remains `Moros Testnet`. Contract names do not include dates or version suffixes.
 

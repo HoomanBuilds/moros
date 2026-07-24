@@ -62,7 +62,8 @@ const SOURCE_COMMIT = process.env.MOROS_SOURCE_COMMIT || "";
 const DEPLOYMENT_NAME =
   process.env.MOROS_DEPLOYMENT_NAME || "Moros Testnet";
 const SALT_NAMESPACE =
-  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet";
+  process.env.MOROS_DEPLOYMENT_SALT ||
+  "moros-testnet-resolver-registry";
 const COLLATERAL =
   process.env.COLLATERAL_ID ||
   "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
