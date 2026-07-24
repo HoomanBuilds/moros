@@ -8,11 +8,21 @@ import {
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import {
+  Asset,
+  BASE_FEE,
+  Horizon,
   Keypair,
+  Operation,
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
 import { StellarWalletsKit } from "@creit.tech/stellar-wallets-kit";
 import type { PendingProposal } from "@/lib/markets/propose";
+import {
+  atomicStellarAmount,
+  freshOrderSigner,
+  freshPositionResult,
+  type FreshBettorName,
+} from "./fresh-testnet-e2e-helpers";
 
 const SERVICE_URL =
   process.env.NEXT_PUBLIC_PRIVATE_SERVICE_URL
@@ -38,6 +48,8 @@ const STELLAR_NETWORK = "Test SDF Network ; September 2015";
 const USDC_ISSUER =
   "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
 
+type BettorName = FreshBettorName;
+
 type OrderState = {
   side: 0 | 1;
   quantity: string;
@@ -50,6 +62,8 @@ type OrderState = {
   sequence: string;
   positionBudget: string;
   lotSize: string;
+  signer?: BettorName;
+  bettor?: string;
 };
 
 type SetupPhase =
@@ -74,6 +88,11 @@ type E2eState = {
   initialPrice: string;
   batchPrice: string;
   orders: OrderState[];
+  bettorFunding?: Array<{
+    name: BettorName;
+    address: string;
+    amount: string;
+  }>;
   bettorRecovered?: boolean;
 };
 
@@ -171,6 +190,35 @@ function log(message: string): void {
 
 function sleep(milliseconds: number): Promise<void> {
   return new Promise((done) => setTimeout(done, milliseconds));
+}
+
+async function transferPublicUsdc(
+  signer: BettorName,
+  destination: string,
+  amount: bigint,
+): Promise<string> {
+  const source = identity(signer);
+  const server = new Horizon.Server(
+    "https://horizon-testnet.stellar.org",
+  );
+  const account = await server.loadAccount(source.publicKey());
+  const transaction = new TransactionBuilder(account, {
+    fee: BASE_FEE,
+    networkPassphrase: STELLAR_NETWORK,
+  })
+    .addOperation(Operation.payment({
+      destination,
+      asset: new Asset("USDC", USDC_ISSUER),
+      amount: atomicStellarAmount(amount),
+    }))
+    .setTimeout(120)
+    .build();
+  transaction.sign(source);
+  return (await server.submitTransaction(transaction)).hash;
+}
+
+function orderSigner(order: OrderState): BettorName {
+  return freshOrderSigner(order.signer);
 }
 
 async function waitFor<T>(
@@ -371,6 +419,7 @@ function checkpointFromProposal(
     initialPrice: previous?.initialPrice ?? "0",
     batchPrice: previous?.batchPrice ?? "0",
     orders: previous?.orders ?? [],
+    bettorFunding: previous?.bettorFunding,
   };
 }
 
@@ -388,6 +437,8 @@ async function setup(): Promise<void> {
     { openPrivateWallet },
     { readPrivateContract },
     { getPriceYes },
+    { addCollateralTrustline, getCollateralAccountState },
+    { NETWORK },
   ] = await Promise.all([
     import("@/lib/private/prover"),
     import("@/lib/markets/propose"),
@@ -396,6 +447,8 @@ async function setup(): Promise<void> {
     import("@/lib/private/wallet"),
     import("@/lib/private/contract"),
     import("@/lib/stellar/read"),
+    import("@/lib/stellar/collateral-account"),
+    import("@/lib/network"),
   ]);
   configurePrivateProverArtifactRoot(ARTIFACT_ROOT);
 
@@ -560,54 +613,154 @@ async function setup(): Promise<void> {
     state = { ...state, initialPrice: initialPrice.toString() };
     saveState(state);
   }
-  const bettor = selectSigner("charlie");
-  if (bettor !== state.bettor) {
+  const primaryBettor = selectSigner("charlie");
+  if (primaryBettor !== state.bettor) {
     throw new Error("Fresh E2E bettor identity changed");
   }
   if (!phaseAtLeast(state, "bettor-funded")) {
-    let wallet = await openPrivateWallet(bettor);
-    if (wallet.balance < 4n * USDC_SCALE) {
-      if (wallet.balance !== 0n) {
-        throw new Error("Fresh bettor private balance is only partially funded");
-      }
-      log("shielding 4 USDC for variable private positions");
-      const bettorDepositHash = await shieldUsdc(
-        bettor,
-        4n * USDC_SCALE,
-        (status) => log(status),
+    const bettorPlan: Array<{
+      name: BettorName;
+      address: string;
+      amount: bigint;
+    }> = [
+      {
+        name: "charlie",
+        address: primaryBettor,
+        amount: 19n * USDC_SCALE / 10n,
+      },
+      {
+        name: "alice",
+        address: identity("alice").publicKey(),
+        amount: 21n * USDC_SCALE / 10n,
+      },
+    ];
+    const privateBalances = new Map<BettorName, bigint>();
+    for (const bettor of bettorPlan) {
+      privateBalances.set(
+        bettor.name,
+        (await openPrivateWallet(bettor.address)).balance,
       );
-      log(`bettor public shield confirmed ${bettorDepositHash}`);
-      wallet = await waitFor(
-        "indexed bettor private balance",
-        180_000,
+    }
+    const alice = bettorPlan[1];
+    let alicePublic = await getCollateralAccountState(
+      alice.address,
+      NETWORK.collateral,
+    );
+    if (!alicePublic.hasTrustline) {
+      selectSigner("alice");
+      log("creating the second bettor USDC trustline");
+      const trustlineHash = await addCollateralTrustline(
+        alice.address,
+        NETWORK.collateral,
+      );
+      log(`second bettor trustline confirmed ${trustlineHash}`);
+      alicePublic = await waitFor(
+        "second bettor USDC trustline",
+        120_000,
         async () => {
-          const current = await openPrivateWallet(bettor);
-          return current.balance >= 4n * USDC_SCALE ? current : null;
+          const current = await getCollateralAccountState(
+            alice.address,
+            NETWORK.collateral,
+          );
+          return current.hasTrustline ? current : null;
         },
       );
     }
-    if (wallet.balance < 4n * USDC_SCALE) {
-      throw new Error("Fresh bettor private balance is insufficient");
+    const aliceTopUp = alice.amount
+      - (privateBalances.get("alice") ?? 0n)
+      - alicePublic.balanceAtomic;
+    if (aliceTopUp > 0n) {
+      const charliePublic = await getCollateralAccountState(
+        primaryBettor,
+        NETWORK.collateral,
+      );
+      const charliePrivate = privateBalances.get("charlie") ?? 0n;
+      const charlieShielding = bettorPlan[0].amount > charliePrivate
+        ? bettorPlan[0].amount - charliePrivate
+        : 0n;
+      if (charliePublic.balanceAtomic < charlieShielding + aliceTopUp) {
+        throw new Error(
+          "Public testnet USDC is insufficient for two independent bettors",
+        );
+      }
+      log(
+        `funding the second bettor with ${atomicStellarAmount(aliceTopUp)} USDC`,
+      );
+      const transferHash = await transferPublicUsdc(
+        "charlie",
+        alice.address,
+        aliceTopUp,
+      );
+      log(`second bettor public funding confirmed ${transferHash}`);
     }
-    state = { ...state, phase: "bettor-funded" };
+    for (const bettor of bettorPlan) {
+      const privateBalance = privateBalances.get(bettor.name) ?? 0n;
+      const missing = bettor.amount - privateBalance;
+      if (missing > 0n) {
+        const publicState = await getCollateralAccountState(
+          bettor.address,
+          NETWORK.collateral,
+        );
+        if (
+          !publicState.hasTrustline
+          || publicState.balanceAtomic < missing
+        ) {
+          throw new Error(
+            `${bettor.name} public testnet USDC is insufficient`,
+          );
+        }
+        selectSigner(bettor.name);
+        log(
+          `shielding ${atomicStellarAmount(missing)} USDC for ${bettor.name}`,
+        );
+        const depositHash = await shieldUsdc(
+          bettor.address,
+          missing,
+          (status) => log(status),
+        );
+        log(`${bettor.name} public shield confirmed ${depositHash}`);
+        await waitFor(
+          `${bettor.name} indexed private balance`,
+          180_000,
+          async () => {
+            const current = await openPrivateWallet(bettor.address);
+            return current.balance >= bettor.amount ? current : null;
+          },
+        );
+      }
+    }
+    state = {
+      ...state,
+      phase: "bettor-funded",
+      bettorFunding: bettorPlan.map((bettor) => ({
+        name: bettor.name,
+        address: bettor.address,
+        amount: bettor.amount.toString(),
+      })),
+    };
     saveState(state);
   }
 
-  const inputs: Array<{ side: 0 | 1; quantity: bigint }> = [
-    { side: 1, quantity: 1n },
-    { side: 1, quantity: 2n },
-    { side: 0, quantity: 3n },
-    { side: 0, quantity: 1n },
-    { side: 1, quantity: 2n },
-    { side: 0, quantity: 1n },
-    { side: 1, quantity: 4n },
-    { side: 0, quantity: 1n },
+  const inputs: Array<{
+    side: 0 | 1;
+    quantity: bigint;
+    signer: BettorName;
+  }> = [
+    { side: 1, quantity: 1n, signer: "charlie" },
+    { side: 1, quantity: 2n, signer: "alice" },
+    { side: 0, quantity: 3n, signer: "charlie" },
+    { side: 0, quantity: 1n, signer: "alice" },
+    { side: 1, quantity: 2n, signer: "charlie" },
+    { side: 0, quantity: 1n, signer: "charlie" },
+    { side: 1, quantity: 4n, signer: "alice" },
+    { side: 0, quantity: 1n, signer: "alice" },
   ];
   const orders = [...state.orders];
   for (let index = 0; index < orders.length; index++) {
     if (
       orders[index].side !== inputs[index].side
       || BigInt(orders[index].quantity) !== inputs[index].quantity
+      || orderSigner(orders[index]) !== inputs[index].signer
     ) {
       throw new Error("Fresh order checkpoint does not match the test plan");
     }
@@ -617,7 +770,7 @@ async function setup(): Promise<void> {
       current_epoch: bigint;
     }>(
       deployment.contracts.sharedVault,
-      bettor,
+      primaryBettor,
       "registration",
       { market: proposal.marketId },
     );
@@ -625,7 +778,7 @@ async function setup(): Promise<void> {
       accepted_count: number;
     }>(
       deployment.contracts.sharedVault,
-      bettor,
+      primaryBettor,
       "epoch",
       {
         market: proposal.marketId,
@@ -640,8 +793,9 @@ async function setup(): Promise<void> {
   }
   for (let index = orders.length; index < inputs.length; index++) {
     const input = inputs[index];
+    const bettor = selectSigner(input.signer);
     log(
-      `placing private order ${index + 1} with quantity ${input.quantity}`,
+      `placing ${input.signer} private order ${index + 1} with quantity ${input.quantity}`,
     );
     const result = await placePrivateOrder({
       address: bettor,
@@ -663,6 +817,8 @@ async function setup(): Promise<void> {
       sequence: result.sequence.toString(),
       positionBudget: result.positionBudget.toString(),
       lotSize: result.lotSize.toString(),
+      signer: input.signer,
+      bettor,
     });
     state = {
       ...state,
@@ -695,7 +851,7 @@ async function setup(): Promise<void> {
     async () => {
       const batch = await readPrivateContract<unknown>(
         deployment.contracts.sharedVault,
-        bettor,
+        primaryBettor,
         "batch",
         {
           market: proposal.marketId,
@@ -718,7 +874,7 @@ async function setup(): Promise<void> {
     phase: "batched",
     batchPrice: batchPrice.toString(),
   });
-  const pool = await getPooledLiquidityState(bettor);
+  const pool = await getPooledLiquidityState(primaryBettor);
   if (
     pool.info.idle_assets !== 5n * USDC_SCALE
     || pool.info.deployed_principal !== 20n * USDC_SCALE
@@ -747,9 +903,14 @@ async function settle(): Promise<void> {
     import("@/lib/private/contract"),
   ]);
   configurePrivateProverArtifactRoot(ARTIFACT_ROOT);
-  const bettor = selectSigner("charlie");
-  if (bettor !== state.bettor) {
+  const primaryBettor = selectSigner("charlie");
+  if (primaryBettor !== state.bettor) {
     throw new Error("Fresh E2E bettor identity changed");
+  }
+  if (
+    new Set(state.orders.map((order) => orderSigner(order))).size < 2
+  ) {
+    throw new Error("Fresh settlement requires two independent bettors");
   }
   if (Math.floor(Date.now() / 1_000) < state.expiry) {
     throw new Error(
@@ -767,7 +928,7 @@ async function settle(): Promise<void> {
       const accounting = await readPrivateContract<unknown>(
         JSON.parse(readFileSync(DEPLOYMENT_PATH, "utf8"))
           .contracts.sharedVault,
-        bettor,
+        primaryBettor,
         "accounting",
         { market: state.market },
       );
@@ -775,10 +936,15 @@ async function settle(): Promise<void> {
     },
   );
 
-  let winnerClaims = 0;
-  let losingClaims = 0;
+  let winningPositions = 0;
+  let losingPositions = 0;
   for (let index = 0; index < state.orders.length; index++) {
     const order = state.orders[index];
+    const signer = orderSigner(order);
+    const bettor = selectSigner(signer);
+    if (order.bettor && order.bettor !== bettor) {
+      throw new Error(`Fresh E2E ${signer} identity changed`);
+    }
     const input = {
       address: bettor,
       market: state.market,
@@ -806,8 +972,14 @@ async function settle(): Promise<void> {
         action: "recover-change",
         onStatus: (status) => log(status),
       });
-      await sleep(8_000);
-      chainState = await getPrivatePositionState(input);
+      chainState = await waitFor(
+        `indexed execution change for order ${index + 1}`,
+        180_000,
+        async () => {
+          const current = await getPrivatePositionState(input);
+          return current.changeRecovered ? current : null;
+        },
+      );
     }
     if (chainState.action === "claim" || chainState.action === "refund") {
       log(`settling private terminal value for order ${index + 1}`);
@@ -822,17 +994,23 @@ async function settle(): Promise<void> {
         action: chainState.action,
         onStatus: (status) => log(status),
       });
-      winnerClaims++;
-      await sleep(8_000);
-    } else if (
-      chainState.outcome !== "VOID"
-      && chainState.action === null
-      && !chainState.terminalSpent
-    ) {
-      losingClaims++;
+      chainState = await waitFor(
+        `indexed terminal action for order ${index + 1}`,
+        180_000,
+        async () => {
+          const current = await getPrivatePositionState(input);
+          return current.terminalSpent ? current : null;
+        },
+      );
+    }
+    const result = freshPositionResult(order.side, chainState.outcome);
+    if (result === "winner") {
+      winningPositions++;
+    } else if (result === "loser") {
+      losingPositions++;
     }
   }
-  if (winnerClaims === 0 || losingClaims === 0) {
+  if (winningPositions === 0 || losingPositions === 0) {
     throw new Error("Fresh settlement did not exercise winners and losers");
   }
 
@@ -840,14 +1018,14 @@ async function settle(): Promise<void> {
     "terminal LP harvest",
     300_000,
     async () => {
-      const pool = await getPooledLiquidityState(bettor);
+      const pool = await getPooledLiquidityState(primaryBettor);
       return pool.info.active_allocations === 0 ? pool : null;
     },
   );
   await deleteRegistryRow(state.proposalId);
   unlinkSync(STATE_FILE);
   log(
-    `fresh lifecycle complete with ${winnerClaims} private claims and ${losingClaims} losing positions`,
+    `fresh lifecycle complete with ${winningPositions} winning positions and ${losingPositions} losing positions across two bettors`,
   );
 }
 
@@ -891,11 +1069,18 @@ async function recoverBettor(): Promise<void> {
   if (config.contracts.factory !== state.proposal.factoryId) {
     throw new Error("Private service is no longer serving the recovery deployment");
   }
-  const bettor = selectSigner("charlie");
-  if (bettor !== state.bettor) {
+  const primaryBettor = selectSigner("charlie");
+  if (primaryBettor !== state.bettor) {
     throw new Error("Fresh E2E bettor identity changed");
   }
+  const owners = new Map<BettorName, string>();
   for (const order of state.orders) {
+    const signer = orderSigner(order);
+    const bettor = selectSigner(signer);
+    if (order.bettor && order.bettor !== bettor) {
+      throw new Error(`Fresh E2E ${signer} identity changed`);
+    }
+    owners.set(signer, bettor);
     const input = {
       address: bettor,
       market: state.market,
@@ -932,18 +1117,42 @@ async function recoverBettor(): Promise<void> {
         action: "refund",
         onStatus: (status) => log(status),
       });
+      await waitFor(
+        `indexed refund for order ${order.sequence}`,
+        180_000,
+        async () => {
+          const current = await getPrivatePositionState(input);
+          return current.terminalSpent ? current : null;
+        },
+      );
     }
   }
-  const wallet = await waitFor(
-    "indexed recovered bettor balance",
-    180_000,
-    async () => {
-      const current = await openPrivateWallet(bettor);
-      return current.balance > 0n ? current : null;
-    },
-  );
-  log(`withdrawing ${wallet.balance} recovered private atomic USDC`);
-  await withdrawPrivateUsdc(bettor, wallet.balance, (status) => log(status));
+  for (const [signer, bettor] of owners) {
+    const expected = state.bettorFunding?.find(
+      (funding) => funding.name === signer,
+    );
+    if (expected && expected.address !== bettor) {
+      throw new Error(`Fresh E2E ${signer} funding identity changed`);
+    }
+    const target = expected ? BigInt(expected.amount) : 1n;
+    const wallet = await waitFor(
+      `${signer} indexed recovered balance`,
+      180_000,
+      async () => {
+        const current = await openPrivateWallet(bettor);
+        return current.balance >= target ? current : null;
+      },
+    );
+    selectSigner(signer);
+    log(
+      `withdrawing ${wallet.balance} recovered private atomic USDC for ${signer}`,
+    );
+    await withdrawPrivateUsdc(
+      bettor,
+      wallet.balance,
+      (status) => log(status),
+    );
+  }
   saveState({ ...state, bettorRecovered: true });
   log("bettor test funds recovered to the public wallet");
 }
