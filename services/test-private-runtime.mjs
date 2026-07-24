@@ -11,10 +11,35 @@ import {
   parseRange,
   PrivateArtifactStore,
 } from "./private-artifacts.mjs";
+import { privateResponseHeaders } from "./private-cors.mjs";
 import { PrivateAllocationRegistry } from "./private-allocation-registry.mjs";
 import { PrivateExitRegistry } from "./private-exit-registry.mjs";
 import { PrivateMarketRegistry } from "./private-market-registry.mjs";
 import { PrivateProposalRegistry } from "./private-proposal-registry.mjs";
+
+const corsHeaders = privateResponseHeaders(
+  {
+    headers: {
+      origin: "https://moros-six.vercel.app",
+    },
+  },
+  new Set(["https://moros-six.vercel.app"]),
+);
+assert.equal(
+  corsHeaders["access-control-allow-headers"],
+  "content-type, x-client-name, x-client-version",
+);
+assert.equal(
+  corsHeaders["access-control-allow-origin"],
+  "https://moros-six.vercel.app",
+);
+assert.deepEqual(
+  privateResponseHeaders(
+    { headers: { origin: "https://untrusted.example" } },
+    new Set(["https://moros-six.vercel.app"]),
+  ),
+  {},
+);
 
 assert.deepEqual(
   parseRange(undefined, 100),

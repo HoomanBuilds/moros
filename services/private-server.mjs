@@ -27,6 +27,7 @@ import {
   FixedWindowRateLimiter,
   decodeRelayRequest,
 } from "./private-relayer.mjs";
+import { privateResponseHeaders } from "./private-cors.mjs";
 import {
   invocationResultValue,
   jsonValue,
@@ -113,15 +114,7 @@ function readJson(path) {
 }
 
 function responseHeaders(request) {
-  const origin = request.headers.origin;
-  return origin && ALLOWED_ORIGINS.has(origin)
-    ? {
-        "access-control-allow-headers": "content-type",
-        "access-control-allow-methods": "GET,HEAD,POST,OPTIONS",
-        "access-control-allow-origin": origin,
-        vary: "origin",
-      }
-    : {};
+  return privateResponseHeaders(request, ALLOWED_ORIGINS);
 }
 
 function sendJson(request, response, status, value) {
