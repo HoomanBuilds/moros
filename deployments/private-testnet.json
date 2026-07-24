@@ -1,7 +1,7 @@
 {
   "network": "testnet",
   "name": "Moros Testnet",
-  "sourceCommit": "6a069ab7183f594a19e9ee3214fe9a48c40acb75",
+  "sourceCommit": "15930ea4c2bc2f60cf8fbd8530e988eafb437690",
   "deployedBy": "GB2POTXP2R63ETOQSP32OOEWSTTATLY7TBSFMISNPSTHQ6PZXETNQ3RH",
   "collateral": {
     "code": "USDC",
@@ -9,20 +9,22 @@
     "decimals": 7
   },
   "contracts": {
-    "verifier": "CBF7KDQ6ARPMVCF2YMVFDBLPBDYNPV3U2DEYTJT63MA2MVXMZ3R2BS7Q",
-    "resolver": "CDNNXJHGG4KYTG4EXKPJ5WGJJ4LHV4JPXEDQYK7NLL3VEI66O4NVK6ZU",
-    "sharedVault": "CCW32HGZRBJ3SP2C6GCY5D2AGXUGQEOFTPDEMDJURBDCFS352C2SP5XZ",
-    "liquidityPool": "CA43THSU2WTHRVYFXPYC7K5U6CP34ND57PIGA5DVDNLQZRXK3427IJB5",
-    "factory": "CBUZTKKWJCM2YMU3LNJKO54VNFP2G4UP3UIIM7SKUDSNI6Q5L7TTW7DZ"
+    "verifier": "CDRCAW5G7KYMX37XHE4XYZXWTUJKZVVSN4OX4RSHNBUREVZULFY2PKWV",
+    "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+    "resolverRegistry": "CDUEB32VSX2ZTIRFAHMSTSBHPO3ITKTPUN7VXN2VZDBTSIREVPVGOBAA",
+    "sharedVault": "CCMZF4AWQAHJSKQ72T2IPE3XD5FCPB4XDN3MW722DBXRFSJDTPBZQDHS",
+    "liquidityPool": "CAFXRWJFHFQWPRMNN7B6FPZ2QSWOHABWXNBIJENGCQ3WAZZUP4CZ22WL",
+    "factory": "CANRZPLH5R6LLBILA4S6OLITIMG4V6B6Z2P74B2H3UYOPWYQHVKAVJXU"
   },
   "wasm": {
-    "verifier": "a02de4d0ab0dadb834bf7569b4c35323bcb9ac7def1497e2b57ef7b97c2e0d56",
-    "resolver": "d3c347efcf39d647090de4b7fffe8e5c48cd66758fc7cebd81016cf207d3c1ee",
-    "sharedVault": "13f1555fc551d48efb21aac3a1c29cf2c68d63c0c3c01db6f270d92466bdaf28",
-    "liquidityPool": "351c14cd74b61f75dfb9abb3fa465da0d84a553f8f675003438053b9ad475334",
-    "factory": "4859a9191ddcbc3c4afb9094d38feae8456d72c8cdb87019ddcf998c99204333",
-    "market": "cbe984639185b49439508223f5e80d70bf5db42e8a6836bffcf13d8962a395c5",
-    "liquidityVault": "28ab6ba66df7e5512be4050e6000adc0786d8a75a9faf13e331c9907893b8b08"
+    "verifier": "e2f43bb189dac32c44870f96f0f4534803a5e6efb713cde78a884e1fb1f8c739",
+    "resolver": "fa2feaedc7622d45729e39e30a37946789934340a83bdd778981e7442194c06c",
+    "resolverRegistry": "8802df0b43b7ee2832de9a67da87eab68911f0a056f9608eaa5a81776bfaa686",
+    "sharedVault": "397a7769a0a70780c3f66b49f58ba0f7e270ebeccf57f9fa3d04ff18fb483e19",
+    "liquidityPool": "d2065836ca2628d5ba4a5578b964f39380a20e77315f7d72a487da086ae6411d",
+    "factory": "df0a4a4c029f55648980e3f921f4482799d7df570b997a491b47b16cd6c316e5",
+    "market": "567e85fd61a4be34bd1f5a1a5be43958c1649c662db0a6493de54ec389151346",
+    "liquidityVault": "742695db871af29ec35c2d85e76dfcfbd40180a705cfb815feb9c29975dc8b03"
   },
   "networkDomain": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
   "verifierDomain": "6d1cba0152f257e03168e2dc1dfe9e818b9662220cbf8e2cfb6973606ce0e041",
@@ -185,6 +187,211 @@
     "minimumFundingWindow": 240,
     "minimumOpenWindow": 600,
     "maximumMarketDuration": 7776000
+  },
+  "resolverRegistryPolicy": {
+    "changeDelay": 300,
+    "routes": [
+      {
+        "asset": "BTC",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "ETH",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "USDT",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "XRP",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "SOL",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "USDC",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "ADA",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "AVAX",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "DOT",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "MATIC",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "LINK",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "DAI",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "ATOM",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "XLM",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "UNI",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "EURC",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "CRYPTO",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "EUR",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "FX",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "GBP",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "FX",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "CHF",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "FX",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "CAD",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "FX",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "MXN",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "FX",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "ARS",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "FX",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "BRL",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "FX",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "THB",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "FX",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      },
+      {
+        "asset": "XAU",
+        "resolver": "CCZELPZE3WJ56WLZDNLRWQO5TL62JKEC3PUEYKEA4BNKXBS6G7ARIXVU",
+        "riskGroup": "METALS",
+        "registrationRequired": false,
+        "enabled": true,
+        "revision": 1
+      }
+    ]
   },
   "liquidityPolicy": {
     "depositCap": "1000000000000",
