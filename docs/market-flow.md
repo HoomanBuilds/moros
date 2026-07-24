@@ -2,37 +2,62 @@
 
 ```mermaid
 flowchart TD
-    A[Any connected user] --> B[Create price or event market]
-    B --> C[Wallet deploys LMSR market and shielded pool]
-    C --> D[Circle testnet USDC liquidity and immutable configuration]
-    D --> E[Open market]
+    A[Any connected user] --> B[Propose supported price market]
+    B --> C[Factory validates asset, rules, timing, fee, and liquidity target]
+    C --> D[Proposal created without creator USDC]
 
-    F[Public circuit WASM and proving key] --> G[User browser]
-    E --> G
-    G --> H[Create commitment and encrypted-side proof locally]
-    H --> I[Wallet deposits a USDC bucket into the pool]
-    H --> J[Committee verifies proof and queues ciphertext]
-    J --> K[2-of-3 committee decrypts aggregate only]
-    K --> L[Pool submits a batch of at least 2 orders]
-    L --> M[LMSR odds update]
+    E[Any LP] --> F[Shield USDC into reusable private balance]
+    F --> G[Deposit private USDC into pooled LP vault]
+    G --> H[Pooled vault keeps idle reserve and selects eligible proposal]
+    H --> I[Allocate exact USDC target to isolated market vault]
+    I --> J[Deploy and activate LMSR market]
 
-    M --> N[Market closes]
-    N --> O{Resolution type}
-    O -->|Crypto, FX, XAU price| P[Free Reflector CEX or fiat feed]
-    O -->|Equities, commodities, sports, economics, weather, politics, other| Q[Primary and backup evidence plus bonded challenge]
-    P --> R{YES, NO, or oracle timeout}
-    Q --> S{YES, NO, or VOID}
-    R --> T[Resolved or voided market]
-    S --> T
+    K[Any trader] --> L[Shield any supported USDC amount once]
+    L --> M[Reuse private balance across markets and LP actions]
+    N[Public proving WASM and proving keys] --> O[Trader browser]
+    M --> O
+    J --> O
+    O --> P[Choose YES or NO and whole-number quantity]
+    P --> Q[Generate typed BN254 Groth16 proof locally]
+    Q --> R[Relay commitment and encrypted order to shared vault]
 
-    T --> U{Order status}
-    U -->|Winning included order| V[Browser generates redemption proof]
-    U -->|Voided order| W[User requests full refund]
-    U -->|Missed final batch| W
-    V --> X[Pool pays user and sends 2% of winning profit to treasury]
-    W --> Y[Pool returns full stake with no fee]
+    R --> S{Eight orders with at least two on each side?}
+    S -->|No| T[Visible odds do not move]
+    T --> U[Pending order becomes privately refundable after deadline]
+    S -->|Yes| V[Single-VM testnet coordinator builds aggregate]
+    V --> W[Batch circuit proves complete uniform allocation]
+    W --> X[Shared vault and LMSR execute atomically]
+    X --> Y[Public odds move once at one clearing price]
+
+    Y --> Z[Market reaches settlement time]
+    Z --> AA[Keeper reads matching free Reflector feed]
+    AA --> AB{Fresh valid settlement price?}
+    AB -->|Yes| AC[Resolve YES or NO]
+    AB -->|Unavailable through timeout| AD[Permissionlessly void market]
+
+    AC --> AE{Wallet position result}
+    AE -->|Winner| AF[Recover execution change and submit private claim proof]
+    AE -->|Loser| AG[Recover unused execution change if any]
+    AD --> AH[Submit private full refund proof]
+    U --> AH
+
+    AF --> AI[Reusable private USDC balance]
+    AG --> AI
+    AH --> AI
+    AC --> AJ[Harvest terminal market capital and vested LP fees]
+    AD --> AJ
+    AJ --> AK[Pooled LP NAV updates]
+    AK --> AL[LP may redeem available private pool shares]
+
+    AM[Wallet-authenticated public social data] --> AN[Supabase comments and images]
+    AO[Opaque fixed-size encrypted activity pages] --> AP[Server-only Supabase access]
+    AP --> AQ[Wallet decrypts only its own history]
 ```
 
-Circuit files in web/public/zk are intentionally public. The order secret, nullifier, proof witness, and position record stay in the user's browser.
+The current testnet coordinator holds the combined committee secret on one VM and can recover individual order values. This is not threshold privacy. Mainnet requires independently operated committee members and distributed key custody.
 
-Settlement and payouts are pull-based. A keeper, relayer, or user must submit each permissionless transaction. Resolving a market does not automatically transfer every user's funds.
+Proving WASM and proving keys are intentionally public. Private witnesses, note secrets, viewing keys, and plaintext activity are not public.
+
+Settlement and payouts are pull-based. A keeper, relayer, or user submits each permissionless transaction. Resolving a market does not automatically transfer every user's funds.
+
+Sports, politics, weather, economics, and other event markets are not part of this active flow. Their creation UI stays disabled until the complete evidence and dispute backend is operational.
