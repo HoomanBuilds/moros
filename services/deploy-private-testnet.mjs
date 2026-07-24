@@ -515,11 +515,20 @@ async function main() {
     ids.verifier,
     source,
   );
-  const verifierInfo = await registerVerifier(
-    verifier,
-    manifest,
-    sourceAddress,
-  );
+  const currentVerifierInfo = (await verifier.info()).result;
+  const currentVerifierDomain =
+    Buffer.from(currentVerifierInfo.domain).toString("hex");
+  const verifierInfo =
+    state.verifierDomain === currentVerifierDomain
+      && currentVerifierInfo.finalized
+      && currentVerifierInfo.circuits === CIRCUITS.length
+      && currentVerifierInfo.required_circuits === CIRCUITS.length
+      ? currentVerifierInfo
+      : await registerVerifier(
+          verifier,
+          manifest,
+          sourceAddress,
+        );
   state.verifierDomain = Buffer.from(verifierInfo.domain).toString("hex");
   saveState(state);
 
