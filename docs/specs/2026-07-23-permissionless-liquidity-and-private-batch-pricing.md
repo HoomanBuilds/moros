@@ -486,7 +486,7 @@ This fixed-lot rule lets a user later prove their correct private charge from th
 
 The rounding reserve is a temporary bridge, not a subsidy. Each batch records its contribution as a receivable. Normal resolution repays it from vested fee escrow before the LP and protocol split. VOID repays it from the returned market charge. A batch fails before nullifier consumption if its fee escrow cannot cover the contribution or the reserve cannot advance it.
 
-The minimum batch size is eight, each public side count is at least two, and the maximum size is fixed from proof and Soroban resource benchmarks. The minimum is a floor for public-observer privacy, not protection against a coalition that knows all other orders. No short final batch bypass exists. A final set below the minimum or with fewer than two positions on either side becomes refundable.
+The adaptive testnet policy accepts one to eight orders. A batch executes early at eight or after the 60-second window that starts with its first accepted order. One-sided batches execute against pooled LMSR liquidity. The proof retains eight fixed slots with canonical inactive metadata and valid encrypted-zero padding. A singleton aggregate can reveal its side and quantity to observers even though no wallet identity is linked by the relayed transaction.
 
 ### Slippage protection
 
@@ -496,7 +496,7 @@ The first release uses a market-wide maximum adverse movement per epoch:
 - The order proof binds the approved movement ceiling and epoch.
 - For ceiling `delta`, a proposed batch must satisfy `pY <= pre_pY + delta` and `pN <= pre_pN + delta`.
 - The movement ceiling and every price input use contract state, not an indexer or frontend cache.
-- The complete epoch set may execute only when it satisfies the configured minimum and maximum batch sizes, the two-per-side floor, and the movement ceiling.
+- The complete epoch set may execute only when it contains one to eight accepted orders and satisfies the movement ceiling.
 - An order that cannot execute before expiry becomes privately refundable.
 
 This provides a deterministic price bound without revealing a custom side-specific limit.
@@ -738,7 +738,7 @@ New activity pauses. Claims remain recorded, but the UI must state that Circle o
 
 - Label the displayed odds `Indicative until next batch`.
 - Show the fixed lot, maximum adverse movement, epoch countdown, and refund deadline.
-- Show the minimum batch size, the two-per-side rule, and that insufficient activity leads to a refund rather than a weak short batch.
+- Show the eight-order maximum, the 60-second deadline, and the singleton aggregate privacy caveat.
 - Explain before confirmation that an accepted order cannot be cancelled during its short epoch and that a full queue rejects later orders without consuming their notes.
 - Show `Pending`, `Included`, `Executed`, `Change ready`, `Resolved`, and `Refundable` as separate states.
 - Do not update odds when an order is only pending.

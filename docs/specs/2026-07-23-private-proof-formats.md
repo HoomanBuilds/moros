@@ -115,8 +115,8 @@ Unused binding fields are zero and are still hashed.
 | 2 | Position commitment |
 | 3 | Fixed lot size |
 | 4 | Fee basis points |
-| 5 | Fixed batch size |
-| 6 | Minimum positions per side |
+| 5 | Maximum batch size |
+| 6 | Minimum positions per side, fixed to zero |
 | 7 | Maximum adverse price movement |
 | 8 to 9 | Rules hash limbs |
 | 10 | Refund timestamp |
@@ -297,7 +297,7 @@ Every batch proof has exactly 45 public field elements in this order:
 | 43 | Conditional LP fee |
 | 44 | Conditional protocol fee |
 
-The initial testnet circuit accepts exactly eight orders. The factory and shared vault reject any other configured batch size, so the UI and contracts cannot offer a mode the prover does not support. The circuit reconstructs all eight accepted leaves and the remaining 56 zero leaves, proving that the accepted root is complete. It decrypts each Baby Jubjub ciphertext against the configured committee key, derives the exact hidden side counts, verifies the aggregate ciphertext, builds the allocation and included-position roots, derives every fixed-lot payout, and reconciles side charges, rounding, fee escrow, LP fees, and protocol fees.
+The testnet circuit accepts one to eight real orders. It reconstructs every accepted leaf, requires canonical zero metadata for inactive slots, and uses valid encrypted-zero ciphertexts to preserve the fixed proof shape. The circuit proves that the accepted root is complete, decrypts every real Baby Jubjub ciphertext against the configured committee key, derives the exact hidden side quantities, verifies the padded aggregate ciphertext, builds the allocation and included-position roots, derives every fixed-lot payout, and reconciles side charges, rounding, fee escrow, LP fees, and protocol fees. A batch executes when it reaches eight orders or after the 60-second window that starts with the first accepted order. Empty windows never move the price.
 
 This testnet proof currently uses the reconstructed committee secret as a private Groth16 witness. It never exposes that secret on-chain, but the proving coordinator can reconstruct it. Production promotion requires the distributed proving or verifiable threshold-decryption replacement described in the committee hardening plan. The single-VM coordinator is not presented as production-safe.
 

@@ -46,9 +46,9 @@ Open the private service health view and a completed batch transaction.
 
 Say:
 
-"The testnet coordinator fills an eight-order batch and decrypts only the aggregate YES and NO quantities. Every valid batch has at least two orders on each side and clears atomically at one price.
+"The testnet coordinator clears up to eight encrypted orders when the batch fills or its 60-second window ends. It proves the complete allocation and clears every included unit at one price per side.
 
-No user receives the advantage of trading against a partially updated price. An order that cannot enter a valid final batch becomes privately refundable."
+No user receives the advantage of trading against a partially updated price. A one-sided batch can execute against pooled LMSR liquidity. If execution cannot complete, the order becomes privately refundable."
 
 State clearly that the current coordinator uses one VM and one combined committee secret. Independent threshold members are required before mainnet.
 
@@ -82,7 +82,7 @@ Everything shown is testnet beta software. The contracts and circuits still need
 - What is public when shielding? The wallet, USDC amount, vault, and transaction.
 - What is public when betting? The market, timing, commitment, nullifier, and relayer transaction.
 - What stays encrypted during batching? The YES or NO side and exact position quantity.
-- What does the coordinator decrypt? Only the aggregate of an eight-order batch with at least two orders per side.
+- What does the coordinator decrypt? The current single-VM coordinator can recover individual order values while proving an aggregate batch. This is a disclosed testnet limitation.
 - What happens to an order that cannot form a valid batch? It becomes fully refundable after the final batch deadline.
 - Are payouts automatic? No. Claims and refunds are permissionless pull actions. The keeper submits resolution transactions.
 - How does Moros earn? Each market has an immutable fee capped by deployment policy. The current app proposes 2%, split between LPs and the protocol.

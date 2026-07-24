@@ -21,13 +21,14 @@ flowchart TD
     P --> Q[Generate typed BN254 Groth16 proof locally]
     Q --> R[Relay commitment and encrypted order to shared vault]
 
-    R --> S{Eight orders with at least two on each side?}
-    S -->|No| T[Visible odds do not move]
-    T --> U[Pending order becomes privately refundable after deadline]
-    S -->|Yes| V[Single-VM testnet coordinator builds aggregate]
+    R --> S{Eight orders accepted or 60-second window ended?}
+    S -->|No| T[Order waits while visible odds stay unchanged]
+    T --> S
+    S -->|Yes, one to eight orders| V[Single-VM testnet coordinator builds aggregate]
     V --> W[Batch circuit proves complete uniform allocation]
     W --> X[Shared vault and LMSR execute atomically]
     X --> Y[Public odds move once at one clearing price]
+    W -->|Proof or submission cannot complete| U[Pending order becomes privately refundable after deadline]
 
     Y --> Z[Market reaches settlement time]
     Z --> AA[Keeper reads matching free Reflector feed]
