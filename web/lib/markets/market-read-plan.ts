@@ -1,6 +1,6 @@
 export type MarketReadPlan = {
   balanceOwner: string;
-  feeSource: "legacy-pool" | "private-registration";
+  feeSource: "private-registration";
 };
 
 export function marketReadPlan({
@@ -12,13 +12,11 @@ export function marketReadPlan({
   poolId: string;
   liquidityVaultId?: string;
 }): MarketReadPlan {
-  return liquidityVaultId
-    ? {
-        balanceOwner: marketId,
-        feeSource: "private-registration",
-      }
-    : {
-        balanceOwner: poolId,
-        feeSource: "legacy-pool",
-      };
+  if (!liquidityVaultId || !poolId) {
+    throw new Error("Market is not part of the current private deployment");
+  }
+  return {
+    balanceOwner: marketId,
+    feeSource: "private-registration",
+  };
 }

@@ -140,5 +140,3 @@ revoke all on function consume_private_sync_nonce(text, text, timestamptz) from 
 revoke all on function write_private_sync_pages(text, bigint, jsonb) from public, anon, authenticated;
 grant execute on function consume_private_sync_nonce(text, text, timestamptz) to service_role;
 grant execute on function write_private_sync_pages(text, bigint, jsonb) to service_role;
-
-drop table if exists private_positions;

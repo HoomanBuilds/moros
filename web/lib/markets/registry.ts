@@ -1,8 +1,10 @@
 "use client";
 import { useSyncExternalStore } from "react";
 import { NETWORK } from "@/lib/network";
+import { getPrivateConfig } from "@/lib/private/client";
 import { fetchMarketRegistry } from "@/lib/supabase/markets-meta";
 import { EVENT_MARKETS_ENABLED, RESOLVABLE_ASSETS } from "./deploy-constants";
+import { isCurrentDeploymentMarket } from "./current-deployment";
 import { dedupeMarkets, type MarketEntry } from "./dedupe";
 
 export { dedupeMarkets, type MarketEntry };
@@ -58,7 +60,13 @@ export function refreshMarkets(): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
     try {
-      remote = (await fetchMarketRegistry()).map((r) => ({
+      const [records, config] = await Promise.all([
+        fetchMarketRegistry(),
+        getPrivateConfig(),
+      ]);
+      remote = records.filter((record) =>
+        isCurrentDeploymentMarket(record, config.contracts)
+      ).map((r) => ({
         marketId: r.marketId,
         poolId: r.poolId,
         liquidityVaultId: r.liquidityVaultId,

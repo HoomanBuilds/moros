@@ -79,8 +79,8 @@ type FactoryClient = {
   }) => Promise<FactoryTransaction>;
 };
 
-function key(address: string): string {
-  return `${PENDING_KEY}.${address}`;
+function key(address: string, factoryId: string): string {
+  return `${PENDING_KEY}.${factoryId}.${address}`;
 }
 
 function hex(value: Uint8Array): string {
@@ -116,24 +116,35 @@ function randomId(): string {
   return hex(crypto.getRandomValues(new Uint8Array(32)));
 }
 
-export function getPendingProposal(address: string): PendingProposal | null {
-  if (typeof localStorage === "undefined" || !address) return null;
+export function getPendingProposal(
+  address: string,
+  factoryId: string,
+): PendingProposal | null {
+  if (typeof localStorage === "undefined" || !address || !factoryId) return null;
   try {
     const value = JSON.parse(
-      localStorage.getItem(key(address)) || "null",
+      localStorage.getItem(key(address, factoryId)) || "null",
     ) as PendingProposal | null;
-    return value?.address === address ? value : null;
+    return value?.address === address && value.factoryId === factoryId
+      ? value
+      : null;
   } catch {
     return null;
   }
 }
 
 function savePendingProposal(value: PendingProposal): void {
-  localStorage.setItem(key(value.address), JSON.stringify(value));
+  localStorage.setItem(
+    key(value.address, value.factoryId),
+    JSON.stringify(value),
+  );
 }
 
-export function clearPendingProposal(address: string): void {
-  localStorage.removeItem(key(address));
+export function clearPendingProposal(
+  address: string,
+  factoryId: string,
+): void {
+  localStorage.removeItem(key(address, factoryId));
 }
 
 export function proposalTiming(

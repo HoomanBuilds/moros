@@ -76,7 +76,7 @@ export function useMarketCatalog(): { rows: MarketRow[]; isLoading: boolean } {
         "market-row",
         m.marketId,
         m.poolId,
-        m.liquidityVaultId ?? "legacy",
+        m.liquidityVaultId ?? "missing-private-vault",
       ],
       refetchInterval: 20000,
       retry: 1,

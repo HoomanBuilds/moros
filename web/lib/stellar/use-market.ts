@@ -117,7 +117,7 @@ export function useMarket() {
       "market",
       marketId,
       poolId,
-      descriptor?.liquidityVaultId ?? "legacy",
+      descriptor?.liquidityVaultId ?? "missing-private-vault",
       collateral.sac,
     ],
     refetchInterval: 15000,

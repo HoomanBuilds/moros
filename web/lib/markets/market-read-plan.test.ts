@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { marketReadPlan } from "./market-read-plan.ts";
 
-const legacy = marketReadPlan({
-  marketId: "legacy-market",
-  poolId: "legacy-pool",
-});
-assert.deepEqual(legacy, {
-  balanceOwner: "legacy-pool",
-  feeSource: "legacy-pool",
-});
+assert.throws(
+  () => marketReadPlan({
+    marketId: "stale-market",
+    poolId: "stale-pool",
+  }),
+  /current private deployment/,
+);
 
 const privateMarket = marketReadPlan({
   marketId: "private-market",

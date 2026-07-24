@@ -25,6 +25,7 @@ import {
   resolutionPhase,
   selectFreeResolver,
 } from "./oracle-config.mjs";
+import { currentMarketTargets } from "./current-market-targets.mjs";
 import { contractResultValue } from "./deployment-utils.mjs";
 
 const RPC = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
@@ -195,7 +196,11 @@ async function touchContract(contractId) {
 }
 
 async function refreshTargetTtl(target, nowMs) {
-  const ids = [target.marketId, target.poolId].filter(Boolean);
+  const ids = [
+    target.marketId,
+    target.poolId,
+    target.liquidityVaultId,
+  ].filter(Boolean);
   let refreshed = 0;
   for (const contractId of ids) {
     if (nowMs - (lastTtlRefresh.get(contractId) || 0) < TTL_REFRESH_MS) continue;
@@ -207,29 +212,17 @@ async function refreshTargetTtl(target, nowMs) {
 }
 
 async function marketTargets() {
-  const configuredMarkets = (process.env.MARKETS || "").split(",").map((value) => value.trim()).filter(Boolean);
-  const configuredPools = (process.env.POOLS || "").split(",").map((value) => value.trim());
-  const configured = configuredMarkets.map((marketId, index) => ({ marketId, poolId: configuredPools[index] || null }));
-  let discovered = [];
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/markets_meta?pool_id=not.is.null&select=market_id,pool_id,resolver_type,collateral_sac`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/markets_meta?market_state=eq.active&factory_id=eq.${PRIVATE_DEPLOYMENT.contracts.factory}&pool_id=eq.${PRIVATE_DEPLOYMENT.contracts.sharedVault}&select=market_id,pool_id,liquidity_vault_id,proposal_id,factory_id,market_state,resolver_type,collateral_sac`, {
     headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
   });
-  if (res.ok) {
-    discovered = (await res.json())
-      .filter((row) => (!row.resolver_type || row.resolver_type === "price") && row.collateral_sac === COLLATERAL_ID)
-      .map((row) => ({ marketId: row.market_id, poolId: row.pool_id }))
-      .filter((row) => row.marketId);
-  } else {
-    const fallback = await fetch(`${SUPABASE_URL}/rest/v1/markets_meta?pool_id=not.is.null&select=market_id,pool_id`, {
-      headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
-    });
-    if (fallback.ok) {
-      discovered = (await fallback.json())
-        .map((row) => ({ marketId: row.market_id, poolId: row.pool_id }))
-        .filter((row) => row.marketId);
-    }
+  if (!res.ok) {
+    throw new Error(`fresh market registry query failed with HTTP ${res.status}`);
   }
-  return [...new Map([...configured, ...discovered].map((target) => [target.marketId, target])).values()];
+  return currentMarketTargets(
+    await res.json(),
+    PRIVATE_DEPLOYMENT,
+    COLLATERAL_ID,
+  );
 }
 
 async function tick() {

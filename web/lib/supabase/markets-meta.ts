@@ -154,58 +154,7 @@ export async function getMarketMeta(marketId: string): Promise<MarketMeta | null
     .eq("market_id", marketId)
     .maybeSingle();
 
-  if (error) {
-    const preMedia = await client
-      .from("markets_meta")
-      .select("market_id, title, description, banner_url, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash")
-      .eq("market_id", marketId)
-      .maybeSingle();
-    if (!preMedia.error && preMedia.data) {
-      return {
-        ...preMedia.data,
-        subject: null,
-        banner_source_url: null,
-        banner_attribution: null,
-        banner_license: null,
-        banner_license_url: null,
-      } as MarketMeta;
-    }
-    const fallback = await client
-      .from("markets_meta")
-      .select("market_id, title, description, banner_url, category, resolver_type, resolution_source, resolution_rules, void_rules, rules_hash")
-      .eq("market_id", marketId)
-      .maybeSingle();
-    if (!fallback.error && fallback.data) {
-      return {
-        ...fallback.data,
-        subject: null,
-        banner_source_url: null,
-        banner_attribution: null,
-        banner_license: null,
-        banner_license_url: null,
-        resolution_backup_sources: null,
-      } as MarketMeta;
-    }
-    const legacy = await client
-      .from("markets_meta")
-      .select("market_id, title, description, banner_url, category, resolution_source")
-      .eq("market_id", marketId)
-      .maybeSingle();
-    if (legacy.error || !legacy.data) return null;
-    return {
-      ...legacy.data,
-      subject: null,
-      banner_source_url: null,
-      banner_attribution: null,
-      banner_license: null,
-      banner_license_url: null,
-      resolver_type: "price",
-      resolution_backup_sources: null,
-      resolution_rules: null,
-      void_rules: null,
-      rules_hash: null,
-    } as MarketMeta;
-  }
+  if (error) throw new Error(marketRegistryErrorMessage(error));
   if (!data) return null;
   return data as MarketMeta;
 }
@@ -214,47 +163,15 @@ export async function fetchMarketRegistry(): Promise<RegistryMarket[]> {
   const client = getBrowserClient();
   if (!client) return [];
 
-  const primary = await client
+  const { data, error } = await client
     .from("markets_meta")
     .select(REGISTRY_SELECT)
     .not("pool_id", "is", null)
     .order("created_at", { ascending: false });
-  let data = primary.data as Record<string, unknown>[] | null;
-  let error = primary.error;
-
-  if (error) {
-    const fallback = await client
-      .from("markets_meta")
-      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, title, category, resolver_type, resolution_source, resolution_backup_sources, resolution_rules, void_rules, rules_hash, created_at")
-      .not("pool_id", "is", null)
-      .order("created_at", { ascending: false });
-    data = fallback.data as Record<string, unknown>[] | null;
-    error = fallback.error;
-  }
-
-  if (error) {
-    const fallback = await client
-      .from("markets_meta")
-      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, title, category, resolver_type, resolution_source, resolution_rules, void_rules, rules_hash, created_at")
-      .not("pool_id", "is", null)
-      .order("created_at", { ascending: false });
-    data = fallback.data as Record<string, unknown>[] | null;
-    error = fallback.error;
-  }
-
-  if (error) {
-    const legacy = await client
-      .from("markets_meta")
-      .select("market_id, pool_id, asset, collateral_code, collateral_issuer, collateral_sac, collateral_decimals, created_at")
-      .not("pool_id", "is", null)
-      .order("created_at", { ascending: false });
-    data = legacy.data as Record<string, unknown>[] | null;
-    error = legacy.error;
-  }
 
   if (error || !data) return [];
 
-  return data
+  return (data as Record<string, unknown>[])
     .filter((r) => r.market_id && r.pool_id)
     .map(mapRegistryMarket);
 }

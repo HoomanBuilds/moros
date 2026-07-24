@@ -113,6 +113,7 @@ export async function exportEncryptedPositionFile(
   return JSON.stringify({
     format: "moros-private-positions",
     network: NETWORK.id,
+    archiveContext: keys.context,
     address,
     exportedAt: new Date().toISOString(),
     records,
@@ -128,14 +129,16 @@ export async function importEncryptedPositionFile(
   const parsed = JSON.parse(contents) as {
     format?: unknown;
     network?: unknown;
+    archiveContext?: unknown;
     address?: unknown;
     records?: unknown;
   };
   if (parsed.format !== "moros-private-positions"
     || parsed.network !== NETWORK.id
+    || parsed.archiveContext !== keys.context
     || parsed.address !== address
     || !Array.isArray(parsed.records)) {
-    throw new Error("This recovery file does not match the connected wallet and network");
+    throw new Error("This recovery file does not match the connected wallet and private vault");
   }
   const positions: Position[] = [];
   for (const record of parsed.records) {

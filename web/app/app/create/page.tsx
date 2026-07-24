@@ -42,7 +42,10 @@ import {
   type PendingProposal,
   type ProposalStep,
 } from "@/lib/markets/propose";
-import { registerPrivateProposal } from "@/lib/private/client";
+import {
+  getPrivateConfig,
+  registerPrivateProposal,
+} from "@/lib/private/client";
 import { saveMarketToRegistry } from "@/lib/supabase/markets-meta";
 import { uploadMarketBanner } from "@/lib/supabase/market-media";
 import { cn } from "@/lib/utils";
@@ -299,13 +302,26 @@ export default function CreatePage() {
   }
 
   useEffect(() => {
-    const pending = address ? getPendingProposal(address) : null;
-    setPendingProposal(pending);
-    if (pending) {
-      setExpiryLocal(toLocalDateTimeValue(new Date(pending.expiryUnix * 1000)));
-      setLiquidityTarget(pending.liquidityTarget);
-      setSelectedExpiryPreset("");
+    let cancelled = false;
+    if (!address) {
+      setPendingProposal(null);
+      return;
     }
+    void getPrivateConfig().then((config) => {
+      if (cancelled) return;
+      const pending = getPendingProposal(address, config.contracts.factory);
+      setPendingProposal(pending);
+      if (pending) {
+        setExpiryLocal(toLocalDateTimeValue(new Date(pending.expiryUnix * 1000)));
+        setLiquidityTarget(pending.liquidityTarget);
+        setSelectedExpiryPreset("");
+      }
+    }).catch(() => {
+      if (!cancelled) setPendingProposal(null);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [address]);
 
   async function connect() {
@@ -401,7 +417,7 @@ export default function CreatePage() {
           setError(cause instanceof Error ? cause.message : "The market is registered, but its image could not be attached.");
         }
       }
-      clearPendingProposal(address);
+      clearPendingProposal(address, proposal.factoryId);
       setPendingProposal(null);
       setStage("done");
       setResult({
@@ -412,7 +428,6 @@ export default function CreatePage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Market proposal failed");
       setStage(null);
-      setPendingProposal(address ? getPendingProposal(address) : null);
     }
   }
 

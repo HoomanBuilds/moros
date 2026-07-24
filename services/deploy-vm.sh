@@ -17,6 +17,7 @@ RUNTIME_FILES=(
   "services/README.md"
   "services/committee/bn254-babyjub.mjs"
   "services/config.mjs"
+  "services/current-market-targets.mjs"
   "services/deploy-vm.sh"
   "services/deployment-utils.mjs"
   "services/market-registry.mjs"
