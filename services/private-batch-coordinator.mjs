@@ -19,6 +19,15 @@ export function phaseName(value) {
   throw new Error("unknown private epoch phase");
 }
 
+export function quoteResultValue(value) {
+  const result = invocationResultValue(value);
+  return result &&
+    typeof result === "object" &&
+    "value" in result
+    ? result.value
+    : result;
+}
+
 export function createBatchProver({ wasmPath, zkeyPath, vkeyPath }) {
   if (
     !existsSync(wasmPath) ||
@@ -189,7 +198,7 @@ export class PrivateBatchCoordinator {
           accepted: orders.length,
         };
       }
-      const quote = invocationResultValue(
+      const quote = quoteResultValue(
         await marketContract.quote_private_batch({
           expected_version: BigInt(epoch.market_state_version),
           yes_count: yesCount,

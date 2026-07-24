@@ -2,12 +2,21 @@ import assert from "node:assert/strict";
 import {
   PrivateBatchCoordinator,
   phaseName,
+  quoteResultValue,
 } from "./private-batch-coordinator.mjs";
 
 assert.equal(phaseName("Collecting"), "Collecting");
 assert.equal(phaseName({ tag: "Executed" }), "Executed");
 assert.equal(phaseName(["Refundable"]), "Refundable");
 assert.throws(() => phaseName({}), /unknown/);
+assert.deepEqual(
+  quoteResultValue({ result: { value: { yes_count: 9, no_count: 6 } } }),
+  { yes_count: 9, no_count: 6 },
+);
+assert.deepEqual(
+  quoteResultValue({ result: { yes_count: 4, no_count: 4 } }),
+  { yes_count: 4, no_count: 4 },
+);
 
 function transaction(result, effect = () => {}) {
   return {

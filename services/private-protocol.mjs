@@ -481,12 +481,19 @@ export function buildBatchStatement({
   ) {
     throw new Error("private batch does not satisfy minimum side counts");
   }
+  const quotedYesCount = Number(quote.yes_count);
+  const quotedNoCount = Number(quote.no_count);
+  const quotedBatchSize = Number(quote.batch_size);
   if (
-    Number(quote.yes_count) !== yesCount ||
-    Number(quote.no_count) !== noCount ||
-    Number(quote.batch_size) !== yesCount + noCount
+    quotedYesCount !== yesCount ||
+    quotedNoCount !== noCount ||
+    quotedBatchSize !== yesCount + noCount
   ) {
-    throw new Error("market quote does not match decrypted batch");
+    throw new Error(
+      "market quote does not match decrypted batch "
+      + `(quote ${quotedYesCount}/${quotedNoCount}/${quotedBatchSize}, `
+      + `decrypted ${yesCount}/${noCount}/${yesCount + noCount})`,
+    );
   }
   const aggregate = {
     yes: aggregateCiphertexts(encrypted.map((value) => value.yes)),
