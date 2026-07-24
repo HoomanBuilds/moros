@@ -49,10 +49,13 @@ const RPC_URL =
   process.env.RPC_URL || "https://soroban-testnet.stellar.org";
 const PASSPHRASE =
   process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
-const SECRET = process.env.FUNDER_SK || "";
+const SECRET =
+  process.env.DEPLOYER_SK || process.env.FUNDER_SK || "";
 const SOURCE_COMMIT = process.env.MOROS_SOURCE_COMMIT || "";
-const LABEL =
-  process.env.MOROS_DEPLOYMENT_LABEL || "private-testnet-20260723";
+const DEPLOYMENT_NAME =
+  process.env.MOROS_DEPLOYMENT_NAME || "Moros Testnet";
+const SALT_NAMESPACE =
+  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet";
 const COLLATERAL =
   process.env.COLLATERAL_ID ||
   "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
@@ -82,6 +85,8 @@ const ROUNDING_RESERVE = BigInt(
   process.env.MOROS_ROUNDING_RESERVE || "10000000",
 );
 const Q32 = 1n << 32n;
+const RETRYABLE_TRANSACTION =
+  /pending|timed out|timeout|tx_bad_seq|try again|rate limit/i;
 
 const contractFiles = {
   verifier: "zk_verifier.wasm",
@@ -132,6 +137,25 @@ function sha256(value) {
   return createHash("sha256").update(value).digest();
 }
 
+async function sendIdempotent(name, build, isComplete) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (await isComplete()) return;
+    try {
+      await (await build()).signAndSend();
+    } catch (error) {
+      if (!RETRYABLE_TRANSACTION.test(String(error?.message || error))) {
+        throw error;
+      }
+      lastError = error;
+    }
+    if (await isComplete()) return;
+  }
+  throw new Error(`${name} did not reach its expected on-chain state`, {
+    cause: lastError,
+  });
+}
+
 function wasmArtifacts() {
   return Object.fromEntries(
     Object.entries(contractFiles).map(([name, file]) => {
@@ -178,7 +202,7 @@ async function submitOperation(server, source, operation) {
     networkPassphrase: PASSPHRASE,
   })
     .addOperation(operation)
-    .setTimeout(120)
+    .setTimeout(300)
     .build();
   const simulation = await server.simulateTransaction(transaction);
   if (rpc.Api.isSimulationError(simulation)) {
@@ -190,7 +214,7 @@ async function submitOperation(server, source, operation) {
   if (sent.status === "ERROR") {
     throw new Error("transaction submission was rejected");
   }
-  for (let attempt = 0; attempt < 60; attempt++) {
+  for (let attempt = 0; attempt < 150; attempt++) {
     await new Promise((done) => setTimeout(done, 2_000));
     const result = await server.getTransaction(sent.hash);
     if (result.status === "SUCCESS") {
@@ -207,18 +231,32 @@ async function submitOperation(server, source, operation) {
 }
 
 async function installWasm(server, source, artifact) {
-  try {
-    const installed = await server.getContractWasmByHash(artifact.hash);
-    if (sha256(installed).equals(artifact.hash)) return;
-  } catch {}
-  const uploaded = await submitOperation(
-    server,
-    source,
-    Operation.uploadContractWasm({ wasm: artifact.wasm }),
-  );
-  if (!Buffer.from(uploaded.result).equals(artifact.hash)) {
-    throw new Error("installed WASM hash did not match the local artifact");
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const installed = await server.getContractWasmByHash(artifact.hash);
+      if (sha256(installed).equals(artifact.hash)) return;
+    } catch {}
+    try {
+      const uploaded = await submitOperation(
+        server,
+        source,
+        Operation.uploadContractWasm({ wasm: artifact.wasm }),
+      );
+      if (!Buffer.from(uploaded.result).equals(artifact.hash)) {
+        throw new Error("installed WASM hash did not match the local artifact");
+      }
+      return;
+    } catch (error) {
+      if (!RETRYABLE_TRANSACTION.test(String(error?.message || error))) {
+        throw error;
+      }
+      lastError = error;
+    }
   }
+  throw new Error("WASM upload did not reach its expected on-chain state", {
+    cause: lastError,
+  });
 }
 
 async function assertContractWasm(server, contractId, expectedHash) {
@@ -247,14 +285,18 @@ async function deployContract({
   if (await assertContractWasm(server, contractId, artifact.hash)) {
     return contractId;
   }
-  const deployment = await contract.Client.deploy(args, {
-    ...signingOptions(source),
-    wasmHash: artifact.hash,
-    salt,
-    address: source.publicKey(),
-    timeoutInSeconds: 120,
-  });
-  await deployment.signAndSend();
+  await sendIdempotent(
+    `contract deployment ${contractId}`,
+    async () =>
+      contract.Client.deploy(args, {
+        ...signingOptions(source),
+        wasmHash: artifact.hash,
+        salt,
+        address: source.publicKey(),
+        timeoutInSeconds: 300,
+      }),
+    () => assertContractWasm(server, contractId, artifact.hash),
+  );
   if (!(await assertContractWasm(server, contractId, artifact.hash))) {
     throw new Error(`deployment did not create ${contractId}`);
   }
@@ -297,7 +339,9 @@ async function registerVerifier(client, manifest, sourceAddress) {
         readFileSync(resolve(BUILD_ROOT, entry.artifacts.contract_key), "utf8"),
       ),
     );
-    if (circuit.code < info.circuits) {
+    const hasExpectedKey = async () => {
+      const currentInfo = (await client.info()).result;
+      if (currentInfo.circuits <= circuit.code) return false;
       const current = (
         await client.circuit_key({ circuit: expected.circuit })
       ).result;
@@ -307,22 +351,39 @@ async function registerVerifier(client, manifest, sourceAddress) {
       ) {
         throw new Error(`${circuit.name} verifier key mismatch`);
       }
+      return true;
+    };
+    if (circuit.code < info.circuits) {
+      await hasExpectedKey();
       continue;
     }
-    const transaction = await client.add_key({
-      controller: sourceAddress,
-      key: expected,
-    });
-    await transaction.signAndSend();
+    await sendIdempotent(
+      `${circuit.name} verifier key registration`,
+      () =>
+        client.add_key(
+          {
+            controller: sourceAddress,
+            key: expected,
+          },
+          { timeoutInSeconds: 300 },
+        ),
+      hasExpectedKey,
+    );
     info = (await client.info()).result;
     if (info.circuits !== circuit.code + 1) {
       throw new Error(`${circuit.name} verifier key was not registered`);
     }
   }
   if (!info.finalized) {
-    await (
-      await client.finalize({ controller: sourceAddress })
-    ).signAndSend();
+    await sendIdempotent(
+      "verifier finalization",
+      () =>
+        client.finalize(
+          { controller: sourceAddress },
+          { timeoutInSeconds: 300 },
+        ),
+      async () => (await client.info()).result.finalized,
+    );
   }
   const finalInfo = (await client.info()).result;
   if (
@@ -340,12 +401,19 @@ async function fundRoundingReserve(client, sourceAddress) {
   const info = (await client.info()).result;
   if (info.rounding_reserve >= ROUNDING_RESERVE) return;
   const amount = ROUNDING_RESERVE - info.rounding_reserve;
-  await (
-    await client.fund_rounding_reserve({
-      from: sourceAddress,
-      amount,
-    })
-  ).signAndSend();
+  await sendIdempotent(
+    "rounding reserve funding",
+    () =>
+      client.fund_rounding_reserve(
+        {
+          from: sourceAddress,
+          amount,
+        },
+        { timeoutInSeconds: 300 },
+      ),
+    async () =>
+      (await client.info()).result.rounding_reserve >= ROUNDING_RESERVE,
+  );
   const updated = (await client.info()).result;
   if (updated.rounding_reserve !== ROUNDING_RESERVE) {
     throw new Error("rounding reserve funding did not reconcile");
@@ -356,7 +424,7 @@ async function main() {
   if (cfg.network !== "testnet" || PASSPHRASE !== Networks.TESTNET) {
     throw new Error("this deployment pipeline is testnet only");
   }
-  if (!SECRET) throw new Error("FUNDER_SK is required");
+  if (!SECRET) throw new Error("DEPLOYER_SK or FUNDER_SK is required");
   if (!existsSync(MANIFEST_PATH)) {
     throw new Error("private proving manifest is missing");
   }
@@ -376,7 +444,7 @@ async function main() {
   const salts = Object.fromEntries(
     ["verifier", "resolver", "sharedVault", "liquidityPool", "factory"].map((name) => [
       name,
-      deterministicSalt(`${LABEL}:${name}`),
+      deterministicSalt(`${SALT_NAMESPACE}:${name}`),
     ]),
   );
   const ids = Object.fromEntries(
@@ -385,12 +453,25 @@ async function main() {
       deriveContractId(sourceAddress, salt, PASSPHRASE),
     ]),
   );
+  const previousState = readState();
+  const sameDeployment =
+    previousState.network === "testnet" &&
+    previousState.source === sourceAddress &&
+    previousState.saltNamespace === SALT_NAMESPACE &&
+    canonicalJson(previousState.ids) === canonicalJson(ids);
   const state = {
-    ...readState(),
+    ...(sameDeployment && previousState.wasm
+      ? { wasm: previousState.wasm }
+      : {}),
+    ...(sameDeployment && previousState.verifierDomain
+      ? { verifierDomain: previousState.verifierDomain }
+      : {}),
     network: "testnet",
-    label: LABEL,
+    name: DEPLOYMENT_NAME,
+    saltNamespace: SALT_NAMESPACE,
     source: sourceAddress,
     ids,
+    complete: false,
   };
   saveState(state);
 
@@ -577,7 +658,7 @@ async function main() {
 
   const publicDeployment = {
     network: "testnet",
-    label: LABEL,
+    name: DEPLOYMENT_NAME,
     sourceCommit: SOURCE_COMMIT || manifest.source_commit,
     deployedBy: sourceAddress,
     collateral: {
