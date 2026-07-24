@@ -82,7 +82,7 @@ async function main() {
     throw new Error(`${network.id} governance signer is required`);
   }
   const wasm = await server.getContractWasmByContractId(registryId);
-  const client = contract.Client.fromWasm(wasm, {
+  const client = await contract.Client.fromWasm(wasm, {
     ...(source
       ? signingOptions(source, network)
       : {
