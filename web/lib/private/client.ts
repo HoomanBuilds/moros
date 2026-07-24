@@ -16,6 +16,7 @@ export type PrivateDeploymentConfig = {
   contracts: {
     verifier: string;
     resolver: string;
+    resolverRegistry: string;
     sharedVault: string;
     liquidityPool: string;
     factory: string;
@@ -34,6 +35,10 @@ export type PrivateDeploymentConfig = {
   };
   marketPolicy: {
     allowedAssets: string[];
+    assetRiskGroups: {
+      asset: string;
+      risk_group: string;
+    }[];
     liquidityTiers: string[];
     feeMaximumBps: number;
     lpFeeShareBps: number;
@@ -46,6 +51,17 @@ export type PrivateDeploymentConfig = {
     minimumFundingWindow: number;
     minimumOpenWindow: number;
     maximumMarketDuration: number;
+  };
+  resolverRegistryPolicy: {
+    changeDelay: number;
+    routes: {
+      asset: string;
+      resolver: string;
+      riskGroup: string;
+      registrationRequired: boolean;
+      enabled: boolean;
+      revision: number;
+    }[];
   };
   liquidityPolicy: {
     depositCap: string;
@@ -157,7 +173,14 @@ export async function getPrivateConfig(): Promise<PrivateDeploymentConfig> {
       (NETWORK.id === "testnet") ||
     !/^[0-9a-f]{64}$/u.test(config.networkDomain) ||
     !/^[0-9a-f]{64}$/u.test(config.verifierDomain) ||
+    !/^C[A-Z2-7]{55}$/u.test(config.contracts.resolverRegistry) ||
     !/^C[A-Z2-7]{55}$/u.test(config.contracts.liquidityPool) ||
+    config.resolverRegistryPolicy.changeDelay < 300 ||
+    config.resolverRegistryPolicy.routes.some((route) =>
+      !route.enabled ||
+      route.revision < 1 ||
+      !config.marketPolicy.allowedAssets.includes(route.asset)
+    ) ||
     config.privacy.treeLevels !== 20 ||
     config.marketPolicy.maximumBatchSize !== 8 ||
     config.marketPolicy.minimumSideCount !== 0 ||

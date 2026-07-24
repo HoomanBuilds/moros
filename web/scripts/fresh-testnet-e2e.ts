@@ -462,6 +462,7 @@ async function setup(): Promise<void> {
       factory: string;
       sharedVault: string;
       liquidityPool: string;
+      resolverRegistry: string;
     };
   };
   const serviceConfig = await (
@@ -473,6 +474,8 @@ async function setup(): Promise<void> {
       !== deployment.contracts.sharedVault
     || serviceConfig.contracts?.liquidityPool
       !== deployment.contracts.liquidityPool
+    || serviceConfig.contracts?.resolverRegistry
+      !== deployment.contracts.resolverRegistry
   ) {
     throw new Error("Public service is not using the canonical deployment");
   }
@@ -1144,6 +1147,7 @@ async function currentServiceConfig(): Promise<{
     factory: string;
     sharedVault: string;
     liquidityPool: string;
+    resolverRegistry: string;
   };
 }> {
   const response = await fetch(`${SERVICE_URL}/private/config`, {
