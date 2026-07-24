@@ -316,7 +316,7 @@ Archive status is advisory until reconciled with contract roots, nullifiers, bat
 
 Multi-device writes use optimistic compare-and-swap. On a generation conflict, the client downloads, decrypts, validates, merges by cryptographic action ID and chain finality, creates a new encrypted manifest, and retries. A client timestamp alone never overrides a chain-confirmed terminal state.
 
-There is no legacy private-history migration. Before the fresh shared-vault testnet deployment, Moros disables writes to `private_positions`, removes its browser code and live table, deploys the opaque archive schema, and starts new history under the new vault domain. Existing testnet positions remain claimable through their existing contracts and local recovery files, but they are not imported into the new archive. The cutover notice must tell test users to finish or export old testnet positions before the deadline.
+There is no earlier testnet history migration. The fresh shared-vault deployment disables writes to `private_positions`, removes its browser code and live table, deploys the opaque archive schema, and starts empty history under the canonical vault domain. The application, Supabase projects, deployment manifests, and VM runtime do not import or list positions, markets, notes, or service state from earlier test deployments.
 
 Plaintext metadata already handled by the provider may remain in provider backups or logs until their retention expires. Deleting the live testnet table does not undo that historical exposure, so Moros cannot retroactively describe the old backup format as private from Supabase operators.
 

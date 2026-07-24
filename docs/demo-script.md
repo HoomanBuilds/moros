@@ -1,6 +1,6 @@
 # Moros testnet demo script
 
-Use a market created by the current app. Do not use an older XLM test market to demonstrate the USDC flow.
+Use a market created through the canonical shared-vault deployment.
 
 Target: 2 minutes and 45 seconds.
 
@@ -10,91 +10,98 @@ Show the landing page, then open the app.
 
 Say:
 
-"Prediction markets expose your side before the market settles. Moros encrypts each YES or NO position, proves it is valid in the browser, and settles only the aggregate of a batch on Stellar.
+"Prediction markets expose a user's side and position size before settlement. Moros keeps both encrypted, validates each action with a zero-knowledge proof, and clears only valid aggregates on Stellar.
 
-Any user can create a market. New markets use Circle USDC on Stellar testnet."
+Any user can create a market. Every active market uses Circle USDC on Stellar testnet."
 
 ## 2. Create a market
 
-Open /app/create.
+Open `/app/create`.
 
-Show a supported crypto, FX, or XAU price market with its asset, strike, and exact settlement time.
+Show a supported crypto, FX, or XAU price market with its asset, strike, liquidity target, and exact settlement time.
 
 Say:
 
-"A user creates the market from their own wallet. Crypto prices use the free Reflector CEX feed. FX and XAU use the free Reflector fiat feed. The form confirms the exact local settlement time and UTC before deployment.
+"A user proposes the market from their own wallet without supplying its liquidity. The pooled LP vault allocates capital automatically when its risk and utilization rules allow it. Crypto prices use the free Reflector CEX feed. FX and XAU use the free Reflector fiat feed.
 
 Sports and other event categories remain unavailable until their observer, challenge, arbitration, and refund operations are running."
 
-If you start a deployment, mention that each confirmed step is saved locally and can be resumed after a rejected signature or network interruption.
+If you start a proposal, mention that each confirmed step is saved under the current factory and can be resumed after a rejected signature or network interruption.
 
-## 3. Place a private position
+## 3. Shield USDC and place a private position
 
-Open a current USDC market. Connect the wallet, choose YES or NO, choose an amount, and place the order.
-
-Say:
-
-"The browser creates a Poseidon commitment and a Groth16 proof over BLS12-381. The wallet deposits a public USDC privacy bucket, but the side and exact position amount are encrypted.
-
-The committee verifies the proof before accepting the ciphertext. The secret, nullifier, and proof witness stay in this browser."
-
-Show the OrderPlaced event on stellar.expert. Point out the commitment and public stake bucket. Do not claim that the stake bucket or funding wallet is hidden.
-
-## 4. Show batching
-
-Open the committee status and a completed batch transaction.
+Open the Portfolio, connect the wallet, and shield USDC into the reusable private balance. Then open an active market, choose YES or NO, enter an integer quantity, and place the order.
 
 Say:
 
-"The 2-of-3 committee adds encrypted orders and decrypts only the aggregate YES and NO totals. Each member proves its partial decryption and checks the exact commitments and nullifier hashes before signing.
+"Shielding is a public Stellar boundary, so the wallet, USDC amount, vault, and transaction are visible. Private bets then spend shielded notes through BN254 Groth16 proofs and a relayer, without another wallet transaction. The side and exact quantity remain encrypted.
 
-Normal batches have four orders. A final batch can have two to four. Moros never decrypts a one-order batch because that would reveal its side. A lone pending order becomes fully refundable."
+The service and contract verify the proof before accepting the ciphertext. Spending keys, note plaintext, and proof witnesses stay in this browser."
+
+Show the private order event on stellar.expert. Point out that the target market, timing, commitment, nullifier, and relayer transaction remain public. Do not claim network-level anonymity.
+
+## 4. Show batch clearing
+
+Open the private service health view and a completed batch transaction.
+
+Say:
+
+"The testnet coordinator fills an eight-order batch and decrypts only the aggregate YES and NO quantities. Every valid batch has at least two orders on each side and clears atomically at one price.
+
+No user receives the advantage of trading against a partially updated price. An order that cannot enter a valid final batch becomes privately refundable."
+
+State clearly that the current coordinator uses one VM and one combined committee secret. Independent threshold members are required before mainnet.
 
 ## 5. Resolve and claim
 
-Show the Resolution tab, then the Portfolio.
+Show a resolved market and the Portfolio.
 
 Say:
 
 "Price markets settle from the matching free Reflector testnet feed. Unsupported event markets cannot be created in this release.
 
-Resolution does not automatically push money to wallets. Winners generate a redemption proof and pull their payout. Voided orders and orders that miss the final batch pull a full refund.
+Resolution does not automatically push money to wallets. Winners generate a proof-bound claim into their private balance. Voided orders and orders that miss the final batch pull a full private refund.
 
-Moros charges 2% only on winning profit. Principal and refunds are never charged."
+The final transfer from private balance to a public Stellar wallet is a separate visible withdrawal boundary."
 
-Show a claim or refund button. If showing a redemption transaction, state that the claim identifies the commitment and exact payout on-chain.
+Show only the action available for that record. Losing positions with no recovery must not show a claim button.
 
 ## 6. Close
 
 Say:
 
-"Moros combines user-created markets, Circle USDC, Soroban contracts, free testnet oracle resolution, threshold encrypted batching, and proof-bound claims.
+"Moros combines user-created markets, Circle USDC, Soroban contracts, free testnet oracle resolution, encrypted batch clearing, pooled liquidity, and proof-bound claims.
 
 Everything shown is testnet beta software. The contracts and circuits still need an independent trusted setup and external audit before mainnet."
 
 ## Short answers
 
-- Who creates markets? Any connected user through /app/create.
-- What is collateral? Circle USDC for every new market. XLM is used only for Stellar fees and reserve.
-- What is public when betting? The wallet transaction, commitment, and collateral bucket.
-- What stays encrypted during batching? The YES or NO side and exact position amount.
-- What does the committee decrypt? Only a batch aggregate with at least two orders.
-- What happens to one pending order? It becomes fully refundable after the final batch deadline.
-- Are payouts automatic? No. Claims, refunds, resolution, and keeper actions require transactions.
-- How does Moros earn? A fixed 2% fee on winning profit at redemption.
-- What happens on a void? Full order stake refund and no platform fee.
-- What resolves crypto prices? The free Reflector CEX feed on the current testnet beta.
-- What resolves FX and XAU? The free Reflector fiat feed on the current testnet beta.
+- Who creates markets? Any connected user through `/app/create`.
+- Who funds markets? Permissionless LPs deposit into one pooled private USDC vault, which allocates by policy.
+- What is collateral? Circle USDC. XLM is used only for Stellar fees and account reserve.
+- What is public when shielding? The wallet, USDC amount, vault, and transaction.
+- What is public when betting? The market, timing, commitment, nullifier, and relayer transaction.
+- What stays encrypted during batching? The YES or NO side and exact position quantity.
+- What does the coordinator decrypt? Only the aggregate of an eight-order batch with at least two orders per side.
+- What happens to an order that cannot form a valid batch? It becomes fully refundable after the final batch deadline.
+- Are payouts automatic? No. Claims and refunds are permissionless pull actions. The keeper submits resolution transactions.
+- How does Moros earn? Each market has an immutable fee capped by deployment policy. The current app proposes 2%, split between LPs and the protocol.
+- What happens on a void? The protocol returns the full valid order budget without a platform fee.
+- What resolves crypto prices? The free Reflector CEX feed.
+- What resolves FX and XAU? The free Reflector fiat feed.
 - Is Pyth active? No. Pyth Pro support remains disabled behind an explicit paid-mode switch.
 - What resolves sports and other events? They are unavailable until the complete resolution operations are running and verified.
-- What ZK circuits are current? order_commit, encrypt_order, and position_redeem.
+- What ZK system is current? Fifteen BN254 Groth16 circuits cover private balance, pooled liquidity, orders, batches, claims, refunds, and withdrawals.
 - Are circuit files public? Yes. WASM, proving keys, and verification keys can be public. Private witnesses stay in the browser.
 
 ## Testnet references
 
-- Circle USDC SAC: CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
-- Free price resolver: CAIHZHCNKHLCXGWOTH7T2L4S5YDNNGO6Q6MSDQ7HQ3A4IORN4NE6ZF5B
-- Event resolver: CBOZK2JSSAOPXJWBSB6JZF5KLPMRQ52JCF4PADI7QUHQ3WS6KBKKBXW5
-- Reflector CEX oracle: CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63
-- Reflector fiat oracle: CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W
-- Current deployment record: deployments/platform-hardening-testnet.json
+- Circle USDC SAC: `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`
+- Shared private vault: `CBVNCHDJOIDFWEW5UQX62CDGV6CS5V7N54DO4CNZS2QC73RDFSDRG7LE`
+- Pooled liquidity vault: `CAMWZJPST7QO7Z2S4O4QZR57CJTYSDYXVTHLRNCZWMSNUOUYFLF3LGVO`
+- Market factory: `CAWTJYYQ3YEKNJ4RPYYOPOV3JMPGQG42AWTYOQXXFTOYCO7U7F4JVJ3C`
+- Free price resolver: `CCQ6UZGXJOOXPM6MTGE3H2LSPW3CWDIPIDXHO4OLJWQ7AUBIQ7ZT5EZX`
+- Proof verifier: `CC2FGGBXS4LNY2YSDF4K3DLJAS4F3F7U64QIMUXQYUXSEMGSVKXDAKKX`
+- Reflector CEX oracle: `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63`
+- Reflector fiat oracle: `CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W`
+- Current deployment record: `deployments/private-testnet.json`

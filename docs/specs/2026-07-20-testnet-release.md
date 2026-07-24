@@ -55,11 +55,11 @@ History filters must include all, active, action required, and settled. A resolv
 
 ## Private position durability
 
-The local browser remains the immediate source for private position notes. Moros also provides an encrypted wallet-owned backup in Supabase.
+The local browser remains the immediate source for private position notes. Moros also provides an encrypted wallet-owned archive in Supabase.
 
-The private payload includes side, amount, stake bucket, secret, and nullifier. It is encrypted in the browser with a key derived from a deterministic, domain-separated wallet signature. The signature and encryption key never leave the browser. Supabase stores only ciphertext, an initialization vector, public market identifiers, and transaction metadata.
+The private payload includes side, amount, stake bucket, secret, nullifier, position status, LP activity, and recovery receipts. It is encrypted in fixed-size pages with keys derived from a deterministic, domain-separated wallet signature. The signature and encryption keys never leave the browser. Supabase stores opaque bucket and page IDs, fixed-size ciphertext, nonces, hashes, generations, and server timestamps. It does not store wallet addresses, market IDs, transaction hashes, sides, amounts, or status in plaintext.
 
-Row-level security allows only the authenticated wallet to read, insert, update, or delete its position backups. A new browser can authenticate, sign the same backup message, decrypt the records, and restore claim capability.
+A dedicated private sync gateway verifies a derived request-signing key and accesses Supabase with server-only credentials. A clean browser signs the same vault-bound recovery message, downloads the opaque pages, decrypts locally, and reconciles records against the canonical shared-vault deployment.
 
 Local export and import remain available as a second recovery path. Exported data must be validated before import, deduplicated by commitment, and scoped to the connected wallet.
 

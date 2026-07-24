@@ -28,7 +28,8 @@ an in-proof recipient. 8 public signals, 9 IC points; power-15 BLS12-381 setup.
   equals the deposited one and its `cap` equals the pool's configured cap.
 - **Validated live on testnet** - deploy -> deposit (bet-validity verified on-chain)
   -> resolve -> relayer-submitted withdraw (redeem verified on-chain). See
-  [`deployments/shielded-pool-testnet.json`](../../deployments/shielded-pool-testnet.json).
+  This prototype is not part of the canonical shared-vault deployment in
+  [`deployments/private-testnet.json`](../../deployments/private-testnet.json).
 - Unaudited research code - testnet/demo only.
 
 Follow-ups: variable stake + LMSR-backed payout (winners capture the pot),
