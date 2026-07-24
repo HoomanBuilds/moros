@@ -61,7 +61,7 @@ const SOURCE_COMMIT = process.env.MOROS_SOURCE_COMMIT || "";
 const DEPLOYMENT_NAME =
   process.env.MOROS_DEPLOYMENT_NAME || "Moros Testnet";
 const SALT_NAMESPACE =
-  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet-launch";
+  process.env.MOROS_DEPLOYMENT_SALT || "moros-testnet-ready";
 const COLLATERAL =
   process.env.COLLATERAL_ID ||
   "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
@@ -95,6 +95,9 @@ const MAX_DEPLOYED_BPS = 8_000;
 const MAX_MARKET_BPS = 8_000;
 const MAX_GROUP_BPS = 8_000;
 const MINIMUM_IDLE_BPS = 2_000;
+const PRIVATE_BATCH_GRACE = 300;
+const PRIVATE_EPOCH_DURATION = 600;
+const PRIVATE_REFUND_DELAY = 120;
 const RETRYABLE_TRANSACTION =
   /pending|timed out|timeout|tx_bad_seq|try again|rate limit/i;
 
@@ -607,9 +610,9 @@ async function main() {
         minimum_funding_window: 3_600n,
         minimum_open_window: 3_600n,
         maximum_market_duration: 7_776_000n,
-        batch_grace: 300n,
-        epoch_duration: 120n,
-        refund_delay: 120n,
+        batch_grace: BigInt(PRIVATE_BATCH_GRACE),
+        epoch_duration: BigInt(PRIVATE_EPOCH_DURATION),
+        refund_delay: BigInt(PRIVATE_REFUND_DELAY),
         committee_epoch: 1n,
         committee_config_hash: identity.committeeConfigHash,
         committee_public_key_x: identity.committeePublicKey[0],
@@ -726,6 +729,9 @@ async function main() {
       fixedBatchSize: 8,
       minimumSideCount: 2,
       maximumPriceMovement: Q32 / 4n,
+      batchGrace: PRIVATE_BATCH_GRACE,
+      epochDuration: PRIVATE_EPOCH_DURATION,
+      refundDelay: PRIVATE_REFUND_DELAY,
       minimumFundingWindow: 3_600,
       minimumOpenWindow: 3_600,
       maximumMarketDuration: 7_776_000,

@@ -111,6 +111,7 @@ function queryPosition(position: Position) {
         sequence: BigInt(position.privateSequence),
         positionCommitment: BigInt(position.commitment),
         side: position.side === "1" ? 1 : 0,
+        quantity: BigInt(position.amount),
         positionBudget: BigInt(position.stakeAmountAtomic),
         executionChangeNullifier: BigInt(position.executionChangeNullifier),
         terminalNullifier: BigInt(position.nullifier),

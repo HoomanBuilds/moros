@@ -47,6 +47,8 @@ import {
   selectConsolidationPair,
   selectSmallestSufficientNote,
 } from "./note-selection";
+import { nextPrivateOrderSequence } from "./order-sequence";
+import { calculateExecutedPositionAmounts } from "./position-accounting";
 import {
   openPrivateWallet,
   type OwnedIndexedNote,
@@ -2141,18 +2143,23 @@ async function nextOrderSequence(
   market: string,
   epoch: PrivateEpoch,
 ): Promise<bigint> {
-  if (epoch.accepted_count > 0) return epoch.last_sequence + 1n;
-  if (epoch.epoch === 0n) return 1n;
-  const prior = await readPrivateContract<PrivateEpoch | undefined>(
-    config.contracts.sharedVault,
-    address,
-    "epoch",
-    { market, epoch_number: epoch.epoch - 1n },
-  );
-  if (!prior || prior.last_sequence <= 0n) {
-    throw new Error("Prior private epoch sequence is unavailable");
+  const priorEpochs: PrivateEpoch[] = [];
+  let priorNumber = epoch.epoch;
+  while (epoch.accepted_count === 0 && priorNumber > 0n) {
+    priorNumber--;
+    const prior = await readPrivateContract<PrivateEpoch | undefined>(
+      config.contracts.sharedVault,
+      address,
+      "epoch",
+      { market, epoch_number: priorNumber },
+    );
+    if (!prior || prior.epoch !== priorNumber) {
+      throw new Error("Prior private epoch is unavailable");
+    }
+    priorEpochs.push(prior);
+    if (prior.last_sequence > 0n) break;
   }
-  return prior.last_sequence + 1n;
+  return nextPrivateOrderSequence(epoch, priorEpochs);
 }
 
 async function acceptedLeaf(
@@ -2790,6 +2797,7 @@ export async function getPrivatePositionState({
   sequence,
   positionCommitment,
   side,
+  quantity,
   positionBudget,
   executionChangeNullifier,
   terminalNullifier,
@@ -2800,6 +2808,7 @@ export async function getPrivatePositionState({
   sequence: bigint;
   positionCommitment: bigint;
   side: 0 | 1;
+  quantity: bigint;
   positionBudget: bigint;
   executionChangeNullifier: bigint;
   terminalNullifier: bigint;
@@ -2855,6 +2864,9 @@ export async function getPrivatePositionState({
   ) {
     throw new Error("Private position state does not match the activity record");
   }
+  if (quantity <= 0n || quantity > 1_000n) {
+    throw new Error("Private position quantity is invalid");
+  }
   const orderStatus = enumName(order.status);
   const epochPhase = enumName(epoch.phase);
   const settlement = enumName(accounting.finalized_outcome);
@@ -2875,22 +2887,22 @@ export async function getPrivatePositionState({
       { market, epoch_number: epochNumber },
     );
     if (!batch) throw new Error("Private batch record is unavailable");
-    const charge = side === 1
+    const chargePerUnit = side === 1
       ? batch.quote.yes_charge_per_position
       : batch.quote.no_charge_per_position;
-    changeAmount = positionBudget - charge - batch.quote.fee_per_position;
-    if (changeAmount < 0n) {
-      throw new Error("Private position budget is below its batch charge");
-    }
-    const payout = ceilDiv(registration.lot_size * USDC_SCALE, Q32);
-    if (
-      (side === 1 && outcome === "YES") ||
-      (side === 0 && outcome === "NO")
-    ) {
-      terminalAmount = payout;
-    } else if (outcome === "VOID") {
-      terminalAmount = charge + batch.quote.fee_per_position;
-    }
+    const amounts = calculateExecutedPositionAmounts({
+      positionBudget,
+      quantity,
+      chargePerUnit,
+      feePerUnit: batch.quote.fee_per_position,
+      payoutPerUnit: ceilDiv(registration.lot_size * USDC_SCALE, Q32),
+      winner:
+        (side === 1 && outcome === "YES") ||
+        (side === 0 && outcome === "NO"),
+      voided: outcome === "VOID",
+    });
+    changeAmount = amounts.changeAmount;
+    terminalAmount = amounts.terminalAmount;
   } else if (epochPhase === "Refundable") {
     terminalAmount = positionBudget;
   }

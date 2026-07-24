@@ -270,7 +270,11 @@ async function main() {
         Number(registration.fixed_batch_size) !==
           deployment.marketPolicy.fixedBatchSize ||
         Number(registration.minimum_side_count) !==
-          deployment.marketPolicy.minimumSideCount
+          deployment.marketPolicy.minimumSideCount ||
+        Number(registration.epoch_duration) !==
+          deployment.marketPolicy.epochDuration ||
+        Number(registration.refund_delay) !==
+          deployment.marketPolicy.refundDelay
       ) {
         throw new Error("market is not an approved private deployment");
       }
