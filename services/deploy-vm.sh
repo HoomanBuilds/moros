@@ -42,7 +42,9 @@ RUNTIME_FILES=(
   "services/private-protocol.mjs"
   "services/private-relayer.mjs"
   "services/private-server.mjs"
+  "services/prepare-mainnet-service-artifacts.mjs"
   "services/resolve-keeper.mjs"
+  "services/rpc-failover.mjs"
   "services/soroban-runtime.mjs"
 )
 
@@ -61,6 +63,9 @@ provision)
   command -v node >/dev/null || { echo "install Node 22+ first"; exit 1; }
   echo "[provision] node $(node --version), installing service deps"
   ( cd "$here" && npm install --no-audit --no-fund )
+  if grep -q '^MOROS_NETWORK=mainnet$' "$here/.env" 2>/dev/null; then
+    ( cd "$repo" && node services/prepare-mainnet-service-artifacts.mjs )
+  fi
 
   missing=0
   for a in "${ARTIFACTS[@]}"; do
@@ -73,6 +78,9 @@ provision)
   ;;
 
 service)
+  if grep -q '^MOROS_NETWORK=mainnet$' "$here/.env" 2>/dev/null; then
+    ( cd "$repo" && node services/prepare-mainnet-service-artifacts.mjs )
+  fi
   node_bin="$(command -v node)"
   unit=/etc/systemd/system/zkmarket-resolve-keeper.service
   sudo tee "$unit" >/dev/null <<UNIT
