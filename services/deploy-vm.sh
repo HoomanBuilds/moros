@@ -10,20 +10,46 @@ ARTIFACTS=(
   "circuits/private-build/public"
 )
 
+RUNTIME_FILES=(
+  "circuits/private/artifacts.mjs"
+  "services/.env.example"
+  "services/Caddyfile.moros"
+  "services/README.md"
+  "services/config.mjs"
+  "services/deploy-vm.sh"
+  "services/deployment-utils.mjs"
+  "services/market-registry.mjs"
+  "services/oracle-config.mjs"
+  "services/package-lock.json"
+  "services/package.json"
+  "services/private-allocation-registry.mjs"
+  "services/private-artifacts.mjs"
+  "services/private-batch-coordinator.mjs"
+  "services/private-exit-registry.mjs"
+  "services/private-indexer.mjs"
+  "services/private-market-registry.mjs"
+  "services/private-proposal-registry.mjs"
+  "services/private-protocol.mjs"
+  "services/private-relayer.mjs"
+  "services/private-server.mjs"
+  "services/resolve-keeper.mjs"
+  "services/soroban-runtime.mjs"
+)
+
 cmd="${1:-provision}"
 
 case "$cmd" in
 package)
-  echo "[package] bundling the canonical deployment and private proving artifacts"
+  echo "[package] bundling the clean runtime, canonical deployment, and private proving artifacts"
   ( cd "$repo" && tar czf "$bundle" \
+      "${RUNTIME_FILES[@]}" \
       "${ARTIFACTS[@]}" 2>/dev/null )
-  echo "[package] wrote $bundle - scp to the VM repo root, then: tar xzf deploy-bundle.tar.gz"
+  echo "[package] wrote $bundle"
   ;;
 
 provision)
   command -v node >/dev/null || { echo "install Node 22+ first"; exit 1; }
   echo "[provision] node $(node --version), installing service deps"
-  ( cd "$repo/circuits" && npm install --no-audit --no-fund )
   ( cd "$here" && npm install --no-audit --no-fund )
 
   missing=0

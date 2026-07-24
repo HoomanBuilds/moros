@@ -101,7 +101,7 @@ Check the active entry points:
 
 ## VM packaging
 
-The packaged proving artifacts must match the verification keys in the canonical deployment:
+The package contains only the active runtime, canonical deployment, and proving artifacts. The proving artifacts must match the verification keys in the canonical deployment:
 
     ./services/deploy-vm.sh package
 
