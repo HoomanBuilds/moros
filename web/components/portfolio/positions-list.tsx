@@ -546,7 +546,13 @@ export function PositionsList() {
     try {
       const key = await preparePositionBackup(address);
       const added = await restorePositionBackups(address, key);
-      setBackupMessage(added > 0 ? `Restored ${added} position${added === 1 ? "" : "s"}.` : "Encrypted backup is already up to date.");
+      setBackupMessage(
+        added > 0
+          ? `Restored ${added} position${added === 1 ? "" : "s"}.`
+          : listPositions(address).length > 0
+            ? "Encrypted backup is already up to date."
+            : "No encrypted cloud backup was found. If positions appear on the Vercel link, export them there and import the file here.",
+      );
       reload();
     } catch (cause) {
       setBackupMessage(cause instanceof Error ? cause.message : "Could not restore encrypted backup");
@@ -660,8 +666,13 @@ export function PositionsList() {
       {positions.length === 0 ? (
         <Panel className="p-8 text-center">
           <p className="text-lg font-medium">No private positions found</p>
-          <p className="mt-2 text-sm text-muted-foreground">Restore an encrypted backup or place a private USDC position.</p>
-          <Button className="mt-5" asChild><Link href="/app">Browse markets</Link></Button>
+          <p className="mt-2 text-sm text-muted-foreground">Restore your encrypted cloud backup. If an older position exists only on the Vercel origin, export it there and import it above.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Button asChild><Link href="/app">Browse markets</Link></Button>
+            <Button variant="outline" asChild>
+              <a href="https://moros-six.vercel.app/app/portfolio" target="_blank" rel="noreferrer">Open Vercel portfolio</a>
+            </Button>
+          </div>
         </Panel>
       ) : visible.length === 0 ? (
         <Panel className="p-8 text-center text-sm text-muted-foreground">No positions match this filter.</Panel>

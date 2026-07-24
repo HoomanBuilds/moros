@@ -1,6 +1,7 @@
 import { StrKey } from "@stellar/stellar-sdk";
 import { verifyWalletSignature } from "@/lib/social/verify";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isExistingUserError } from "@/lib/supabase/auth-errors";
 
 function walletEmail(address: string): string {
   return `${address.toLowerCase()}@wallet.local`;
@@ -60,7 +61,7 @@ export async function POST(req: Request): Promise<Response> {
     email_confirm: true,
     app_metadata: { wallet: address },
   });
-  if (createError && !/already registered|already exists/i.test(createError.message)) {
+  if (createError && !isExistingUserError(createError)) {
     return Response.json({ error: createError.message }, { status: 500 });
   }
 
