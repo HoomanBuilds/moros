@@ -26,13 +26,12 @@ export type Position = {
   stakeAmountAtomic?: string;
 };
 
-const KEY = "moros.positions";
-const LEGACY_KEYS = ["umbra.positions.v1"];
 const ADDRESS = /^G[A-Z2-7]{55}$/;
 const CONTRACT = /^C[A-Z2-7]{55}$/;
 const DECIMAL = /^\d+$/;
 const TX_HASH = /^[0-9a-f]{64}$/i;
 let mem: Record<string, Position[]> | null = null;
+let storageKey: string | null = null;
 const listeners = new Set<() => void>();
 
 function normalizePosition(value: unknown, fallbackAddress?: string): Position | null {
@@ -158,28 +157,18 @@ function readJson(key: string): unknown {
 
 function store(): Record<string, Position[]> {
   if (mem) return mem;
-  if (typeof localStorage === "undefined") {
+  if (typeof localStorage === "undefined" || !storageKey) {
     mem = {};
     return mem;
   }
-  const current = readJson(KEY);
-  if (current) {
-    mem = normalizeBook(current);
-    return mem;
-  }
-  for (const legacyKey of LEGACY_KEYS) {
-    const legacy = readJson(legacyKey);
-    if (!legacy) continue;
-    mem = normalizeBook(legacy);
-    flush();
-    return mem;
-  }
-  mem = {};
+  mem = normalizeBook(readJson(storageKey));
   return mem;
 }
 
 function flush() {
-  if (typeof localStorage !== "undefined") localStorage.setItem(KEY, JSON.stringify(mem ?? {}));
+  if (typeof localStorage !== "undefined" && storageKey) {
+    localStorage.setItem(storageKey, JSON.stringify(mem ?? {}));
+  }
 }
 
 function emit() {
@@ -189,6 +178,15 @@ function emit() {
 export function subscribePositions(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+export function configurePositionBook(vault: string) {
+  if (!CONTRACT.test(vault)) throw new Error("Private position vault is invalid");
+  const nextKey = `moros.positions.${vault}`;
+  if (storageKey === nextKey) return;
+  storageKey = nextKey;
+  mem = null;
+  emit();
 }
 
 export function addPosition(position: Position) {

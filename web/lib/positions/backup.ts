@@ -16,16 +16,24 @@ import {
 } from "@/lib/private-sync/crypto";
 import { resolveArchiveVault } from "./backup-vault";
 import { backupMessage, decryptPosition, encryptPosition } from "./crypto";
-import { listPositions, mergePositions, updatePosition, type Position } from "./book";
+import {
+  configurePositionBook,
+  listPositions,
+  mergePositions,
+  updatePosition,
+  type Position,
+} from "./book";
 import { createAsyncValueCache } from "./unlock-cache";
 
 const unlockedKeys = createAsyncValueCache<string, PrivateArchiveKeys>();
 
 async function archiveVault(): Promise<string> {
-  return resolveArchiveVault(
+  const vault = resolveArchiveVault(
     undefined,
     (await getPrivateConfig()).contracts.sharedVault,
   );
+  configurePositionBook(vault);
+  return vault;
 }
 
 export async function unlockPositionBackup(address: string): Promise<PrivateArchiveKeys> {

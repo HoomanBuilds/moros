@@ -9,36 +9,13 @@ export { dedupeMarkets, type MarketEntry };
 
 const SEEDS: MarketEntry[] = [];
 
-const KEY = "moros.markets";
-const LEGACY_KEY = "umbra.markets.v1";
-let localCreated: MarketEntry[] | null = null;
 let remote: MarketEntry[] = [];
 let refreshComplete = false;
 let refreshInFlight: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
-function loadLocal(): MarketEntry[] {
-  if (localCreated) return localCreated;
-  let list: MarketEntry[] = [];
-  if (typeof localStorage !== "undefined") {
-    try {
-      const current = localStorage.getItem(KEY);
-      list = JSON.parse(current ?? localStorage.getItem(LEGACY_KEY) ?? "[]");
-      if (!current && list.length > 0) localStorage.setItem(KEY, JSON.stringify(list));
-    } catch {
-      list = [];
-    }
-  }
-  localCreated = list;
-  return list;
-}
-
-function persist() {
-  if (typeof localStorage !== "undefined" && localCreated) localStorage.setItem(KEY, JSON.stringify(localCreated));
-}
-
 function build(): MarketEntry[] {
-  return dedupeMarkets([...SEEDS, ...remote, ...(localCreated ?? [])]).filter(
+  return dedupeMarkets([...SEEDS, ...remote]).filter(
     (market) => market.collateralCode === NETWORK.collateral.code
       && market.collateralIssuer === NETWORK.collateral.issuer
       && market.collateralSac === NETWORK.collateral.sac
@@ -53,10 +30,6 @@ function emit() {
 }
 
 let snapshot: MarketEntry[] = [...SEEDS];
-if (typeof window !== "undefined") {
-  loadLocal();
-  snapshot = build();
-}
 
 function subscribe(cb: () => void): () => void {
   listeners.add(cb);
@@ -79,14 +52,6 @@ export function useMarketRegistryReady(): boolean {
 
 export function findMarket(marketId: string): MarketEntry | undefined {
   return snapshot.find((m) => m.marketId === marketId);
-}
-
-export function addMarket(entry: MarketEntry) {
-  const c = loadLocal();
-  if (!c.some((m) => m.marketId === entry.marketId)) c.unshift(entry);
-  persist();
-  snapshot = build();
-  emit();
 }
 
 export function refreshMarkets(): Promise<void> {

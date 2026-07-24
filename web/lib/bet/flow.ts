@@ -3,7 +3,11 @@ import { computeCommitment } from "@/lib/zk/commit";
 import { proveEncryptOrder } from "@/lib/zk/prove";
 import { getPk, getProof, postOrder, registerPool } from "@/lib/committee/client";
 import { placeOrder } from "@/lib/stellar/write";
-import { addPosition, updatePosition } from "@/lib/positions/book";
+import {
+  addPosition,
+  configurePositionBook,
+  updatePosition,
+} from "@/lib/positions/book";
 import { savePositionBackup } from "@/lib/positions/backup";
 import type { PrivateArchiveKeys } from "@/lib/private-sync/crypto";
 import type { Position } from "@/lib/positions/book";
@@ -30,6 +34,7 @@ export async function runBet(
 ) {
   if (collateral.sac !== NETWORK.collateral.sac) throw new Error("Moros testnet markets require Stellar USDC");
   const privateConfig = await getPrivateConfig();
+  configurePositionBook(privateConfig.contracts.sharedVault);
   if (poolId === privateConfig.contracts.sharedVault) {
     const quantity = parsePrivatePositionQuantity(amount);
     onStage("hashing");

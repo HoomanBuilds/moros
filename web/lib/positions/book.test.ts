@@ -2,6 +2,7 @@ import assert from "node:assert";
 import {
   _resetForTest,
   addPosition,
+  configurePositionBook,
   exportWallet,
   importWallet,
   listPositions,
@@ -37,6 +38,7 @@ const position: Position = {
 };
 
 _resetForTest({});
+configurePositionBook(position.pool!);
 addPosition(position);
 addPosition({ ...position, status: "submitted", placedAt: 101 });
 assert.equal(listPositions(address).length, 1);
@@ -55,5 +57,11 @@ assert.equal(listPositions(address)[0].market, position.market);
 assert.throws(() => importWallet(backup, other));
 
 assert.throws(() => addPosition({ ...position, txHash: "bad" }));
+
+const otherVault = `C${"A".repeat(55)}`;
+configurePositionBook(otherVault);
+assert.equal(listPositions(address).length, 0);
+configurePositionBook(position.pool!);
+assert.equal(listPositions(address).length, 1);
 
 console.log("position book ok");

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { connectWallet, useWalletAddress } from "@/lib/wallet-store";
 import {
+  configurePositionBook,
   listPositions,
   subscribePositions,
   updatePosition,
@@ -37,6 +38,7 @@ import {
   getPrivatePositionState,
   runPrivatePositionAction,
 } from "@/lib/private/actions";
+import { getPrivateConfig } from "@/lib/private/client";
 import { NETWORK } from "@/lib/network";
 import { formatTokenAmount } from "@/lib/stellar/amount";
 import { outcomeLabel } from "@/lib/stellar/derive";
@@ -495,8 +497,23 @@ export function PositionsList() {
   }
 
   useEffect(() => {
-    setPositions(address ? listPositions(address) : []);
-    return subscribePositions(() => setPositions(address ? listPositions(address) : []));
+    let cancelled = false;
+    const unsubscribe = subscribePositions(() => {
+      if (!cancelled) setPositions(address ? listPositions(address) : []);
+    });
+    getPrivateConfig()
+      .then((config) => {
+        if (cancelled) return;
+        configurePositionBook(config.contracts.sharedVault);
+        setPositions(address ? listPositions(address) : []);
+      })
+      .catch(() => {
+        if (!cancelled) setPositions([]);
+      });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [address]);
 
   const counts = useMemo(() => {
