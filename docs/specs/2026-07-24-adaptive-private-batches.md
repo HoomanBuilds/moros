@@ -12,6 +12,7 @@ Private orders must execute without requiring eight orders while preserving atom
 
 - Each market has one private order queue and one LMSR price state.
 - A new batch waits for the first order flow before starting its execution window.
+- The browser downloads and caches the order WASM, proving key, and verification key before opening an epoch.
 - Before proving the first order, the relayer calls the permissionless and idempotent epoch opener. Its confirmed ledger timestamp starts the 60-second window.
 - The opener persists the cutoff and refund deadline before proof generation. Order binding and acceptance read those same values and never recalculate them.
 - A client starts proof generation only when at least 30 seconds remain. Near-cutoff orders wait for the next epoch instead of risking a proof that expires during submission.
@@ -23,6 +24,14 @@ Private orders must execute without requiring eight orders while preserving atom
 - The market price changes only when a valid batch executes.
 - A failed or unavailable execution becomes permissionlessly refundable after the recovery deadline.
 - Fees apply only to executed quantities.
+
+## Operational recovery
+
+- The testnet recovery delay is 600 seconds, which is longer than the measured batch proving time on the single VM.
+- A generated batch proof is cached by market, epoch, market state, and accepted root until its transaction succeeds or the epoch leaves the sealed phase.
+- Transient account lookup, RPC 503, network, timeout, rate-limit, pending, and sequence failures rebuild and retry the transaction without regenerating the proof.
+- A user can still invoke permissionless recovery after the on-chain refund deadline. Coordinator retries do not remove that right.
+- Production deployment requires an RPC provider with an availability target appropriate for settlement and at least one configured fallback endpoint.
 
 ## Proof policy
 
