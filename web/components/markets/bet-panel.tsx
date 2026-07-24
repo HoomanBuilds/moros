@@ -24,6 +24,7 @@ import {
 import { NETWORK } from "@/lib/network";
 import { unlockPositionBackup } from "@/lib/positions/backup";
 import { PLATFORM_FEE_BPS } from "@/lib/markets/deploy-constants";
+import { estimatePrivateProfit } from "@/lib/markets/private-estimate";
 import { getPrivateConfig } from "@/lib/private/client";
 import { openPrivateWallet } from "@/lib/private/wallet";
 import { getPrivateOrderUnitReserve } from "@/lib/private/actions";
@@ -93,10 +94,24 @@ export function BetPanel() {
   const positionSize = Number(amount);
   const feeBps = data?.feeBps ?? PLATFORM_FEE_BPS;
   const feeRate = feeBps / 10_000;
-  const feeLabel = `${feeBps / 100}%`;
-  const grossProfit = prob !== null && positionSize > 0 ? positionSize * (1 - prob) : null;
-  const fee = grossProfit === null ? null : grossProfit * feeRate;
-  const netProfit = grossProfit === null || fee === null ? null : grossProfit - fee;
+  const privateEstimate = prob !== null && data
+    ? estimatePrivateProfit({
+        quantity: positionSize,
+        lotSize: data.lotSize,
+        sideProbability: prob,
+        yesProbability: data.probYes,
+        feeBps,
+      })
+    : null;
+  const grossProfit = prob !== null && positionSize > 0
+    ? positionSize * (1 - prob)
+    : null;
+  const legacyNetProfit = grossProfit === null
+    ? null
+    : grossProfit - grossProfit * feeRate;
+  const netProfit = privateStack
+    ? privateEstimate?.netProfit ?? null
+    : legacyNetProfit;
   let stakeAtomic: bigint | null = null;
   let stakeAmount: string | null = null;
   try {
@@ -295,7 +310,7 @@ export function BetPanel() {
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span>Estimated profit after fee</span>
+            <span>Estimated profit after execution fee</span>
             <span className="text-foreground">{netProfit !== null ? `~${netProfit.toFixed(2)} ${collateral.code}` : "--"}</span>
           </div>
           {privateStack ? (
@@ -315,7 +330,7 @@ export function BetPanel() {
                 <span className="text-foreground">{stakeAmount ? `${stakeAmount} ${collateral.code}` : "--"}</span>
               </div>
               <p className="text-[10px] leading-snug text-muted-foreground/70">
-                Your exact position amount stays encrypted inside a public collateral bucket. Unused collateral is returned at redemption. Moros charges {feeLabel} only on winning profit.
+                This isolated test flow locks the displayed USDC amount. Unused collateral and fees follow its on-chain configuration.
               </p>
             </>
           )}

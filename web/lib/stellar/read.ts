@@ -45,8 +45,11 @@ export async function getPrivateMarketRegistration(
   marketId: string,
 ): Promise<{
   market: string;
+  lot_size: bigint;
   fee_bps: number;
   lp_fee_share_bps: number;
+  fixed_batch_size: number;
+  minimum_side_count: number;
 } | null> {
   const market = nativeToScVal(Address.fromString(marketId), {
     type: "address",

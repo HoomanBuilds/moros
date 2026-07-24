@@ -29,7 +29,13 @@ export async function fetchMarket(
         if (!registration || registration.market !== marketId) {
           throw new Error("Private market registration is unavailable");
         }
-        return { poolBalance, feeBps: registration.fee_bps };
+        return {
+          poolBalance,
+          feeBps: registration.fee_bps,
+          lotSize: fixedToNumber(registration.lot_size),
+          fixedBatchSize: registration.fixed_batch_size,
+          minimumSideCount: registration.minimum_side_count,
+        };
       })
     : Promise.all([
         getPoolBalance(readPlan.balanceOwner, collateral),
@@ -37,6 +43,9 @@ export async function fetchMarket(
       ]).then(([poolBalance, feeConfig]) => ({
         poolBalance,
         feeBps: Number(feeConfig[1]),
+        lotSize: 1,
+        fixedBatchSize: null,
+        minimumSideCount: null,
       }));
   const [state, priceYes, outcome, info, storedMeta, resolverId, marketEconomics] = await Promise.all([
     getMarketState(marketId),
@@ -97,6 +106,9 @@ export async function fetchMarket(
     poolSize: Number(formatTokenAmount(marketEconomics.poolBalance, collateral.decimals, 7)),
     collateral,
     feeBps: marketEconomics.feeBps,
+    lotSize: marketEconomics.lotSize,
+    fixedBatchSize: marketEconomics.fixedBatchSize,
+    minimumSideCount: marketEconomics.minimumSideCount,
     expiry,
     finalizeAfter: Number(info.finalize_after ?? info.expiry),
     secondsLeft,
