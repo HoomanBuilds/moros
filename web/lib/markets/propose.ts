@@ -116,6 +116,14 @@ function randomId(): string {
   return hex(crypto.getRandomValues(new Uint8Array(32)));
 }
 
+export function proposalLotSize(lotSize?: bigint): bigint {
+  const selected = lotSize ?? Q32;
+  if (selected <= 0n || selected > (1n << 60n)) {
+    throw new Error("Select a supported position lot size");
+  }
+  return selected;
+}
+
 export function getPendingProposal(
   address: string,
   factoryId: string,
@@ -223,6 +231,7 @@ export async function proposeMarket({
   strikeUsd,
   expiryUnix,
   liquidityTarget,
+  lotSize,
   metadata,
   resume,
   onStep,
@@ -233,6 +242,7 @@ export async function proposeMarket({
   strikeUsd: number;
   expiryUnix: number;
   liquidityTarget?: bigint;
+  lotSize?: bigint;
   metadata: DeploymentMetadata;
   resume?: PendingProposal | null;
   onStep: (step: ProposalStep) => void;
@@ -248,6 +258,7 @@ export async function proposeMarket({
     if (!policyTiers.includes(target)) {
       throw new Error("Select a supported liquidity target");
     }
+    const selectedLotSize = proposalLotSize(lotSize);
     const { fundingDeadline, activationCutoff } = proposalTiming(
       expiryUnix,
       config,
@@ -273,7 +284,7 @@ export async function proposeMarket({
       fundingDeadline,
       activationCutoff,
       liquidityTarget: target.toString(),
-      lotSize: Q32.toString(),
+      lotSize: selectedLotSize.toString(),
       feeBps: Math.min(200, config.marketPolicy.feeMaximumBps),
       rulesHash,
       metadataHash,

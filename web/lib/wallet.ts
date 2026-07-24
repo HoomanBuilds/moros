@@ -4,17 +4,25 @@ import { defaultModules } from "@creit.tech/stellar-wallets-kit/modules/utils";
 import { NETWORK } from "@/lib/network";
 
 let initialized = false;
+let walletKit = StellarWalletsKit;
 
 export function getKit(): typeof StellarWalletsKit {
   if (!initialized) {
-    StellarWalletsKit.init({
+    walletKit.init({
       network: NETWORK.id === "mainnet" ? Networks.PUBLIC : Networks.TESTNET,
       selectedWalletId: FREIGHTER_ID,
       modules: defaultModules(),
     });
     initialized = true;
   }
-  return StellarWalletsKit;
+  return walletKit;
+}
+
+export function configureWalletKitAdapter(
+  adapter: typeof StellarWalletsKit,
+): void {
+  walletKit = adapter;
+  initialized = true;
 }
 
 export function truncate(addr: string): string {

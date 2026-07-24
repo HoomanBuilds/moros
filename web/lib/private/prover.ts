@@ -35,6 +35,23 @@ type PrivateArtifactManifest = {
 };
 
 let manifestPromise: Promise<PrivateArtifactManifest> | null = null;
+let localProverArtifactRoot: string | null = null;
+
+export function configurePrivateProverArtifactRoot(root: string | null): void {
+  if (root !== null && !root.startsWith("/")) {
+    throw new Error("Private prover artifact root must be an absolute path");
+  }
+  localProverArtifactRoot = root?.replace(/\/+$/u, "") ?? null;
+}
+
+function proverArtifact(
+  config: PrivateDeploymentConfig,
+  relative: string,
+): string {
+  return localProverArtifactRoot
+    ? `${localProverArtifactRoot}/${relative.replace(/^\/+/u, "")}`
+    : privateArtifactUrl(config, relative);
+}
 
 function scalarBytes(value: string | number | bigint): Uint8Array {
   const scalar = BigInt(value);
@@ -127,8 +144,8 @@ export async function provePrivateAction(
   if (!circuit) throw new Error(`Private circuit ${circuitName} is unavailable`);
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(
     input,
-    privateArtifactUrl(config, circuit.artifacts.wasm),
-    privateArtifactUrl(config, circuit.artifacts.proving_key),
+    proverArtifact(config, circuit.artifacts.wasm),
+    proverArtifact(config, circuit.artifacts.proving_key),
   );
   const verificationResponse = await fetch(
     privateArtifactUrl(config, circuit.artifacts.verification_key),

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   clearPendingProposal,
   getPendingProposal,
+  proposalLotSize,
   proposalTiming,
 } from "./propose";
 import type { PrivateDeploymentConfig } from "@/lib/private/client";
@@ -14,6 +15,15 @@ const config = {
   },
 } as PrivateDeploymentConfig;
 const now = 1_000_000;
+
+assert.equal(proposalLotSize(), 1n << 32n);
+assert.equal(proposalLotSize(1n), 1n);
+assert.equal(proposalLotSize(1n << 60n), 1n << 60n);
+assert.throws(() => proposalLotSize(0n), /supported position lot size/);
+assert.throws(
+  () => proposalLotSize((1n << 60n) + 1n),
+  /supported position lot size/,
+);
 
 const week = proposalTiming(now + 7 * 24 * 60 * 60, config, now);
 assert.equal(week.fundingDeadline, now + 86_400);
