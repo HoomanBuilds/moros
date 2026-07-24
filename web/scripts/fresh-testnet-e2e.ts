@@ -430,8 +430,10 @@ async function setup(): Promise<void> {
     { registerPrivateProposal },
     {
       fundPooledLiquidity,
+      getPrivatePositionState,
       getPooledLiquidityState,
       placePrivateOrder,
+      runPrivatePositionAction,
       shieldUsdc,
     },
     { openPrivateWallet },
@@ -636,6 +638,7 @@ async function setup(): Promise<void> {
     ];
     const privateBalances = new Map<BettorName, bigint>();
     for (const bettor of bettorPlan) {
+      selectSigner(bettor.name);
       privateBalances.set(
         bettor.name,
         (await openPrivateWallet(bettor.address)).balance,
@@ -739,6 +742,97 @@ async function setup(): Promise<void> {
       })),
     };
     saveState(state);
+  }
+
+  if (state.orders.length > 0) {
+    const checkpointEpoch = BigInt(state.orders[0].epoch);
+    const epoch = await readPrivateContract<{
+      phase: string | { tag?: string };
+    }>(
+      deployment.contracts.sharedVault,
+      primaryBettor,
+      "epoch",
+      {
+        market: proposal.marketId,
+        epoch_number: checkpointEpoch,
+      },
+    );
+    const phase = typeof epoch.phase === "string"
+      ? epoch.phase
+      : epoch.phase?.tag;
+    if (phase === "Refundable") {
+      log("recovering the expired checkpoint batch into private balances");
+      for (const order of state.orders) {
+        const signer = orderSigner(order);
+        const bettor = selectSigner(signer);
+        const input = {
+          address: bettor,
+          market: state.market,
+          epochNumber: BigInt(order.epoch),
+          sequence: BigInt(order.sequence),
+          positionCommitment: BigInt(order.positionCommitment),
+          side: order.side,
+          quantity: BigInt(order.quantity),
+          positionBudget: BigInt(order.positionBudget),
+          executionChangeNullifier:
+            BigInt(order.executionChangeNullifier),
+          terminalNullifier: BigInt(order.positionNullifier),
+        };
+        const current = await getPrivatePositionState(input);
+        if (!current.terminalSpent) {
+          if (current.action !== "refund") {
+            throw new Error(
+              `Expired checkpoint order ${order.sequence} is not refundable`,
+            );
+          }
+          log(`refunding expired private order ${order.sequence}`);
+          await runPrivatePositionAction({
+            address: bettor,
+            market: state.market,
+            epochNumber: BigInt(order.epoch),
+            sequence: BigInt(order.sequence),
+            positionCommitment: BigInt(order.positionCommitment),
+            side: order.side,
+            encryptionRandomness: BigInt(order.encryptionRandomness),
+            action: "refund",
+            onStatus: (status) => log(status),
+          });
+          await waitFor(
+            `indexed expired refund ${order.sequence}`,
+            180_000,
+            async () => {
+              const refreshed = await getPrivatePositionState(input);
+              return refreshed.terminalSpent ? refreshed : null;
+            },
+          );
+        }
+      }
+      for (const funding of state.bettorFunding ?? []) {
+        const wallet = await waitFor(
+          `${funding.name} restored private balance`,
+          180_000,
+          async () => {
+            const current = await openPrivateWallet(funding.address);
+            return current.balance >= BigInt(funding.amount) ? current : null;
+          },
+        );
+        if (wallet.balance < BigInt(funding.amount)) {
+          throw new Error(`${funding.name} private refund is incomplete`);
+        }
+      }
+      const restoredPrice = await getPriceYes(proposal.marketId);
+      if (restoredPrice !== initialPrice) {
+        throw new Error("Expired private batch changed the market price");
+      }
+      state = {
+        ...state,
+        phase: "bettor-funded",
+        batchPrice: initialPrice.toString(),
+        orders: [],
+        bettorRecovered: false,
+      };
+      saveState(state);
+    }
   }
 
   const inputs: Array<{

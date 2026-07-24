@@ -39,6 +39,8 @@ export type PrivateWalletSnapshot = {
   balance: bigint;
 };
 
+const knownSpentNullifiers = new Set<string>();
+
 async function privateNoteDomain(
   config: PrivateDeploymentConfig,
 ): Promise<bigint> {
@@ -65,17 +67,23 @@ async function spentNullifierDomains(
   address: string,
   note: OwnedIndexedNote,
 ): Promise<bigint[]> {
-  const spentDomains: bigint[] = [];
-  for (const domain of nullifierDomains(note.purpose)) {
+  const checks = nullifierDomains(note.purpose).map(async (domain) => {
+    const nullifier = noteNullifier(note, note.spendSecret, domain);
+    const key = `${config.contracts.sharedVault}:${nullifier}`;
+    if (knownSpentNullifiers.has(key)) return domain;
     const spent = await readPrivateContract<boolean>(
       config.contracts.sharedVault,
       address,
       "is_spent",
-      { nullifier: noteNullifier(note, note.spendSecret, domain) },
+      { nullifier },
     );
-    if (spent) spentDomains.push(domain);
-  }
-  return spentDomains;
+    if (!spent) return null;
+    knownSpentNullifiers.add(key);
+    return domain;
+  });
+  return (await Promise.all(checks)).filter(
+    (domain): domain is bigint => domain !== null,
+  );
 }
 
 async function filterUnspent(
