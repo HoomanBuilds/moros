@@ -62,6 +62,7 @@ type OrderState = {
   sequence: string;
   positionBudget: string;
   lotSize: string;
+  postPrice?: string;
   signer?: BettorName;
   bettor?: string;
 };
@@ -481,7 +482,7 @@ async function setup(): Promise<void> {
   let proposal: PendingProposal;
   if (!state || !phaseAtLeast(state, "proposal-ready")) {
     const expiryUnix = state?.proposal.expiryUnix
-      ?? Math.floor(Date.now() / 1_000) + 3_600;
+      ?? Math.floor(Date.now() / 1_000) + 1_200;
     log(state
       ? "resuming the checkpointed fresh market proposal"
       : "proposing a fresh market from a creator with no USDC");
@@ -533,59 +534,95 @@ async function setup(): Promise<void> {
   }
 
   const lp = selectSigner("bob");
-  if (!phaseAtLeast(state, "pool-funded")) {
-    let pool = await getPooledLiquidityState(lp);
-    if (pool.info.total_shares === 0n) {
-      let wallet = await openPrivateWallet(lp);
-      if (wallet.balance < 25n * USDC_SCALE) {
-        if (wallet.balance !== 0n) {
-          throw new Error("Fresh LP private balance is only partially funded");
-        }
-        log("shielding 25 USDC for the pooled LP bootstrap");
-        const depositHash = await shieldUsdc(
-          lp,
-          25n * USDC_SCALE,
-          (status) => log(status),
+  const desiredPoolAssets = 25n * USDC_SCALE;
+  let bootstrapPool = await getPooledLiquidityState(lp);
+  if (bootstrapPool.info.total_shares < desiredPoolAssets) {
+    const missingPoolAssets =
+      desiredPoolAssets - bootstrapPool.info.total_shares;
+    let wallet = await openPrivateWallet(lp);
+    const missingPrivateAssets = missingPoolAssets > wallet.balance
+      ? missingPoolAssets - wallet.balance
+      : 0n;
+    if (missingPrivateAssets > 0n) {
+      let publicState = await getCollateralAccountState(
+        lp,
+        NETWORK.collateral,
+      );
+      if (publicState.balanceAtomic < missingPrivateAssets) {
+        const topUp = missingPrivateAssets - publicState.balanceAtomic;
+        log(
+          `funding the LP test wallet with ${atomicStellarAmount(topUp)} USDC`,
         );
-        log(`LP public shield confirmed ${depositHash}`);
-        wallet = await waitFor(
-          "indexed LP private balance",
-          180_000,
+        const transferHash = await transferPublicUsdc("charlie", lp, topUp);
+        log(`LP public funding confirmed ${transferHash}`);
+        publicState = await waitFor(
+          "LP public USDC funding",
+          120_000,
           async () => {
-            const current = await openPrivateWallet(lp);
-            return current.balance >= 25n * USDC_SCALE ? current : null;
+            const current = await getCollateralAccountState(
+              lp,
+              NETWORK.collateral,
+            );
+            return current.balanceAtomic >= missingPrivateAssets
+              ? current
+              : null;
           },
         );
       }
-      if (wallet.balance < 25n * USDC_SCALE) {
-        throw new Error("Fresh LP private balance is insufficient");
+      if (publicState.balanceAtomic < missingPrivateAssets) {
+        throw new Error("Fresh LP public balance is insufficient");
       }
-      log("funding the pooled LP vault from private balance");
-      const pooled = await fundPooledLiquidity(
+      selectSigner("bob");
+      log(
+        `shielding ${atomicStellarAmount(missingPrivateAssets)} USDC for the pooled LP bootstrap`,
+      );
+      const depositHash = await shieldUsdc(
         lp,
-        25n * USDC_SCALE,
+        missingPrivateAssets,
         (status) => log(status),
       );
-      log(`private pooled LP funding confirmed ${pooled.hash}`);
-      pool = await waitFor(
-        "pooled LP shares",
+      log(`LP public shield confirmed ${depositHash}`);
+      wallet = await waitFor(
+        "indexed LP private balance",
         180_000,
         async () => {
-          const current = await getPooledLiquidityState(lp);
-          return current.info.total_shares > 0n ? current : null;
+          const current = await openPrivateWallet(lp);
+          return current.balance >= missingPoolAssets ? current : null;
         },
       );
     }
-    if (
-      pool.info.total_shares !== 25n * USDC_SCALE
-      || pool.info.idle_assets + pool.info.deployed_principal
-        !== 25n * USDC_SCALE
-    ) {
-      throw new Error("Fresh pooled LP state contains unexpected capital");
+    if (wallet.balance < missingPoolAssets) {
+      throw new Error("Fresh LP private balance is insufficient");
     }
-    state = { ...state, phase: "pool-funded" };
-    saveState(state);
+    selectSigner("bob");
+    log("funding the pooled LP vault from private balance");
+    const pooled = await fundPooledLiquidity(
+      lp,
+      missingPoolAssets,
+      (status) => log(status),
+    );
+    log(`private pooled LP funding confirmed ${pooled.hash}`);
+    bootstrapPool = await waitFor(
+      "pooled LP shares",
+      180_000,
+      async () => {
+        const current = await getPooledLiquidityState(lp);
+        return current.info.total_shares >= desiredPoolAssets
+          ? current
+          : null;
+      },
+    );
   }
+  if (
+    bootstrapPool.info.total_shares !== desiredPoolAssets
+    || bootstrapPool.info.idle_assets
+      + bootstrapPool.info.deployed_principal
+      !== desiredPoolAssets
+  ) {
+    throw new Error("Fresh pooled LP state contains unexpected capital");
+  }
+  state = { ...state, phase: "pool-funded" };
+  saveState(state);
 
   log("checking automatic market allocation and activation");
   const registry = await waitFor(
@@ -628,12 +665,12 @@ async function setup(): Promise<void> {
       {
         name: "charlie",
         address: primaryBettor,
-        amount: 19n * USDC_SCALE / 10n,
+        amount: USDC_SCALE / 2n,
       },
       {
         name: "alice",
         address: identity("alice").publicKey(),
-        amount: 21n * USDC_SCALE / 10n,
+        amount: USDC_SCALE / 2n,
       },
     ];
     const privateBalances = new Map<BettorName, bigint>();
@@ -841,12 +878,6 @@ async function setup(): Promise<void> {
     signer: BettorName;
   }> = [
     { side: 1, quantity: 1n, signer: "charlie" },
-    { side: 1, quantity: 2n, signer: "alice" },
-    { side: 0, quantity: 3n, signer: "charlie" },
-    { side: 0, quantity: 1n, signer: "alice" },
-    { side: 1, quantity: 2n, signer: "charlie" },
-    { side: 0, quantity: 1n, signer: "charlie" },
-    { side: 1, quantity: 4n, signer: "alice" },
     { side: 0, quantity: 1n, signer: "alice" },
   ];
   const orders = [...state.orders];
@@ -859,124 +890,109 @@ async function setup(): Promise<void> {
       throw new Error("Fresh order checkpoint does not match the test plan");
     }
   }
-  if (orders.length < inputs.length) {
-    const registration = await readPrivateContract<{
-      current_epoch: bigint;
-    }>(
-      deployment.contracts.sharedVault,
-      primaryBettor,
-      "registration",
-      { market: proposal.marketId },
-    );
-    const epoch = await readPrivateContract<{
-      accepted_count: number;
-    }>(
-      deployment.contracts.sharedVault,
-      primaryBettor,
-      "epoch",
-      {
-        market: proposal.marketId,
-        epoch_number: registration.current_epoch,
-      },
-    );
-    if (epoch.accepted_count !== orders.length) {
-      throw new Error(
-        "Private order count diverged from the durable checkpoint",
-      );
-    }
-  }
-  for (let index = orders.length; index < inputs.length; index++) {
+  let priceBefore = initialPrice;
+  for (let index = 0; index < inputs.length; index++) {
     const input = inputs[index];
-    const bettor = selectSigner(input.signer);
-    log(
-      `placing ${input.signer} private order ${index + 1} with quantity ${input.quantity}`,
-    );
-    const result = await placePrivateOrder({
-      address: bettor,
-      market: proposal.marketId,
-      side: input.side,
-      quantity: input.quantity,
-      onStatus: (status) => log(status),
-    });
-    orders.push({
-      side: input.side,
-      quantity: input.quantity.toString(),
-      hash: result.hash,
-      positionCommitment: result.positionCommitment.toString(),
-      positionNullifier: result.positionNullifier.toString(),
-      executionChangeNullifier:
-        result.executionChangeNullifier.toString(),
-      encryptionRandomness: result.encryptionRandomness.toString(),
-      epoch: result.epoch.toString(),
-      sequence: result.sequence.toString(),
-      positionBudget: result.positionBudget.toString(),
-      lotSize: result.lotSize.toString(),
-      signer: input.signer,
-      bettor,
-    });
-    state = {
-      ...state,
-      phase: "orders",
-      orders: [...orders],
-    };
-    saveState(state);
-    if (index < inputs.length - 1) {
-      const price = await getPriceYes(proposal.marketId);
-      if (price !== initialPrice) {
-        throw new Error("Market price changed before the batch was full");
-      }
+    let order = orders[index];
+    if (!order) {
+      const bettor = selectSigner(input.signer);
+      log(
+        `placing ${input.signer} singleton private order ${index + 1} with quantity ${input.quantity}`,
+      );
+      const result = await placePrivateOrder({
+        address: bettor,
+        market: proposal.marketId,
+        side: input.side,
+        quantity: input.quantity,
+        onStatus: (status) => log(status),
+      });
+      order = {
+        side: input.side,
+        quantity: input.quantity.toString(),
+        hash: result.hash,
+        positionCommitment: result.positionCommitment.toString(),
+        positionNullifier: result.positionNullifier.toString(),
+        executionChangeNullifier:
+          result.executionChangeNullifier.toString(),
+        encryptionRandomness: result.encryptionRandomness.toString(),
+        epoch: result.epoch.toString(),
+        sequence: result.sequence.toString(),
+        positionBudget: result.positionBudget.toString(),
+        lotSize: result.lotSize.toString(),
+        signer: input.signer,
+        bettor,
+      };
+      orders.push(order);
+      state = {
+        ...state,
+        phase: "orders",
+        orders: [...orders],
+      };
+      saveState(state);
     }
-  }
-  const pendingState: E2eState = {
-    ...state,
-    phase: "orders",
-    initialPrice: initialPrice.toString(),
-    batchPrice: state.batchPrice === "0"
-      ? initialPrice.toString()
-      : state.batchPrice,
-    orders: [...orders],
-  };
-  saveState(pendingState);
 
-  const epoch = BigInt(orders[0].epoch);
-  await waitFor(
-    "atomic private batch execution",
-    600_000,
-    async () => {
-      const batch = await readPrivateContract<unknown>(
-        deployment.contracts.sharedVault,
-        primaryBettor,
-        "batch",
-        {
-          market: proposal.marketId,
-          epoch_number: epoch,
+    if (!order.postPrice) {
+      const epoch = BigInt(order.epoch);
+      await waitFor(
+        `singleton private batch ${index + 1}`,
+        600_000,
+        async () => {
+          const batch = await readPrivateContract<unknown>(
+            deployment.contracts.sharedVault,
+            primaryBettor,
+            "batch",
+            {
+              market: proposal.marketId,
+              epoch_number: epoch,
+            },
+          );
+          return batch || null;
         },
       );
-      return batch || null;
-    },
-  );
-  const batchPrice = await waitFor(
-    "post-batch market price",
-    180_000,
-    async () => {
-      const price = await getPriceYes(proposal.marketId);
-      return price !== initialPrice ? price : null;
-    },
-  );
+      const postPrice = await waitFor(
+        `singleton price movement ${index + 1}`,
+        180_000,
+        async () => {
+          const price = await getPriceYes(proposal.marketId);
+          return price !== priceBefore ? price : null;
+        },
+      );
+      if (
+        (input.side === 1 && postPrice <= priceBefore)
+        || (input.side === 0 && postPrice >= priceBefore)
+      ) {
+        throw new Error("Singleton batch moved the LMSR price in the wrong direction");
+      }
+      order.postPrice = postPrice.toString();
+      orders[index] = order;
+      state = {
+        ...state,
+        phase: "orders",
+        batchPrice: postPrice.toString(),
+        orders: [...orders],
+      };
+      saveState(state);
+    }
+    priceBefore = BigInt(order.postPrice);
+  }
+  if (orders[0].epoch === orders[1].epoch) {
+    throw new Error("Adaptive singleton orders did not execute in separate epochs");
+  }
   saveState({
-    ...pendingState,
+    ...state,
     phase: "batched",
-    batchPrice: batchPrice.toString(),
+    batchPrice: priceBefore.toString(),
+    orders: [...orders],
   });
   const pool = await getPooledLiquidityState(primaryBettor);
   if (
-    pool.info.idle_assets !== 5n * USDC_SCALE
+    pool.info.idle_assets !== USDC_SCALE
     || pool.info.deployed_principal !== 20n * USDC_SCALE
   ) {
     throw new Error("Pooled liquidity bootstrap accounting is incorrect");
   }
   log(
-    `fresh batch executed at one clearing price; market ${proposal.marketId}`,
+    `fresh singleton batches moved prices after their 60-second windows; market ${proposal.marketId}`,
   );
   log(`market expiry ${new Date(proposal.expiryUnix * 1_000).toISOString()}`);
 }
@@ -1168,6 +1184,13 @@ async function recoverBettor(): Promise<void> {
     throw new Error("Fresh E2E bettor identity changed");
   }
   const owners = new Map<BettorName, string>();
+  for (const funding of state.bettorFunding ?? []) {
+    const bettor = selectSigner(funding.name);
+    if (funding.address !== bettor) {
+      throw new Error(`Fresh E2E ${funding.name} funding identity changed`);
+    }
+    owners.set(funding.name, bettor);
+  }
   for (const order of state.orders) {
     const signer = orderSigner(order);
     const bettor = selectSigner(signer);
@@ -1229,15 +1252,16 @@ async function recoverBettor(): Promise<void> {
       throw new Error(`Fresh E2E ${signer} funding identity changed`);
     }
     const target = expected ? BigInt(expected.amount) : 1n;
+    selectSigner(signer);
     const wallet = await waitFor(
       `${signer} indexed recovered balance`,
       180_000,
       async () => {
         const current = await openPrivateWallet(bettor);
+        log(`${signer} recoverable private balance ${current.balance}`);
         return current.balance >= target ? current : null;
       },
     );
-    selectSigner(signer);
     log(
       `withdrawing ${wallet.balance} recovered private atomic USDC for ${signer}`,
     );
