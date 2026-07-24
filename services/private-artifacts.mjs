@@ -64,8 +64,8 @@ export class PrivateArtifactStore {
     }
     this.manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     if (
-      this.manifest.network !== "testnet" ||
-      this.manifest.mainnet_ready !== false ||
+      this.manifest.network !== deployment.network ||
+      this.manifest.mainnet_ready !== deployment.mainnetReady ||
       this.manifest.setup_manifest_sha256 !==
         deployment.provingManifestSha256
     ) {

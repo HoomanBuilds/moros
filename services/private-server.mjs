@@ -7,7 +7,6 @@ import http from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  Networks,
   rpc,
   scValToNative,
 } from "@stellar/stellar-sdk";
@@ -37,22 +36,25 @@ import {
   runtimeSource,
   submitInvocation,
 } from "./soroban-runtime.mjs";
-import { testnetPrivacyIdentity } from "./deployment-utils.mjs";
+import { networkPrivacyIdentity } from "./deployment-utils.mjs";
+import {
+  assertDeploymentNetwork,
+  assertRpcNetwork,
+  networkConfig,
+} from "./network-config.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const network = networkConfig();
 const PORT = Number(process.env.PRIVATE_PORT || process.env.PORT || 8787);
-const RPC_URL =
-  process.env.RPC_URL || "https://soroban-testnet.stellar.org";
-const NETWORK_PASSPHRASE =
-  process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
+const RPC_URL = network.rpcUrl;
+const NETWORK_PASSPHRASE = network.passphrase;
 const DEPLOYMENT_PATH = resolve(
   cfg.repo,
-  process.env.MOROS_PUBLIC_DEPLOYMENT ||
-    "deployments/private-testnet.json",
+  network.deploymentPath,
 );
 const ARTIFACT_ROOT = resolve(
-  process.env.MOROS_ZK_PUBLIC_DIR ||
-    resolve(cfg.repo, "circuits/private-build/public"),
+  cfg.repo,
+  network.artifactPath,
 );
 const RUNTIME_ROOT = resolve(
   cfg.repo,
@@ -132,11 +134,8 @@ function serializeTransactions() {
 }
 
 async function main() {
-  if (
-    cfg.network !== "testnet" ||
-    NETWORK_PASSPHRASE !== Networks.TESTNET
-  ) {
-    throw new Error("the private service is testnet only");
+  if (cfg.network !== network.id) {
+    throw new Error("service network configuration is inconsistent");
   }
   if (!Number.isSafeInteger(PORT) || PORT < 1 || PORT > 65_535) {
     throw new Error("invalid private service port");
@@ -144,15 +143,16 @@ async function main() {
   if (!Number.isSafeInteger(TICK_MS) || TICK_MS < 2_000) {
     throw new Error("PRIVATE_TICK_MS must be at least 2000");
   }
-  const deployment = readJson(DEPLOYMENT_PATH);
+  const deployment = assertDeploymentNetwork(
+    readJson(DEPLOYMENT_PATH),
+    network,
+  );
   if (
-    deployment.network !== "testnet" ||
-    deployment.mainnetReady !== false ||
     !deployment.contracts?.sharedVault ||
     !deployment.contracts?.liquidityPool ||
     !deployment.contracts?.factory
   ) {
-    throw new Error("invalid private testnet deployment manifest");
+    throw new Error(`invalid private ${network.id} deployment manifest`);
   }
   const deploymentRuntime = resolve(
     RUNTIME_ROOT,
@@ -167,8 +167,9 @@ async function main() {
     root: ARTIFACT_ROOT,
     deployment,
   });
-  const source = runtimeSource(process.env.FUNDER_SK || "");
+  const source = runtimeSource(network.funderSecret);
   const server = new rpc.Server(RPC_URL);
+  await assertRpcNetwork(server, network);
   const vaultId = deployment.contracts.sharedVault;
   const vault = await contractClient({
     server,
@@ -194,8 +195,9 @@ async function main() {
     networkPassphrase: NETWORK_PASSPHRASE,
   });
   const factoryInfo = invocationResultValue(await factory.config());
-  const identity = testnetPrivacyIdentity(
-    process.env.MOROS_TESTNET_PRIVACY_SK || process.env.FUNDER_SK,
+  const identity = networkPrivacyIdentity(
+    network.privacySecret || network.funderSecret,
+    network.id,
   );
   if (
     vaultInfo.factory !== deployment.contracts.factory ||
@@ -732,7 +734,7 @@ async function main() {
           Date.now() - lastTick <= Math.max(60_000, TICK_MS * 4);
         sendJson(request, response, healthy ? 200 : 503, {
           healthy,
-          network: "testnet",
+          network: network.id,
           vault: vaultId,
           liquidityPool: deployment.contracts.liquidityPool,
           ...runtime,
@@ -749,7 +751,6 @@ async function main() {
           verifierDomain: Buffer.from(vaultInfo.verifier_domain).toString("hex"),
           artifactBase: "/zk/private",
           publicDepositBoundary: true,
-          testnetSingleVmCommittee: true,
         });
         return;
       }
@@ -947,7 +948,7 @@ async function main() {
   }, TICK_MS).unref();
   httpServer.listen(PORT, "0.0.0.0", () => {
     process.stdout.write(
-      `private testnet service listening on ${PORT} for vault ${vaultId}\n`,
+      `private ${network.id} service listening on ${PORT} for vault ${vaultId}\n`,
     );
   });
 }

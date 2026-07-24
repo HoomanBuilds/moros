@@ -4,11 +4,17 @@ import { writeFileSync, readFileSync, existsSync, renameSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import * as snarkjs from "snarkjs";
-import { Address, BASE_FEE, Contract, Keypair, Networks, TransactionBuilder, authorizeEntry, rpc, scValToNative, xdr } from "@stellar/stellar-sdk";
+import { Address, BASE_FEE, Contract, Keypair, TransactionBuilder, authorizeEntry, rpc, scValToNative, xdr } from "@stellar/stellar-sdk";
+import "../config.mjs";
 import { G8, ID, R, add, mul, randScalar, thresholdDecrypt, addCiphers } from "./jubjub.mjs";
 import { feldmanCheck, memberVerifyKey } from "./dkg-jubjub.mjs";
 import { provePartial, verifyPartial } from "./chaum-pedersen.mjs";
+import {
+  assertRpcNetwork,
+  networkConfig,
+} from "../network-config.mjs";
 
+const network = networkConfig();
 const PORT = Number(process.env.PORT || 9711);
 const INDEX = BigInt(process.env.INDEX || 1);
 const TOKEN = process.env.MEMBER_TOKEN || "";
@@ -22,8 +28,8 @@ const S = 1n << 32n;
 const kp = process.env.MEMBER_SK ? Keypair.fromSecret(process.env.MEMBER_SK) : null;
 const SHARE_FILE = process.env.SHARE_FILE || "";
 const TARGETS_FILE = process.env.TARGETS_FILE || (SHARE_FILE ? `${SHARE_FILE}.targets.json` : "");
-const RPC_URL = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
-const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
+const RPC_URL = network.rpcUrl;
+const NETWORK_PASSPHRASE = network.passphrase;
 const POOL_WASM_HASH = (process.env.POOL_WASM_HASH || "").toLowerCase();
 const CID = /^[A-Z0-9]{56}$/;
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -337,7 +343,7 @@ const server = createServer(async (req, res) => {
       const cred = Address.fromScAddress(entry.credentials().address().address()).toString();
       if (cred !== kp.publicKey()) return send(res, 400, { error: "entry is not for this member" });
 
-      const signed = await authorizeEntry(entry, kp, Number(validUntilLedger), Networks.TESTNET);
+      const signed = await authorizeEntry(entry, kp, Number(validUntilLedger), NETWORK_PASSPHRASE);
       console.log(`[member ${INDEX}] attested net (${dqyes}, ${dqno}) for ${entryTarget}`);
       return send(res, 200, { signedEntryXdr: signed.toXDR("base64") });
     }
@@ -350,6 +356,7 @@ const server = createServer(async (req, res) => {
 
 restore();
 restoreTargets();
+await assertRpcNetwork(new rpc.Server(RPC_URL), network);
 server.listen(PORT, () => {
-  console.log(`[member ${INDEX}] listening on ${PORT}${TOKEN ? " (token auth)" : ""}${finalShare ? " (key restored)" : ""}`);
+  console.log(`[member ${INDEX}] ${network.id} listening on ${PORT}${TOKEN ? " (token auth)" : ""}${finalShare ? " (key restored)" : ""}`);
 });

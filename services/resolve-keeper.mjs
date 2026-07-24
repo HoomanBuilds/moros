@@ -19,6 +19,7 @@ import {
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { PythLazerClient } from "@pythnetwork/pyth-lazer-sdk";
+import "./config.mjs";
 import {
   PYTH_PRO_FEEDS,
   resolvableAssets,
@@ -27,23 +28,31 @@ import {
 } from "./oracle-config.mjs";
 import { currentMarketTargets } from "./current-market-targets.mjs";
 import { contractResultValue } from "./deployment-utils.mjs";
+import {
+  assertDeploymentNetwork,
+  assertRpcNetwork,
+  networkConfig,
+} from "./network-config.mjs";
 
-const RPC = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
-const PASSPHRASE = process.env.NETWORK_PASSPHRASE || "Test SDF Network ; September 2015";
+const network = networkConfig();
+const RPC = network.rpcUrl;
+const PASSPHRASE = network.passphrase;
 const ORACLE_MODE = process.env.ORACLE_MODE || "free";
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PRIVATE_DEPLOYMENT_PATH = resolve(
   REPO_ROOT,
-  process.env.MOROS_PUBLIC_DEPLOYMENT ||
-    "deployments/private-testnet.json",
+  network.deploymentPath,
 );
 const PRIVATE_DEPLOYMENT = existsSync(PRIVATE_DEPLOYMENT_PATH)
-  ? JSON.parse(readFileSync(PRIVATE_DEPLOYMENT_PATH, "utf8"))
+  ? assertDeploymentNetwork(
+      JSON.parse(readFileSync(PRIVATE_DEPLOYMENT_PATH, "utf8")),
+      network,
+    )
   : undefined;
 const FREE_RESOLVER = selectFreeResolver(PRIVATE_DEPLOYMENT);
 const PYTH_PRO_RESOLVER = process.env.PYTH_PRO_RESOLVER_ID || "";
 const RESOLVER = ORACLE_MODE === "pyth_pro" ? PYTH_PRO_RESOLVER : FREE_RESOLVER;
-const FUNDER_SK = process.env.FUNDER_SK || "";
+const FUNDER_SK = network.funderSecret;
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://khufxpfbigxpuvsvlhtn.supabase.co";
 const SUPABASE_ANON = process.env.SUPABASE_ANON_KEY || "";
 const COLLATERAL_ID = PRIVATE_DEPLOYMENT?.collateral?.contract;
@@ -53,7 +62,7 @@ if (!/^C[A-Z2-7]{55}$/.test(COLLATERAL_ID || "")) {
 const INTERVAL_MS = Number(process.env.RESOLVE_INTERVAL_MS || 300000);
 const TTL_REFRESH_MS = Number(process.env.TTL_REFRESH_MS || 604800000);
 const PYTH_TOKEN = process.env.PYTH_ACCESS_TOKEN || "";
-const RESOLVABLE = resolvableAssets(ORACLE_MODE);
+const RESOLVABLE = resolvableAssets(ORACLE_MODE, network.id);
 const STATUS_FILE = process.env.KEEPER_STATUS_FILE || fileURLToPath(new URL("./keeper-status.json", import.meta.url));
 
 const server = new rpc.Server(RPC);
@@ -64,6 +73,7 @@ const lastTtlRefresh = new Map();
 let status = {
   startedAt: new Date().toISOString(),
   lastTickAt: null,
+  network: network.id,
   mode: ORACLE_MODE,
   resolver: RESOLVER,
   marketsScanned: 0,
@@ -295,13 +305,14 @@ async function main() {
   if (!new Set(["free", "pyth_pro"]).has(ORACLE_MODE)) throw new Error("ORACLE_MODE must be free or pyth_pro");
   if (!RESOLVER) throw new Error(`Resolver is not configured for ${ORACLE_MODE} mode`);
   if (ORACLE_MODE === "pyth_pro" && !PYTH_TOKEN) throw new Error("PYTH_ACCESS_TOKEN is required in pyth_pro mode");
+  await assertRpcNetwork(server, network);
   const config = contractResultValue(await readContract(RESOLVER, "config"));
   resolutionTimeout = Number(config.resolution_timeout);
   if (!Number.isSafeInteger(resolutionTimeout) || resolutionTimeout < 300) {
     throw new Error("Resolver returned an invalid resolution timeout");
   }
   saveStatus({ resolutionTimeout });
-  console.log(`[keeper] resolve-keeper up: interval=${INTERVAL_MS}ms resolver=${RESOLVER} mode=${ORACLE_MODE} funder=${funder.publicKey()}`);
+  console.log(`[keeper] resolve-keeper up: network=${network.id} interval=${INTERVAL_MS}ms resolver=${RESOLVER} mode=${ORACLE_MODE} funder=${funder.publicKey()}`);
   for (;;) {
     try {
       await tick();

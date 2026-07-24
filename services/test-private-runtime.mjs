@@ -48,7 +48,11 @@ try {
   );
   const artifacts = new PrivateArtifactStore({
     root: artifactDirectory,
-    deployment: { provingManifestSha256: "setup-hash" },
+    deployment: {
+      network: "testnet",
+      mainnetReady: false,
+      provingManifestSha256: "setup-hash",
+    },
   });
   let responseStatus;
   let responseHeaders;

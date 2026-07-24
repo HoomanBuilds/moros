@@ -6,9 +6,12 @@ repo="$(cd "$here/.." && pwd)"
 bundle="$repo/deploy-bundle.tar.gz"
 
 ARTIFACTS=(
-  "deployments/private-testnet.json"
+  "deployments"
   "circuits/private-build/public"
 )
+if [ -d "$repo/circuits/private-mainnet-build/public" ]; then
+  ARTIFACTS+=("circuits/private-mainnet-build/public")
+fi
 
 RUNTIME_FILES=(
   "circuits/private/artifacts.mjs"
@@ -21,6 +24,7 @@ RUNTIME_FILES=(
   "services/deploy-vm.sh"
   "services/deployment-utils.mjs"
   "services/market-registry.mjs"
+  "services/network-config.mjs"
   "services/oracle-config.mjs"
   "services/package-lock.json"
   "services/package.json"
@@ -69,7 +73,7 @@ service)
   unit=/etc/systemd/system/zkmarket-resolve-keeper.service
   sudo tee "$unit" >/dev/null <<UNIT
 [Unit]
-Description=Moros testnet price resolution keeper
+Description=Moros price resolution keeper
 After=network-online.target
 Wants=network-online.target
 
@@ -118,7 +122,7 @@ UNIT
   sudo systemctl restart zkmarket-resolve-keeper zkmarket-private
   echo "[service] private logs: journalctl -u zkmarket-private -f"
   echo "[service] keeper logs: journalctl -u zkmarket-resolve-keeper -f"
-  echo "[service] testnet uses the deployment manifest's single-VM committee identity"
+  echo "[service] network, deployment, RPC, and identity are selected by MOROS_NETWORK"
   ;;
 
 *)

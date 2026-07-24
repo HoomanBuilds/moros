@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync
 import { resolve, dirname } from "path";
 import { timingSafeEqual, createHash } from "crypto";
 import * as snarkjs from "snarkjs";
-import { rpc, TransactionBuilder, Contract, BASE_FEE, Keypair, Networks, scValToNative } from "@stellar/stellar-sdk";
+import { rpc, TransactionBuilder, Contract, BASE_FEE, Keypair, scValToNative } from "@stellar/stellar-sdk";
 import { cfg } from "./config.mjs";
 import { relay } from "./relayer.mjs";
 import { addCiphers } from "./committee/jubjub.mjs";
@@ -11,7 +11,12 @@ import { ensureDKG, collectPartials, attestEntry } from "./committee/coordinator
 import { submitPoolBatch } from "./committee/submit-multisig.mjs";
 import { createIndexer } from "./indexer.mjs";
 import { resolvableAssets } from "./oracle-config.mjs";
+import {
+  assertRpcNetwork,
+  networkConfig,
+} from "./network-config.mjs";
 
+const network = networkConfig();
 const PORT = Number(process.env.PORT || 8787);
 const BATCH_N = Number(process.env.BATCH_N || 4);
 const WINDOW_MS = Number(process.env.WINDOW_MS || 60000);
@@ -23,9 +28,9 @@ const MEMBERS = (process.env.MEMBERS || "").split(",").filter(Boolean);
 const THRESHOLD = Number(process.env.THRESHOLD || 2);
 const MARKET = process.env.MARKET || "";
 const DRY = process.env.DRY_RUN === "1";
-const RPC_URL = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
-const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
-const FUNDER_SK = process.env.FUNDER_SK || "";
+const RPC_URL = network.rpcUrl;
+const NETWORK_PASSPHRASE = network.passphrase;
+const FUNDER_SK = network.funderSecret;
 const READER_ADDRESS = process.env.READER_ADDRESS || (FUNDER_SK ? Keypair.fromSecret(FUNDER_SK).publicKey() : "");
 const statePath = (value, fallback) => value ? resolve(cfg.repo, value) : resolve(cfg.repo, "services", fallback);
 const POOLS_FILE = statePath(process.env.POOLS_FILE, "pools.json");
@@ -40,7 +45,7 @@ const ORACLE_MODE = process.env.ORACLE_MODE || "free";
 const PRICE_RESOLVER_ID = ORACLE_MODE === "pyth_pro"
   ? process.env.PYTH_PRO_RESOLVER_ID || ""
   : process.env.FREE_RESOLVER_ID || "";
-const RESOLVABLE_ASSETS = resolvableAssets(ORACLE_MODE);
+const RESOLVABLE_ASSETS = resolvableAssets(ORACLE_MODE, network.id);
 const ALLOW_UNVERIFIED_REGISTRATION = process.env.ALLOW_UNVERIFIED_REGISTRATION === "1";
 const MAX_POOLS = Number(process.env.MAX_POOLS || 1000);
 const S = 1n << 32n;
@@ -523,8 +528,9 @@ server.headersTimeout = 66_000;
 
 loadPools();
 loadQueues();
+await assertRpcNetwork(new rpc.Server(RPC_URL), network);
 for (const pool of pools.values()) await pool.indexer.poll().catch(() => {});
 await bootstrap();
 server.listen(PORT, () =>
-  console.log(`[server] no-leak multi-pool committee on :${PORT} (batchN=${BATCH_N}, window=${WINDOW_MS}ms, pools=${pools.size}, auth=${TOKEN ? "on" : "OFF"})`)
+  console.log(`[server] ${network.id} no-leak multi-pool committee on :${PORT} (batchN=${BATCH_N}, window=${WINDOW_MS}ms, pools=${pools.size}, auth=${TOKEN ? "on" : "OFF"})`)
 );

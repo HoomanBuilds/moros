@@ -7,6 +7,7 @@ import {
   deriveContractId,
   deterministicSalt,
   fieldBytes,
+  networkPrivacyIdentity,
   networkDomain,
   testnetPrivacyIdentity,
 } from "./deployment-utils.mjs";
@@ -43,6 +44,26 @@ assert.equal(fieldBytes(identity.treasuryKey).length, 32);
 assert.deepEqual(
   testnetPrivacyIdentity("test-only-secret"),
   identity,
+);
+assert.deepEqual(
+  networkPrivacyIdentity("test-only-secret", "testnet"),
+  identity,
+);
+const mainnetIdentity = networkPrivacyIdentity(
+  "test-only-secret",
+  "mainnet",
+);
+assert.notEqual(
+  mainnetIdentity.committeeSecret,
+  identity.committeeSecret,
+);
+assert.notDeepEqual(
+  mainnetIdentity.committeeConfigHash,
+  identity.committeeConfigHash,
+);
+assert.throws(
+  () => networkPrivacyIdentity("test-only-secret", "local"),
+  /testnet or mainnet/,
 );
 
 assert.throws(() => fieldBytes(0n), /nonzero/);

@@ -1,16 +1,19 @@
 import "../config.mjs";
 import {
-  rpc, TransactionBuilder, Networks, BASE_FEE, Contract, Address, Keypair,
+  rpc, TransactionBuilder, BASE_FEE, Contract, Address, Keypair,
   nativeToScVal, scValToNative, xdr, Operation, authorizeEntry,
 } from "@stellar/stellar-sdk";
 import { fileURLToPath } from "url";
+import { networkConfig } from "../network-config.mjs";
+
+const network = networkConfig();
 
 export async function submitPoolBatch({ pool, dqyesFp, dqnoFp, nullHashes, commitments, signerAddrs, sourceSk, attest, rpcUrl }) {
   if (!Array.isArray(commitments) || commitments.length !== nullHashes.length || commitments.length < 2 || commitments.length > 4) {
     throw new Error("batch commitments must match 2 to 4 nullifier hashes");
   }
-  const server = new rpc.Server(rpcUrl ?? process.env.RPC_URL ?? "https://soroban-testnet.stellar.org");
-  const passphrase = Networks.TESTNET;
+  const server = new rpc.Server(rpcUrl ?? network.rpcUrl);
+  const passphrase = network.passphrase;
   const sourceKp = Keypair.fromSecret(sourceSk);
   const contract = new Contract(pool);
 
@@ -70,8 +73,8 @@ export async function submitPoolBatch({ pool, dqyesFp, dqnoFp, nullHashes, commi
 }
 
 export async function submitCommitteeBatch({ market, dqyes, dqno, funderSk, signerSks, signerAddrs, attest, rpcUrl }) {
-  const server = new rpc.Server(rpcUrl ?? process.env.RPC_URL ?? "https://soroban-testnet.stellar.org");
-  const passphrase = Networks.TESTNET;
+  const server = new rpc.Server(rpcUrl ?? network.rpcUrl);
+  const passphrase = network.passphrase;
   const funderKp = Keypair.fromSecret(funderSk);
   const signerKps = (signerSks ?? []).map((s) => Keypair.fromSecret(s));
   const addrs = signerAddrs ?? signerKps.map((kp) => kp.publicKey());
@@ -144,7 +147,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     market: process.env.MARKET,
     dqyes: process.env.DQYES,
     dqno: process.env.DQNO,
-    funderSk: process.env.FUNDER_SK,
+    funderSk: network.funderSecret,
     signerSks: [process.env.SIGNER1_SK, process.env.SIGNER2_SK],
   });
   console.log("SUCCESS: net charged (atomic units) =", out.net);

@@ -20,7 +20,7 @@ const circuits = resolve(repo, "contracts/shielded-pool/circuits");
 
 export const cfg = {
   repo,
-  network: process.env.NETWORK || "testnet",
+  network: process.env.MOROS_NETWORK || process.env.NETWORK || "testnet",
   source: process.env.SOURCE || "deployer",
   poolId: process.env.POOL_ID || "",
   batchBin: resolve(fork, "target/release/batch"),

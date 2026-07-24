@@ -10,14 +10,17 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import {
-  REFLECTOR_CEX_ASSETS,
-  REFLECTOR_CEX_ORACLE,
-  REFLECTOR_FIAT_ASSETS,
-  REFLECTOR_FIAT_ORACLE,
+  reflectorConfig,
 } from "./oracle-config.mjs";
+import {
+  assertRpcNetwork,
+  networkConfig,
+} from "./network-config.mjs";
 
-const rpcUrl = process.env.RPC_URL || "https://soroban-testnet.stellar.org";
-const passphrase = process.env.NETWORK_PASSPHRASE || "Test SDF Network ; September 2015";
+const network = networkConfig();
+const reflector = reflectorConfig(network.id);
+const rpcUrl = network.rpcUrl;
+const passphrase = network.passphrase;
 const server = new rpc.Server(rpcUrl);
 const source = new Account(Keypair.random().publicKey(), "0");
 
@@ -55,7 +58,8 @@ async function verifyReflector(contractId, expectedAssets) {
   assert.ok(prices.every((price) => price.price > 0n && price.timestamp > 0n));
 }
 
-await verifyReflector(REFLECTOR_CEX_ORACLE, REFLECTOR_CEX_ASSETS);
-await verifyReflector(REFLECTOR_FIAT_ORACLE, REFLECTOR_FIAT_ASSETS);
+await assertRpcNetwork(server, network);
+await verifyReflector(reflector.cexOracle, reflector.cexAssets);
+await verifyReflector(reflector.fiatOracle, reflector.fiatAssets);
 
-console.log("live Reflector oracles ok");
+console.log(`live ${network.id} Reflector oracles ok`);

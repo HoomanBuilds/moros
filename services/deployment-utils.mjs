@@ -102,3 +102,39 @@ export function testnetPrivacyIdentity(secret) {
     viewingPublicKey,
   };
 }
+
+export function networkPrivacyIdentity(secret, network) {
+  if (network === "testnet") return testnetPrivacyIdentity(secret);
+  if (network !== "mainnet") {
+    throw new Error("privacy identity network must be testnet or mainnet");
+  }
+  const committeeSecret = secretScalar(secret, "mainnet-committee");
+  const committeePublicKey = publicKey(committeeSecret);
+  const spendSecret = secretScalar(secret, "mainnet-treasury-spend");
+  const viewingSecret = secretScalar(secret, "mainnet-treasury-view");
+  const viewingPublicKey = publicKey(viewingSecret);
+  const spendPublicKey = poseidon2Hash([1002n, spendSecret]);
+  const treasuryKey = poseidon2Hash([
+    1015n,
+    spendPublicKey,
+    viewingPublicKey[0],
+    viewingPublicKey[1],
+  ]);
+  const committeeConfigHash = sha256(
+    Buffer.concat([
+      fieldBytes(committeePublicKey[0]),
+      fieldBytes(committeePublicKey[1]),
+      Buffer.from("moros-mainnet-committee"),
+    ]),
+  );
+  return {
+    committeeSecret,
+    committeePublicKey,
+    committeeConfigHash,
+    treasuryKey,
+    spendSecret,
+    viewingSecret,
+    spendPublicKey,
+    viewingPublicKey,
+  };
+}

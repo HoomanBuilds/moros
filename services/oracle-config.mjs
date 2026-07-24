@@ -1,7 +1,4 @@
-export const REFLECTOR_CEX_ORACLE = "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63";
-export const REFLECTOR_FIAT_ORACLE = "CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W";
-
-export const REFLECTOR_CEX_ASSETS = [
+const CEX_ASSETS = [
   "BTC",
   "ETH",
   "USDT",
@@ -20,29 +17,94 @@ export const REFLECTOR_CEX_ASSETS = [
   "EURC",
 ];
 
-export const REFLECTOR_FIAT_ASSETS = [
-  "EUR",
-  "GBP",
-  "CHF",
-  "CAD",
-  "MXN",
-  "ARS",
-  "BRL",
-  "THB",
-  "XAU",
-];
+const REFLECTOR_NETWORKS = {
+  testnet: {
+    cexOracle:
+      "CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63",
+    fiatOracle:
+      "CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W",
+    cexAssets: CEX_ASSETS,
+    fiatAssets: [
+      "EUR",
+      "GBP",
+      "CHF",
+      "CAD",
+      "MXN",
+      "ARS",
+      "BRL",
+      "THB",
+      "XAU",
+    ],
+  },
+  mainnet: {
+    cexOracle:
+      "CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN",
+    fiatOracle:
+      "CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC",
+    cexAssets: CEX_ASSETS,
+    fiatAssets: [
+      "EUR",
+      "GBP",
+      "CAD",
+      "BRL",
+      "JPY",
+      "CNY",
+      "MXN",
+      "KRW",
+      "TRY",
+      "ARS",
+      "PEN",
+      "VES",
+      "CLP",
+      "CRC",
+      "CDF",
+      "COP",
+      "HKD",
+      "INR",
+      "NGN",
+      "PHP",
+      "RUB",
+      "ZAR",
+      "XAU",
+      "KES",
+    ],
+  },
+};
 
-export const FREE_REFLECTOR_ASSETS = [...REFLECTOR_CEX_ASSETS, ...REFLECTOR_FIAT_ASSETS];
+export function reflectorConfig(network = "testnet") {
+  const config = REFLECTOR_NETWORKS[network];
+  if (!config) {
+    throw new Error("oracle network must be testnet or mainnet");
+  }
+  return {
+    ...config,
+    cexAssets: [...config.cexAssets],
+    fiatAssets: [...config.fiatAssets],
+    freeAssets: [...config.cexAssets, ...config.fiatAssets],
+  };
+}
 
-export const FREE_REFLECTOR_RISK_GROUPS = FREE_REFLECTOR_ASSETS.map((asset) => ({
-  asset,
-  risk_group:
-    asset === "XAU"
-      ? "METALS"
-      : REFLECTOR_FIAT_ASSETS.includes(asset)
-        ? "FX"
-        : "CRYPTO",
-}));
+const testnetReflector = reflectorConfig("testnet");
+export const REFLECTOR_CEX_ORACLE = testnetReflector.cexOracle;
+export const REFLECTOR_FIAT_ORACLE = testnetReflector.fiatOracle;
+export const REFLECTOR_CEX_ASSETS = testnetReflector.cexAssets;
+export const REFLECTOR_FIAT_ASSETS = testnetReflector.fiatAssets;
+export const FREE_REFLECTOR_ASSETS = testnetReflector.freeAssets;
+
+export function reflectorRiskGroups(network = "testnet") {
+  const config = reflectorConfig(network);
+  return config.freeAssets.map((asset) => ({
+    asset,
+    risk_group:
+      asset === "XAU"
+        ? "METALS"
+        : config.fiatAssets.includes(asset)
+          ? "FX"
+          : "CRYPTO",
+  }));
+}
+
+export const FREE_REFLECTOR_RISK_GROUPS = reflectorRiskGroups("testnet");
 
 export const PYTH_PRO_FEEDS = {
   BTC: 1,
@@ -73,8 +135,12 @@ export function selectFreeResolver(deployment) {
   return resolver;
 }
 
-export function resolvableAssets(oracleMode) {
-  return new Set(oracleMode === "pyth_pro" ? Object.keys(PYTH_PRO_FEEDS) : FREE_REFLECTOR_ASSETS);
+export function resolvableAssets(oracleMode, network = "testnet") {
+  return new Set(
+    oracleMode === "pyth_pro"
+      ? Object.keys(PYTH_PRO_FEEDS)
+      : reflectorConfig(network).freeAssets,
+  );
 }
 
 export function resolutionPhase(now, expiry, finalizeAfter, resolutionTimeout) {
