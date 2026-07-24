@@ -6,9 +6,12 @@ repo="$(cd "$here/.." && pwd)"
 bundle="$repo/deploy-bundle.tar.gz"
 
 ARTIFACTS=(
-  "deployments"
+  "deployments/private-testnet.json"
   "circuits/private-build/public"
 )
+if [ -f "$repo/deployments/private-mainnet.json" ]; then
+  ARTIFACTS+=("deployments/private-mainnet.json")
+fi
 if [ -d "$repo/circuits/private-mainnet-build/public" ]; then
   ARTIFACTS+=("circuits/private-mainnet-build/public")
 fi
