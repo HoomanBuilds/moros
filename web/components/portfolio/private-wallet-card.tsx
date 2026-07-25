@@ -97,6 +97,11 @@ export function PrivateWalletCard() {
       if (!publicAccount?.exists) {
         throw new Error("Fund this Stellar account with XLM before enabling USDC");
       }
+      if (publicAccount.trustlineReserveShortfallAtomic > 0n) {
+        throw new Error(
+          `Add at least ${formatTokenAmount(publicAccount.trustlineReserveShortfallAtomic, 7, 7)} more XLM before enabling USDC`,
+        );
+      }
       await addCollateralTrustline(address, NETWORK.collateral);
       await refreshPublicBalance();
       setStatus("Stellar USDC is enabled");
@@ -271,12 +276,36 @@ export function PrivateWalletCard() {
             <div className="space-y-4">
               <div className="flex items-start gap-3 text-sm text-amber-100">
                 <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                Enable the Circle USDC trustline before depositing.
+                <div>
+                  <p className="font-medium">
+                    {account && account.trustlineReserveShortfallAtomic > 0n
+                      ? "Add XLM for the USDC trustline reserve"
+                      : "Enable the Circle USDC trustline before depositing"}
+                  </p>
+                  {account && account.trustlineReserveShortfallAtomic > 0n && (
+                    <p className="mt-1 text-xs leading-relaxed text-foreground/55">
+                      This wallet needs at least {formatTokenAmount(account.trustlineReserveShortfallAtomic, 7, 7)} more XLM before Stellar can add its USDC trustline. Round up slightly for future network fees.
+                    </p>
+                  )}
+                </div>
               </div>
-              <Button disabled={busy} onClick={() => void enableUsdc()}>
-                {busy ? <Spinner /> : <CircleDollarSign className="size-4" />}
-                {busy ? status : "Enable Stellar USDC"}
-              </Button>
+              {account && account.trustlineReserveShortfallAtomic > 0n ? (
+                <Button
+                  variant="outline"
+                  disabled={accountLoading}
+                  onClick={() => void refreshPublicBalance().catch((cause) => {
+                    setError(cause instanceof Error ? cause.message : "XLM balance could not be refreshed");
+                  })}
+                >
+                  {accountLoading ? <Spinner /> : <RefreshCw className="size-4" />}
+                  {accountLoading ? "Checking XLM reserve" : "Refresh after adding XLM"}
+                </Button>
+              ) : (
+                <Button disabled={busy} onClick={() => void enableUsdc()}>
+                  {busy ? <Spinner /> : <CircleDollarSign className="size-4" />}
+                  {busy ? status : "Enable Stellar USDC"}
+                </Button>
+              )}
               {NETWORK.id === "testnet" && (
                 <a
                   href="https://faucet.circle.com/"

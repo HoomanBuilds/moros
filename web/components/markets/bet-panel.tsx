@@ -248,6 +248,11 @@ export function BetPanel() {
       if (accountState && !accountState.exists) {
         throw new Error(`Fund this Stellar account with XLM before enabling ${collateral.code}`);
       }
+      if (accountState && accountState.trustlineReserveShortfallAtomic > 0n) {
+        throw new Error(
+          `Add at least ${formatTokenAmount(accountState.trustlineReserveShortfallAtomic, 7, 7)} more XLM before enabling ${collateral.code}`,
+        );
+      }
       await addCollateralTrustline(address, collateral);
       setAccountState(await getCollateralAccountState(address, collateral));
     } catch (cause) {
@@ -414,6 +419,17 @@ export function BetPanel() {
           </Button>
           <p className="text-xs leading-relaxed text-muted-foreground">
             Send XLM to this wallet first to create its Stellar account and cover reserves and network fees.
+          </p>
+        </div>
+      ) : accountState &&
+        !accountState.hasTrustline &&
+        accountState.trustlineReserveShortfallAtomic > 0n ? (
+        <div className="space-y-3">
+          <Button className="w-full" asChild>
+            <Link href="/app/portfolio">Add XLM for Stellar reserve</Link>
+          </Button>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            This wallet needs at least {formatTokenAmount(accountState.trustlineReserveShortfallAtomic, 7, 7)} more XLM before it can enable {collateral.code}.
           </p>
         </div>
       ) : accountState && !accountState.hasTrustline ? (
