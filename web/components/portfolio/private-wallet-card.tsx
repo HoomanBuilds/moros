@@ -93,6 +93,10 @@ export function PrivateWalletCard() {
     setStatus("Enabling Stellar USDC");
     setError("");
     try {
+      const publicAccount = account ?? await refreshPublicBalance();
+      if (!publicAccount?.exists) {
+        throw new Error("Fund this Stellar account with XLM before enabling USDC");
+      }
       await addCollateralTrustline(address, NETWORK.collateral);
       await refreshPublicBalance();
       setStatus("Stellar USDC is enabled");
@@ -112,6 +116,9 @@ export function PrivateWalletCard() {
     try {
       const amountAtomic = parseTokenAmount(amount, NETWORK.collateral.decimals);
       const publicAccount = account ?? await refreshPublicBalance();
+      if (!publicAccount?.exists) {
+        throw new Error("Fund this Stellar account with XLM before adding private USDC");
+      }
       if (!publicAccount?.hasTrustline) {
         throw new Error("Enable Stellar USDC before adding a private balance");
       }
@@ -238,6 +245,28 @@ export function PrivateWalletCard() {
               <WalletCards className="size-4" />
               Connect wallet to unlock
             </Button>
+          ) : account && !account.exists && !accountLoading ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 text-sm text-amber-100">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <div>
+                  <p className="font-medium">Activate this Stellar account first</p>
+                  <p className="mt-1 text-xs leading-relaxed text-foreground/55">
+                    This wallet has not been funded on {NETWORK.name}. Send XLM to the connected address to create the account and cover the USDC trustline reserve and network fees. A 2 XLM starting balance is recommended.
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                disabled={accountLoading}
+                onClick={() => void refreshPublicBalance().catch((cause) => {
+                  setError(cause instanceof Error ? cause.message : "Stellar account could not be refreshed");
+                })}
+              >
+                {accountLoading ? <Spinner /> : <RefreshCw className="size-4" />}
+                {accountLoading ? "Checking Stellar account" : "Refresh after funding"}
+              </Button>
+            </div>
           ) : !account?.hasTrustline && !accountLoading ? (
             <div className="space-y-4">
               <div className="flex items-start gap-3 text-sm text-amber-100">

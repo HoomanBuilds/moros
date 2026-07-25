@@ -199,6 +199,9 @@ export function BetPanel() {
     setWarning("");
     setStage(null);
     try {
+      if (!privateStack && accountState && !accountState.exists) {
+        throw new Error("Fund this Stellar account with XLM before placing a bet");
+      }
       if (!privateStack && !accountState?.hasTrustline) throw new Error(`Enable ${collateral.code} before placing a bet`);
       if (!privateStack && insufficient) throw new Error(`Insufficient ${collateral.code} balance`);
       setStage("securing");
@@ -242,6 +245,9 @@ export function BetPanel() {
     setError("");
     setTrustlineLoading(true);
     try {
+      if (accountState && !accountState.exists) {
+        throw new Error(`Fund this Stellar account with XLM before enabling ${collateral.code}`);
+      }
       await addCollateralTrustline(address, collateral);
       setAccountState(await getCollateralAccountState(address, collateral));
     } catch (cause) {
@@ -401,6 +407,15 @@ export function BetPanel() {
           <Spinner />
           Checking {collateral.code}
         </Button>
+      ) : accountState && !accountState.exists ? (
+        <div className="space-y-3">
+          <Button className="w-full" asChild>
+            <Link href="/app/portfolio">Activate Stellar account</Link>
+          </Button>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Send XLM to this wallet first to create its Stellar account and cover reserves and network fees.
+          </p>
+        </div>
       ) : accountState && !accountState.hasTrustline ? (
         <div className="space-y-3">
           <Button className="w-full" disabled={trustlineLoading} onClick={enableCollateral}>
