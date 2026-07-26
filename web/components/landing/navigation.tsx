@@ -4,14 +4,21 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ConnectButton } from "@/components/wallet/connect-button";
+import { BRAND } from "@/lib/brand";
 import { Menu, X } from "lucide-react";
 
-const navLinks = [
-  { name: "Features",      href: "#features"      },
-  { name: "How it works",  href: "#how-it-works"  },
-  { name: "Protocol",       href: "#infra"        },
-  { name: "Ecosystem",     href: "#integrations"  },
-  { name: "Security",      href: "#security"      },
+interface LandingNavLink {
+  name: string;
+  href: string;
+  newTab?: boolean;
+}
+
+const navLinks: LandingNavLink[] = [
+  { name: "Features", href: "#features" },
+  { name: "How it works", href: "#how-it-works" },
+  { name: "Whitepaper", href: BRAND.whitepaperHref, newTab: true },
+  { name: "Ecosystem", href: "#integrations" },
+  { name: "Security", href: "#security" },
 ];
 
 export function Navigation() {
@@ -34,8 +41,9 @@ export function Navigation() {
           : "top-0 left-0 right-0"
       }`}
     >
-      <nav 
-        className={`mx-auto transition-all duration-500 ${
+      <nav
+        aria-label="Primary navigation"
+        className={`relative z-50 mx-auto transition-all duration-500 ${
           isScrolled || isMobileMenuOpen
             ? "bg-background/80 backdrop-blur-xl border border-foreground/10 rounded-2xl shadow-lg max-w-[1200px]"
             : "bg-transparent max-w-[1400px]"
@@ -58,6 +66,9 @@ export function Navigation() {
               <a
                 key={link.name}
                 href={link.href}
+                target={link.newTab ? "_blank" : undefined}
+                rel={link.newTab ? "noopener noreferrer" : undefined}
+                aria-label={link.newTab ? `${link.name} (opens in a new tab)` : undefined}
                 className={`text-sm transition-colors duration-300 relative group ${isScrolled ? "text-foreground/70 hover:text-foreground" : "text-white/70 hover:text-white"}`}
               >
                 {link.name}
@@ -83,6 +94,8 @@ export function Navigation() {
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className={`md:hidden p-2 transition-colors duration-500 ${isScrolled || isMobileMenuOpen ? "text-foreground" : "text-white"}`}
             aria-label="Toggle menu"
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="landing-mobile-menu"
           >
             {isMobileMenuOpen ? (
               <X className="w-6 h-6" />
@@ -96,6 +109,7 @@ export function Navigation() {
       
       {/* Mobile Menu - Full Screen Overlay */}
       <div
+        id="landing-mobile-menu"
         className={`md:hidden fixed inset-0 bg-background z-40 transition-all duration-500 ${
           isMobileMenuOpen 
             ? "opacity-100 pointer-events-auto" 
@@ -105,11 +119,17 @@ export function Navigation() {
       >
         <div className="flex flex-col h-full px-8 pt-28 pb-8">
           {/* Navigation Links */}
-          <div className="flex-1 flex flex-col justify-center gap-8">
+          <nav
+            aria-label="Mobile navigation"
+            className="flex-1 flex flex-col justify-center gap-8"
+          >
             {navLinks.map((link, i) => (
               <a
                 key={link.name}
                 href={link.href}
+                target={link.newTab ? "_blank" : undefined}
+                rel={link.newTab ? "noopener noreferrer" : undefined}
+                aria-label={link.newTab ? `${link.name} (opens in a new tab)` : undefined}
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={`text-5xl font-display text-foreground hover:text-muted-foreground transition-all duration-500 ${
                   isMobileMenuOpen 
@@ -121,7 +141,7 @@ export function Navigation() {
                 {link.name}
               </a>
             ))}
-          </div>
+          </nav>
           
           {/* Bottom CTAs */}
           <div className={`flex gap-4 pt-8 border-t border-foreground/10 transition-all duration-500 ${

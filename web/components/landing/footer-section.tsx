@@ -4,7 +4,13 @@ import { useEffect, useRef } from "react";
 import { BRAND } from "@/lib/brand";
 import { NETWORK } from "@/lib/network";
 
-const footerLinks = {
+interface FooterLink {
+  name: string;
+  href: string;
+  newTab?: boolean;
+}
+
+const footerLinks: Record<string, FooterLink[]> = {
   Product: [
     { name: "Features", href: "#features" },
     { name: "How it works", href: "#how-it-works" },
@@ -13,8 +19,9 @@ const footerLinks = {
   ],
   Resources: [
     { name: "Launch app", href: "/app" },
+    { name: "Whitepaper", href: BRAND.whitepaperHref, newTab: true },
     { name: "Developers", href: "#developers" },
-    { name: "GitHub", href: BRAND.repoHref },
+    { name: "GitHub", href: BRAND.repoHref, newTab: true },
   ],
 };
 
@@ -122,6 +129,9 @@ export function FooterSection() {
                     <li key={link.name}>
                       <a
                         href={link.href}
+                        target={link.newTab ? "_blank" : undefined}
+                        rel={link.newTab ? "noopener noreferrer" : undefined}
+                        aria-label={link.newTab ? `${link.name} (opens in a new tab)` : undefined}
                         className="text-sm text-white/40 hover:text-white transition-colors inline-flex items-center gap-2"
                       >
                         {link.name}
