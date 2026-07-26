@@ -45,6 +45,7 @@ import {
 } from "./network-config.mjs";
 import { configureRpcFailover } from "./rpc-failover.mjs";
 import { configuredSecret } from "./key-config.mjs";
+import { isAllowedStellarRpcRequest } from "./stellar-rpc-proxy.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const network = networkConfig();
@@ -66,20 +67,6 @@ const RUNTIME_ROOT = resolve(
 );
 const TICK_MS = Number(process.env.PRIVATE_TICK_MS || 10_000);
 const MAX_BODY = 256 * 1024;
-const STELLAR_RPC_METHODS = new Set([
-  "getEvents",
-  "getFeeStats",
-  "getHealth",
-  "getLatestLedger",
-  "getLedgerEntries",
-  "getLedgers",
-  "getNetwork",
-  "getTransaction",
-  "getTransactions",
-  "getVersionInfo",
-  "sendTransaction",
-  "simulateTransaction",
-]);
 const FUNDER_SECRET = configuredSecret({
   secret: network.funderSecret,
   identity: network.funderIdentity,
@@ -774,11 +761,7 @@ async function main() {
         }
         const body = await readBody(request);
         if (
-          body?.jsonrpc !== "2.0" ||
-          typeof body.method !== "string" ||
-          !STELLAR_RPC_METHODS.has(body.method) ||
-          (body.params !== undefined &&
-            (!body.params || typeof body.params !== "object"))
+          !isAllowedStellarRpcRequest(body)
         ) {
           sendJson(request, response, 400, {
             error: "unsupported Stellar RPC request",
