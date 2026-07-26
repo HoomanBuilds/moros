@@ -44,7 +44,7 @@ export function FeaturedMarket({ row }: { row: MarketRow }) {
   return (
     <Panel className="overflow-hidden">
       <div className="space-y-6 p-6">
-        <header className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
+        <header className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:gap-8">
           <Link href={row.href} className="flex min-w-0 items-center gap-3">
             <MarketVisual
               resolverType={row.resolverType}
@@ -60,41 +60,46 @@ export function FeaturedMarket({ row }: { row: MarketRow }) {
             </div>
           </Link>
 
-          <div className="flex flex-wrap items-start gap-8">
+          <div className="grid w-full grid-cols-2 items-start gap-x-8 gap-y-4 sm:grid-cols-3 xl:w-[420px]">
             {isEvent ? (
               <>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Subject</span>
                   <span className="max-w-48 truncate text-sm">{row.subject || "Event market"}</span>
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Category</span>
-                  <span className="text-sm">{row.category || "Other"}</span>
+                  <span className="truncate text-sm">{row.category || "Other"}</span>
                 </div>
               </>
             ) : (
               <>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Strike price</span>
-                  <span className="font-mono text-lg tabular-nums">{fmtUsd(row.strikeNum)}</span>
+                  <span className="whitespace-nowrap font-mono text-lg tabular-nums">{fmtUsd(row.strikeNum)}</span>
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Current price</span>
-                  <span className="font-mono text-lg tabular-nums">{spot ? fmtUsd(spot.price) : "--"}</span>
-                  {delta !== null && Math.abs(delta) >= 0.0001 && (
-                    <span className="flex items-center gap-0.5 font-mono text-xs" style={{ color: delta >= 0 ? YES : NO }}>
-                      {delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                      {delta >= 0 ? "+" : "-"}{fmtUsd(Math.abs(delta))} vs strike
-                    </span>
-                  )}
+                  <span className="whitespace-nowrap font-mono text-lg tabular-nums">{spot ? fmtUsd(spot.price) : "--"}</span>
+                  <span
+                    className="flex min-h-4 items-center gap-0.5 whitespace-nowrap font-mono text-xs"
+                    style={{ color: delta !== null && delta >= 0 ? YES : NO }}
+                  >
+                    {delta !== null && Math.abs(delta) >= 0.0001 ? (
+                      <>
+                        {delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                        {delta >= 0 ? "+" : "-"}{fmtUsd(Math.abs(delta))} vs strike
+                      </>
+                    ) : null}
+                  </span>
                 </div>
               </>
             )}
-            <div className="flex flex-col gap-1">
+            <div className="flex min-w-0 flex-col gap-1">
               <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: row.live ? NO : undefined }}>
                 {row.live ? "Ends in" : "Status"}
               </span>
-              <span className="font-mono text-lg tabular-nums">{row.live ? row.resolutionLabel : `Resolved ${row.outcome}`}</span>
+              <span className="whitespace-nowrap font-mono text-lg tabular-nums">{row.live ? row.resolutionLabel : `Resolved ${row.outcome}`}</span>
             </div>
           </div>
         </header>
