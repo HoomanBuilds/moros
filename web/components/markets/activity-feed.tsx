@@ -8,7 +8,7 @@ import { NETWORK } from "@/lib/network";
 
 function shortHash(hex: string): string {
   const h = hex.startsWith("0x") ? hex.slice(2) : hex;
-  return `${h.slice(0, 8)}…${h.slice(-6)}`;
+  return `${h.slice(0, 8)}...${h.slice(-6)}`;
 }
 
 export function ActivityFeed() {
@@ -22,7 +22,7 @@ export function ActivityFeed() {
           Shielded activity
         </span>
         <p className="text-sm text-muted-foreground">
-          Every order is an on-chain commitment with an encrypted payload. The side and quantity stay out of public plaintext.
+          Every order is recorded as an encrypted on-chain submission. Its individual side and quantity stay private.
         </p>
       </div>
 
@@ -31,7 +31,7 @@ export function ActivityFeed() {
       ) : isError ? (
         <p className="font-mono text-sm text-muted-foreground">Activity is momentarily unavailable.</p>
       ) : !orders || orders.length === 0 ? (
-        <p className="font-mono text-sm text-muted-foreground">No shielded orders yet. Be the first.</p>
+        <p className="font-mono text-sm text-muted-foreground">No recent shielded orders.</p>
       ) : (
         <div className="divide-y divide-foreground/10">
           {orders.map((o) => (

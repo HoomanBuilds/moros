@@ -1,7 +1,6 @@
 "use client";
 import type { ReactNode } from "react";
 import { useMarket } from "@/lib/stellar/use-market";
-import { useOrders } from "@/lib/stellar/use-orders";
 import { formatStrike, centsLabel } from "@/lib/stellar/derive";
 import { Panel } from "@/components/app/app-kit";
 
@@ -21,14 +20,13 @@ function Metric({ label, value, color }: { label: string; value: ReactNode; colo
 
 export function MetricRow() {
   const { data } = useMarket();
-  const { data: orders } = useOrders();
   const py = data ? data.probYes : null;
   return (
     <Panel className="grid grid-cols-2 divide-x divide-y divide-foreground/10 sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
       <Metric label="Yes price" value={centsLabel(py)} color={YES} />
       <Metric label="No price" value={centsLabel(py === null ? null : 1 - py)} color={NO} />
       <Metric label="Pool collateral" value={data ? `${data.poolSize.toFixed(2)} ${data.collateral.code}` : "--"} />
-      <Metric label="Shielded orders" value={orders ? orders.length : "--"} />
+      <Metric label="Shielded orders" value={data?.orderCount ?? "--"} />
       <Metric label="Settles in" value={data ? data.resolutionLabel : "--"} />
       <Metric label="Settles at" value={data ? formatStrike(Number(data.strike)) : "--"} />
     </Panel>

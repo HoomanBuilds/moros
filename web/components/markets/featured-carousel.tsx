@@ -5,9 +5,11 @@ import { useMarketCatalog } from "@/lib/markets/catalog";
 import { FeaturedMarket } from "./featured-market";
 import { Panel } from "@/components/app/app-kit";
 import { cn } from "@/lib/utils";
+import { sortRows } from "@/lib/markets/sort";
 
 export function FeaturedCarousel() {
-  const { rows, isLoading } = useMarketCatalog();
+  const { rows: catalogRows, isLoading } = useMarketCatalog();
+  const rows = sortRows(catalogRows, "ending");
   const [i, setI] = useState(0);
   const n = rows.length;
 

@@ -1,6 +1,6 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
-import { getMarketState, getPriceYes, getOutcome, getMarketInfo, getPoolBalance, getMarketResolver, getEventRulesHash, getFeeConfig, getPrivateMarketRegistration } from "./read";
+import { getMarketState, getPriceYes, getOutcome, getMarketInfo, getPoolBalance, getMarketResolver, getEventRulesHash, getFeeConfig, getPrivateMarketRegistration, getPrivateOrderCount } from "./read";
 import { probFromFixed, fixedToNumber, outcomeLabel, marketQuestion, marketStrike, formatCountdown } from "./derive";
 import { useActiveMarket } from "@/lib/markets/market-context";
 import { NETWORK, type CollateralAsset } from "@/lib/network";
@@ -25,12 +25,17 @@ export async function fetchMarket(
     ? Promise.all([
         getPoolBalance(readPlan.balanceOwner, collateral),
         getPrivateMarketRegistration(poolId, marketId),
-      ]).then(([poolBalance, registration]) => {
+      ]).then(async ([poolBalance, registration]) => {
         if (!registration || registration.market !== marketId) {
           throw new Error("Private market registration is unavailable");
         }
         return {
           poolBalance,
+          orderCount: await getPrivateOrderCount(
+            poolId,
+            marketId,
+            registration,
+          ),
           feeBps: registration.fee_bps,
           lotSize: fixedToNumber(registration.lot_size),
           maximumBatchSize: registration.maximum_batch_size,
@@ -42,6 +47,7 @@ export async function fetchMarket(
         getFeeConfig(poolId),
       ]).then(([poolBalance, feeConfig]) => ({
         poolBalance,
+        orderCount: 0,
         feeBps: Number(feeConfig[1]),
         lotSize: 1,
         maximumBatchSize: null,
@@ -104,6 +110,7 @@ export async function fetchMarket(
     asset: info.asset,
     strike: marketStrike(info),
     poolSize: Number(formatTokenAmount(marketEconomics.poolBalance, collateral.decimals, 7)),
+    orderCount: marketEconomics.orderCount,
     collateral,
     feeBps: marketEconomics.feeBps,
     lotSize: marketEconomics.lotSize,

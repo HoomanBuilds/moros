@@ -12,6 +12,7 @@ export const SORT_OPTIONS: { id: SortId; label: string }[] = [
 export function sortRows(rows: MarketRow[], sort: SortId): MarketRow[] {
   const copy = [...rows];
   copy.sort((a, b) => {
+    if (a.live !== b.live) return a.live ? -1 : 1;
     switch (sort) {
       case "ending":
         return a.secondsLeft - b.secondsLeft;

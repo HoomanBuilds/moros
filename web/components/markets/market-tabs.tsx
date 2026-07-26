@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import { useOrders } from "@/lib/stellar/use-orders";
 import { ActivityFeed } from "./activity-feed";
 import { AboutPanel } from "./about-panel";
 import { PositionsList } from "@/components/portfolio/positions-list";
@@ -14,12 +13,11 @@ type TabKey = "activity" | "positions" | "resolution" | "about" | "comments";
 
 export function MarketTabs() {
   const [tab, setTab] = useState<TabKey>("activity");
-  const { data: orders } = useOrders();
   const { marketId } = useActiveMarket();
   const { data: market } = useMarket();
 
   const tabs: { key: TabKey; label: string }[] = [
-    { key: "activity", label: `Activity${orders ? ` (${orders.length})` : ""}` },
+    { key: "activity", label: `Activity${market ? ` (${market.orderCount})` : ""}` },
     { key: "positions", label: "Your positions" },
     ...(market?.resolverType === "event" ? [{ key: "resolution" as const, label: "Resolution" }] : []),
     { key: "about", label: "About" },

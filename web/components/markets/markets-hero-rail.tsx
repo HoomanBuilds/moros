@@ -2,12 +2,14 @@
 import Link from "next/link";
 import { ArrowUpRight, ShieldCheck, Boxes } from "lucide-react";
 import { Panel } from "@/components/app/app-kit";
-import { useMarkets } from "@/lib/markets/registry";
+import { useMarketCatalog } from "@/lib/markets/catalog";
+import { sortRows } from "@/lib/markets/sort";
 
 const ACCENT = "#eca8d6";
 
 export function MarketsHeroRail() {
-  const market = useMarkets()[0];
+  const { rows } = useMarketCatalog();
+  const market = sortRows(rows, "ending").find((row) => row.live);
   return (
     <div className="flex flex-col gap-4">
       <Panel className="flex flex-col justify-between gap-6 p-6" >
@@ -21,7 +23,7 @@ export function MarketsHeroRail() {
           </p>
         </div>
         <Link
-          href={market ? `/app/market/${market.marketId}` : "/app/create"}
+          href={market?.href ?? "/app/create"}
           className="inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-background"
           style={{ backgroundColor: ACCENT }}
         >

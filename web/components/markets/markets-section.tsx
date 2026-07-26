@@ -153,14 +153,14 @@ export function MarketsSection() {
         </div>
       </div>
 
-      <div className="-mx-6 overflow-x-auto px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:-mx-10 lg:px-10">
+      <div className="w-full max-w-full touch-pan-x overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex min-w-max items-center gap-2" role="group" aria-label="Market category filter">
           <button
             type="button"
             aria-pressed={category === "All"}
             onClick={() => setCategory("All")}
             className={cn(
-              "inline-flex min-h-11 items-center gap-2 rounded-full border px-3.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
+              "inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-3.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
               category === "All" ? "border-[#eca8d6]/45 bg-[#eca8d6]/10 text-foreground" : "border-white/10 text-foreground/55 hover:border-white/20 hover:text-foreground",
             )}
           >
@@ -174,7 +174,7 @@ export function MarketsSection() {
               aria-pressed={category === item}
               onClick={() => setCategory(item)}
               className={cn(
-                "inline-flex min-h-11 items-center gap-2 rounded-full border px-3.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
+                "inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-3.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
                 category === item ? "border-[#eca8d6]/45 bg-[#eca8d6]/10 text-foreground" : "border-white/10 text-foreground/55 hover:border-white/20 hover:text-foreground",
               )}
             >

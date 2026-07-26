@@ -1,7 +1,6 @@
 "use client";
 import { useQueries } from "@tanstack/react-query";
 import { fetchMarket } from "@/lib/stellar/use-market";
-import { getRecentOrders } from "@/lib/stellar/events";
 import { useMarkets, type MarketEntry } from "./registry";
 import { collateralForEntry } from "./market-context";
 
@@ -35,10 +34,12 @@ export type MarketRow = {
 
 async function fetchRow(entry: MarketEntry): Promise<MarketRow> {
   const collateral = collateralForEntry(entry);
-  const [data, orders] = await Promise.all([
-    fetchMarket(entry.marketId, entry.poolId, collateral, entry),
-    getRecentOrders(30, entry.poolId).catch(() => []),
-  ]);
+  const data = await fetchMarket(
+    entry.marketId,
+    entry.poolId,
+    collateral,
+    entry,
+  );
   return {
     id: entry.marketId,
     href: `/app/market/${entry.marketId}`,
@@ -63,7 +64,7 @@ async function fetchRow(entry: MarketEntry): Promise<MarketRow> {
     secondsLeft: data.secondsLeft,
     poolSize: data.poolSize,
     collateralCode: collateral.code,
-    orders: orders.length,
+    orders: data.orderCount,
     flagship: !!entry.flagship,
   };
 }
