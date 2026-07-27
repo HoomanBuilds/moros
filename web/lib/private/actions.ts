@@ -48,6 +48,7 @@ import {
   selectSmallestSufficientNote,
 } from "./note-selection";
 import { nextPrivateOrderSequence } from "./order-sequence";
+import { privatePositionContractMethod } from "./position-action";
 import { calculateExecutedPositionAmounts } from "./position-accounting";
 import {
   openPrivateWallet,
@@ -1211,10 +1212,9 @@ export async function withdrawLiquidity({
     );
     if (!preview.can_redeem_now) {
       const available = formatPrivateAtomic(preview.immediate_assets);
-      const resets = new Date(Number(preview.limiter_resets_at) * 1_000)
-        .toLocaleString();
+      const requested = formatPrivateAtomic(preview.assets);
       throw new Error(
-        `This share note is larger than the current ${available} USDC immediate exit capacity. The limit resets ${resets}.`,
+        `This withdrawal is worth ${requested} USDC, but current immediate exit capacity is ${available} USDC. Enter fewer shares or wait until active market exposure is released.`,
       );
     }
     assets = preview.assets;
@@ -3216,11 +3216,7 @@ export async function runPrivatePositionAction({
     publicAmount: 0n,
   }));
   onStatus?.("Relaying the unlinkable settlement");
-  const method = action === "recover-change"
-    ? "recover_execution_change"
-    : action === "claim"
-      ? "claim_position"
-      : "refund_order";
+  const method = privatePositionContractMethod(action, acceptedMode);
   const hash = await relayPrivateContractCall(
     wallet.config.contracts.sharedVault,
     address,

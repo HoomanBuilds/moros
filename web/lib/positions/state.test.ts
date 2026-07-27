@@ -1,5 +1,10 @@
 import assert from "node:assert";
-import { derivePositionLifecycle, estimateSettlement, parseOrderStatus } from "./state.ts";
+import {
+  derivePositionLifecycle,
+  estimateSettlement,
+  isSettledPositionLifecycle,
+  parseOrderStatus,
+} from "./state.ts";
 
 const scale = 1n << 32n;
 const winner = estimateSettlement({
@@ -55,6 +60,13 @@ assert.deepEqual(derivePositionLifecycle({
   acceptingOrders: false,
   finalizable: true,
 }), { lifecycle: "full_refund", action: "refund" });
+
+assert.equal(isSettledPositionLifecycle("full_refund"), true);
+assert.equal(isSettledPositionLifecycle("claim_winnings"), true);
+assert.equal(isSettledPositionLifecycle("recover_collateral"), true);
+assert.equal(isSettledPositionLifecycle("refunded"), true);
+assert.equal(isSettledPositionLifecycle("active"), false);
+assert.equal(isSettledPositionLifecycle("closed"), false);
 
 assert.equal(parseOrderStatus("Included"), "Included");
 assert.equal(parseOrderStatus({ tag: "Pending" }), "Pending");

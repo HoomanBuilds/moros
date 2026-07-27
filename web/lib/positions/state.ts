@@ -19,6 +19,22 @@ export type PositionLifecycle =
   | "recovered"
   | "refunded";
 
+const SETTLED_LIFECYCLES = new Set<PositionLifecycle>([
+  "claim_winnings",
+  "recover_collateral",
+  "full_refund",
+  "claimed",
+  "recovered",
+  "refunded",
+  "lost",
+]);
+
+export function isSettledPositionLifecycle(
+  lifecycle: PositionLifecycle,
+): boolean {
+  return SETTLED_LIFECYCLES.has(lifecycle);
+}
+
 export type SettlementEstimate = {
   winner: boolean;
   payoutFixed: bigint;

@@ -538,8 +538,8 @@ export default function LiquidityPage() {
                       </div>
                       {!share.preview?.can_redeem_now && (
                         <p className="mt-3 text-[11px] leading-relaxed text-amber-100/70">
-                          This full note exceeds current immediate capacity. Enter a smaller share
-                          amount or retry after the withdrawal window resets.
+                          This full note exceeds current immediate capacity. Enter fewer shares or
+                          wait until active market exposure is released.
                         </p>
                       )}
                       {action.status && (

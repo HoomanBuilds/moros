@@ -26,6 +26,7 @@ import {
 import {
   derivePositionLifecycle,
   estimateSettlement,
+  isSettledPositionLifecycle,
   parseOrderStatus,
   type PositionAction,
   type PositionLifecycle,
@@ -82,7 +83,6 @@ const LIFECYCLE: Record<PositionLifecycle, { label: string; detail: string; tone
 };
 
 const ACTIVE = new Set<PositionLifecycle>(["awaiting_submission", "awaiting_batch", "active", "closed", "recover_execution_change"]);
-const SETTLED = new Set<PositionLifecycle>(["claimed", "recovered", "refunded", "lost"]);
 
 function queryPosition(position: Position) {
   const entry = findMarket(position.market);
@@ -448,7 +448,8 @@ function PositionCard({
         )}
 
         {loading && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="size-3" />Reading on-chain position state</p>}
-        {error && <p className="text-sm text-red-400">Could not read this position from Stellar. No action is enabled until the state is verified.</p>}
+        {error && !state && <p className="text-sm text-red-400">Could not read this position from Stellar. No action is enabled until the state is verified.</p>}
+        {error && state && <p className="text-sm text-amber-300">The latest Stellar refresh failed. Showing the last verified state.</p>}
         {state && !state.supported && <p className="text-sm text-amber-300">This older record is not part of the active USDC release. Moros will not guess its pool or collateral.</p>}
 
         {state?.supported && <PositionActionButton position={position} state={state} onCompleted={onCompleted} />}
@@ -526,7 +527,7 @@ export function PositionsList() {
       if (!lifecycle) return;
       if (ACTIVE.has(lifecycle)) active++;
       if (query.data?.action) action++;
-      if (SETTLED.has(lifecycle)) settled++;
+      if (isSettledPositionLifecycle(lifecycle)) settled++;
     });
     return { active, action, settled };
   }, [states]);
@@ -536,7 +537,7 @@ export function PositionsList() {
     if (filter === "all") return true;
     if (filter === "action") return !!state?.action;
     if (filter === "active") return !!state?.lifecycle && ACTIVE.has(state.lifecycle);
-    return !!state?.lifecycle && SETTLED.has(state.lifecycle);
+    return !!state?.lifecycle && isSettledPositionLifecycle(state.lifecycle);
   });
 
   async function restore() {
