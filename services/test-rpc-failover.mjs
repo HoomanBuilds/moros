@@ -22,6 +22,28 @@ assert.deepEqual(calls, [
   "https://primary.example",
   "https://fallback.example",
 ]);
+const rateLimitedCalls = [];
+const rateLimitedResponse = await rpcFetch(
+  [
+    "https://primary.example",
+    "https://fallback.example",
+    "https://public.example",
+  ],
+  "https://primary.example",
+  { method: "POST", body: "{}" },
+  async (url) => {
+    rateLimitedCalls.push(String(url));
+    return new Response("{}", {
+      status: rateLimitedCalls.length < 3 ? 429 : 200,
+    });
+  },
+);
+assert.equal(rateLimitedResponse.status, 200);
+assert.deepEqual(rateLimitedCalls, [
+  "https://primary.example",
+  "https://fallback.example",
+  "https://public.example",
+]);
 assert.equal(
   (
     await rpcFetch(

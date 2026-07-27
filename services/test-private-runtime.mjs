@@ -33,6 +33,10 @@ assert.equal(
   corsHeaders["access-control-allow-origin"],
   "https://moros-six.vercel.app",
 );
+assert.equal(
+  corsHeaders["access-control-expose-headers"],
+  "retry-after, x-ratelimit-reset",
+);
 assert.deepEqual(
   privateResponseHeaders(
     { headers: { origin: "https://untrusted.example" } },

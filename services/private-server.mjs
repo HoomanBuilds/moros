@@ -104,10 +104,11 @@ function responseHeaders(request) {
   return privateResponseHeaders(request, ALLOWED_ORIGINS);
 }
 
-function sendJson(request, response, status, value) {
+function sendJson(request, response, status, value, extraHeaders = {}) {
   const body = `${JSON.stringify(jsonValue(value))}\n`;
   response.writeHead(status, {
     ...responseHeaders(request),
+    ...extraHeaders,
     "cache-control": "no-store",
     "content-length": Buffer.byteLength(body),
     "content-type": "application/json; charset=utf-8",
@@ -426,7 +427,7 @@ async function main() {
     windowMs: 60_000,
   });
   const rpcPerClient = new FixedWindowRateLimiter({
-    limit: Number(process.env.STELLAR_RPC_CLIENT_LIMIT || 180),
+    limit: Number(process.env.STELLAR_RPC_CLIENT_LIMIT || 600),
     windowMs: 60_000,
   });
   const rpcGlobal = new FixedWindowRateLimiter({
@@ -752,11 +753,28 @@ async function main() {
         requestUrl.pathname === "/stellar/rpc"
       ) {
         const clientKey = requestClientKey(request);
-        if (
-          !rpcPerClient.take(clientKey).allowed ||
-          !rpcGlobal.take("stellar-rpc").allowed
-        ) {
-          sendJson(request, response, 429, { error: "rate limit exceeded" });
+        const clientRate = rpcPerClient.take(clientKey);
+        const globalRate = clientRate.allowed
+          ? rpcGlobal.take("stellar-rpc")
+          : null;
+        if (!clientRate.allowed || !globalRate?.allowed) {
+          const resetAt = clientRate.allowed
+            ? globalRate?.resetAt ?? Date.now() + 60_000
+            : clientRate.resetAt;
+          const retryAfter = Math.max(
+            1,
+            Math.ceil((resetAt - Date.now()) / 1_000),
+          );
+          sendJson(
+            request,
+            response,
+            429,
+            { error: "rate limit exceeded" },
+            {
+              "retry-after": String(retryAfter),
+              "x-ratelimit-reset": String(Math.ceil(resetAt / 1_000)),
+            },
+          );
           return;
         }
         const body = await readBody(request);
