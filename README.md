@@ -490,7 +490,7 @@ All listed core contract instances, Circle USDC SAC, and Reflector dependencies 
 ## Repository structure
 
 ```text
-agentic-payment-infra/
+moros/
 ├── circuits/                         Circom sources, build scripts, and proving manifests
 ├── contracts/
 │   ├── lmsr-market/                  Batch pricing, execution, settlement, and claims
@@ -504,6 +504,7 @@ agentic-payment-infra/
 │   └── zk-verifier/                  Groth16 proof verification
 ├── deployments/                      Network-scoped deployment and artifact records
 ├── docs/                             Technical whitepaper source and PDF
+├── fixtures/                         Reference protocol economics fixtures
 ├── services/
 │   ├── private-server.mjs            Private relay, coordinator, RPC proxy, and artifact host
 │   ├── resolve-keeper.mjs            Resolution, LP allocation, harvesting, and TTL keeper
