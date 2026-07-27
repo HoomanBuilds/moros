@@ -5,23 +5,27 @@
 <h1 align="center">Moros</h1>
 
 <p align="center">
-  Private prediction markets settled in Circle USDC on Stellar.
+  <b>Stellar's first private prediction market.</b>
+</p>
+
+<p align="center">
+  Encrypted positions, proof-bound settlement, and Circle USDC on Stellar Mainnet.
 </p>
 
 <p align="center">
   <a href="https://moros.fun">Live App</a> |
   <a href="https://moros.fun/app/create">Create a Market</a> |
   <a href="https://moros.fun/app/portfolio">Portfolio</a> |
+  <a href="https://moros.fun/whitepaper.pdf">Whitepaper</a> |
+  <a href="https://github.com/HoomanBuilds/moros">GitHub</a> |
   <a href="https://x.com/morosxyz">X</a>
 </p>
 
 > Moros lets anyone propose a price market, place an encrypted YES or NO position, provide reusable private liquidity, and claim a proof-bound payout without publishing their position to the public chain.
 
-## Mainnet status
+## Live on Stellar Mainnet
 
-Moros is deployed on Stellar mainnet in limited beta and uses real Circle USDC. The current release supports crypto, foreign exchange, and gold price markets resolved through public Reflector feeds.
-
-This is early financial software. Use small amounts and read the [security and trust assumptions](#security-and-trust-assumptions) before depositing.
+Moros is deployed on Stellar Mainnet and settles markets in real Circle USDC. The current release supports crypto, foreign exchange, and gold price markets resolved through public Reflector feeds.
 
 - Network: Stellar mainnet
 - Collateral: Circle USDC on Stellar
@@ -31,17 +35,16 @@ This is early financial software. Use small amounts and read the [security and t
 - Payouts: user-initiated claims and refunds
 - Event markets: disabled until their evidence, challenge, arbitration, and refund operations are complete
 
-The mainnet deployment started from a clean state. Testnet markets, private notes, and application records were not migrated.
-
 ## Contents
 
+- [For judges and reviewers](#for-judges-and-reviewers)
 - [What Moros does](#what-moros-does)
 - [Why private batch markets](#why-private-batch-markets)
 - [How a market works](#how-a-market-works)
+- [System architecture](#system-architecture)
 - [Pricing, liquidity, and fees](#pricing-liquidity-and-fees)
 - [Privacy model](#privacy-model)
 - [Supported mainnet markets](#supported-mainnet-markets)
-- [System architecture](#system-architecture)
 - [Mainnet deployment](#mainnet-deployment)
 - [Application routes](#application-routes)
 - [Repository structure](#repository-structure)
@@ -50,6 +53,58 @@ The mainnet deployment started from a clean state. Testnet markets, private note
 - [Switch between mainnet and testnet](#switch-between-mainnet-and-testnet)
 - [Security and trust assumptions](#security-and-trust-assumptions)
 - [Verification checklist](#verification-checklist)
+
+## For judges and reviewers
+
+### Quick access
+
+| Item | Link or value |
+| --- | --- |
+| Live product | [moros.fun](https://moros.fun) |
+| Market application | [moros.fun/app](https://moros.fun/app) |
+| Technical whitepaper | [moros.fun/whitepaper.pdf](https://moros.fun/whitepaper.pdf) |
+| Source code | [github.com/HoomanBuilds/moros](https://github.com/HoomanBuilds/moros) |
+| Network | Stellar Mainnet |
+| Settlement asset | Circle USDC |
+| Canonical deployment | [deployments/private-mainnet.json](./deployments/private-mainnet.json) |
+| Proving manifest | [deployments/private-mainnet-proving.json](./deployments/private-mainnet-proving.json) |
+
+### Core mainnet contracts
+
+| Contract | Mainnet contract ID |
+| --- | --- |
+| Groth16 verifier | [CD4RRUKDBQ6IP6LQJYTBGF5OOVFHIJWUULJCV52LANOLQEGYG4C5JQWL](https://stellar.expert/explorer/public/contract/CD4RRUKDBQ6IP6LQJYTBGF5OOVFHIJWUULJCV52LANOLQEGYG4C5JQWL) |
+| Price resolver | [CAUDDAZVWDGWHDC6IHV66RAQ2CTLMXGXUEOT6VNU7OF4ACZPMXUEDLWA](https://stellar.expert/explorer/public/contract/CAUDDAZVWDGWHDC6IHV66RAQ2CTLMXGXUEOT6VNU7OF4ACZPMXUEDLWA) |
+| Resolver registry | [CCK6GQ7DQDWCBZEIGVGDZ3AF3STHHXNVFYDKMFU634YHA7QDIQY3YKEB](https://stellar.expert/explorer/public/contract/CCK6GQ7DQDWCBZEIGVGDZ3AF3STHHXNVFYDKMFU634YHA7QDIQY3YKEB) |
+| Shared shielded vault | [CBXZUAUEFAXZFRL4J7DTLS3GLAEY5OMIBBAUI672KJJE7FGU5LQJGXXL](https://stellar.expert/explorer/public/contract/CBXZUAUEFAXZFRL4J7DTLS3GLAEY5OMIBBAUI672KJJE7FGU5LQJGXXL) |
+| Pooled liquidity vault | [CB45XJ65Y46J2KGLUI6ZGUQ6C5EN7KS2BGI636ISIKSSBHVDYICPWP3F](https://stellar.expert/explorer/public/contract/CB45XJ65Y46J2KGLUI6ZGUQ6C5EN7KS2BGI636ISIKSSBHVDYICPWP3F) |
+| Market factory | [CDJ44IRLMZFEA4XY3J2XJMFLD4XIB3OIMRTYWBQZVX5ESBXMHNTOO3O7](https://stellar.expert/explorer/public/contract/CDJ44IRLMZFEA4XY3J2XJMFLD4XIB3OIMRTYWBQZVX5ESBXMHNTOO3O7) |
+
+### Mainnet dependencies
+
+| Dependency | Mainnet ID |
+| --- | --- |
+| Circle USDC issuer | [GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN](https://stellar.expert/explorer/public/account/GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN) |
+| Circle USDC Stellar Asset Contract | [CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75](https://stellar.expert/explorer/public/contract/CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75) |
+| Reflector CEX feed | [CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN](https://stellar.expert/explorer/public/contract/CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN) |
+| Reflector fiat and metals feed | [CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC](https://stellar.expert/explorer/public/contract/CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC) |
+
+### Recommended review path
+
+1. Open the [market application](https://moros.fun/app) and inspect active and resolved markets.
+2. Open a market to review its oracle route, liquidity, encrypted activity, batch pricing, and resolution state.
+3. Open [Portfolio](https://moros.fun/app/portfolio) to inspect the reusable private USDC wallet, encrypted recovery, positions, claims, and refunds.
+4. Open [Liquidity](https://moros.fun/app/liquidity) to inspect pooled LP shares, automatic market allocation, and private exits.
+5. Compare the live contract graph with the [canonical deployment manifest](./deployments/private-mainnet.json).
+
+### What is technically distinct
+
+- One reusable shielded USDC balance supports orders, liquidity, claims, refunds, and withdrawals.
+- Individual side, quantity, note ownership, and private portfolio history are not published as plaintext.
+- Encrypted orders clear in aggregate epochs, and the visible LMSR probability moves only after batch execution.
+- Market creators propose supported markets without personally funding the full LMSR subsidy.
+- Permissionless LP capital is pooled, while each funded market receives an isolated risk allocation.
+- Fifteen Groth16 circuits bind private note transitions and batch execution to Stellar contract state.
 
 ## What Moros does
 
@@ -98,7 +153,7 @@ That balance can be split and reused for:
 - LP exits
 - Claims
 - Refunds
-- Private transfers inside Moros
+- Private note consolidation
 
 ### 2. Propose a market
 
@@ -108,9 +163,8 @@ Any connected user can define:
 - USD strike price
 - Exact future settlement time
 - Liquidity target
-- Execution fee within the protocol cap
 
-The market factory validates the proposal against the resolver registry, allowed collateral, timing rules, liquidity tiers, and fee limits.
+The application applies the current protocol execution fee. The market factory validates the proposal against the resolver registry, allowed collateral, timing rules, liquidity tiers, and fee limits.
 
 The proposer does not need to fund the LMSR subsidy personally. A proposed market activates only after the pooled LP vault assigns enough capital to cover its configured risk.
 
@@ -137,7 +191,7 @@ Every unit on the same side receives the same batch clearing price. The LMSR sta
 
 ### 5. Resolve from a registered price feed
 
-After the configured expiry, the keeper reads the enabled Reflector route, verifies freshness and quote rules, and submits the resolution transaction.
+After the final batch window closes, the keeper invokes the registered resolver. The resolver reads the enabled Reflector contract on Stellar, verifies the USD quote and freshness rules, and resolves the market on-chain.
 
 For the currently supported markets:
 
@@ -157,6 +211,99 @@ Settlement does not automatically send money to every wallet. Stellar contracts 
 - An order batch that misses its execution deadline becomes refundable.
 - Terminal market capital and vested fees return to the pooled LP system through service-submitted transactions.
 - A user may withdraw private balance to a public Stellar wallet at any time allowed by vault capacity and withdrawal rules.
+
+## System architecture
+
+Moros separates user secrets, service coordination, public market state, and external data into explicit trust boundaries.
+
+```mermaid
+flowchart TB
+    subgraph user["User boundary"]
+        wallet["Stellar wallet"]
+        browser["Next.js browser app<br/>note selection, encryption, proofs, recovery"]
+        wallet --> browser
+    end
+
+    sync["Supabase private sync<br/>encrypted portfolio pages"]
+    service["Private service and keeper<br/>relay, epochs, LP allocation, resolution"]
+    committee["Encrypted-order committee<br/>aggregate decryption and batch witness"]
+
+    subgraph stellar["Stellar Mainnet"]
+        usdc["Circle USDC SAC"]
+        verifier["Groth16 verifier"]
+        shielded["Shared shielded vault"]
+        pooled["Pooled liquidity vault"]
+        factory["Market factory"]
+        registry["Resolver registry"]
+        resolver["Price resolver"]
+        market["Per-market LMSR contract"]
+        isolated["Per-market isolated liquidity vault"]
+        reflector["Reflector price feeds"]
+
+        shielded <--> usdc
+        shielded --> verifier
+        shielded --> market
+        shielded --> pooled
+        pooled --> isolated
+        isolated --> market
+        factory --> registry
+        factory --> market
+        factory --> isolated
+        registry --> resolver
+        resolver --> reflector
+        resolver --> market
+    end
+
+    browser <-->|ciphertext only| sync
+    browser -->|signed deposits and withdrawals| shielded
+    browser -->|signed market proposals| factory
+    browser -->|proofs, commitments, encrypted orders| service
+    service <-->|aggregate batch coordination| committee
+    service -->|proof-bound relays and batch calls| shielded
+    service -->|allocation and harvesting calls| pooled
+    service -->|proposal activation| factory
+    service -->|expired-market resolution call| resolver
+```
+
+### Browser responsibilities
+
+- Connect the Stellar wallet and request only the signatures required for the selected action.
+- Derive the network-scoped private archive key.
+- Select, split, and recover private notes.
+- Encrypt order side and quantity before submission.
+- Generate user proofs without sending private witnesses to Moros.
+- Encrypt private portfolio pages before they reach Supabase.
+
+### Contract responsibilities
+
+| Component | Responsibility |
+| --- | --- |
+| Groth16 verifier | Verifies registered proof shapes using Stellar host cryptography |
+| Shared shielded vault | Holds Circle USDC and validates private note transitions |
+| Pooled liquidity vault | Issues private LP shares and controls aggregate capital deployment |
+| Market factory | Validates proposals and deploys isolated market instances |
+| LMSR market | Prices orders, executes batches, resolves outcomes, and accounts for claims |
+| Market liquidity vault | Isolates the capital assigned to one market |
+| Resolver registry | Maps supported asset routes to approved resolver contracts |
+| Price resolver | Reads fresh Reflector observations and resolves eligible markets |
+
+Per-market LMSR and isolated liquidity contracts are deployed by the factory after a proposal is accepted and funded. Their addresses are dynamic and indexed by the application.
+
+### Service responsibilities
+
+The service layer coordinates work that is not automatic on-chain, but it does not replace contract proof checks or authorization:
+
+- Accept and coordinate encrypted orders
+- Seal full or expired epochs
+- Produce aggregate batch proofs
+- Submit batch execution
+- Allocate idle LP capital
+- Harvest terminal market capital
+- Invoke resolution for expired price markets
+- Maintain contract instance and code TTL
+- Relay proof-bound user operations
+- Serve public proving artifacts
+- Proxy Stellar RPC with configured provider failover
 
 ## Pricing, liquidity, and fees
 
@@ -296,94 +443,11 @@ Reflector CEX and Reflector fiat or metals are separate contracts, but they are 
 
 Sports, politics, weather, economics, entertainment, and custom event markets are not enabled on mainnet. Their UI options remain locked until Moros has production evidence observers, dispute windows, arbitration, and reliable void or refund monitoring for those categories.
 
-## System architecture
-
-```text
-Stellar wallet
-    |
-    +-- Circle USDC deposit or withdrawal
-    |
-Next.js application
-    |
-    +-- Browser proof generation
-    +-- Encrypted private sync
-    +-- Market creation, portfolio, and LP interfaces
-    |
-Private service and keeper
-    |
-    +-- RPC failover proxy
-    +-- Encrypted order coordination
-    +-- Batch proof generation
-    +-- LP allocation and terminal harvesting
-    +-- Oracle resolution and TTL maintenance
-    |
-Stellar contracts
-    |
-    +-- Shared shielded vault
-    +-- Pooled LP vault
-    +-- Market factory
-    +-- Per-market LMSR contract
-    +-- Per-market isolated liquidity vault
-    +-- Resolver registry and price resolver
-    +-- Groth16 verifier
-```
-
-### Contract responsibilities
-
-| Component | Responsibility |
-| --- | --- |
-| Groth16 verifier | Verifies registered proof shapes using Stellar host cryptography |
-| Shared shielded vault | Holds Circle USDC and validates private note transitions |
-| Pooled liquidity vault | Issues private LP shares and controls aggregate capital deployment |
-| Market factory | Validates proposals and deploys isolated market instances |
-| LMSR market | Prices orders, executes batches, resolves outcomes, and accounts for claims |
-| Market liquidity vault | Isolates the capital assigned to one market |
-| Resolver registry | Maps supported asset routes to approved resolver contracts |
-| Price resolver | Converts fresh Reflector observations into market settlement values |
-
-Per-market LMSR and isolated liquidity contracts are deployed by the factory after a proposal is accepted and funded. Their addresses are dynamic and are indexed by the application.
-
-### Service responsibilities
-
-The service layer does not replace contract authorization. It supplies transactions for work that is not automatic on-chain:
-
-- Accept and coordinate encrypted orders
-- Seal full or expired epochs
-- Produce aggregate batch proofs
-- Submit batch execution
-- Allocate idle LP capital
-- Harvest terminal market capital
-- Resolve expired price markets
-- Maintain contract instance and code TTL
-- Relay proof-bound user operations
-- Serve public proving artifacts
-- Proxy Stellar RPC with configured provider failover
-
-The production private service is available at [moros-market.duckdns.org](https://moros-market.duckdns.org).
-
 ## Mainnet deployment
 
-The canonical deployment record is [deployments/private-mainnet.json](./deployments/private-mainnet.json). Applications and services load addresses from the selected network manifest instead of duplicating contract IDs across source files.
+The canonical deployment record is [deployments/private-mainnet.json](./deployments/private-mainnet.json). Applications and services load addresses from the selected network manifest instead of duplicating contract IDs across source files. The reviewer-facing contract and dependency tables are in [For judges and reviewers](#for-judges-and-reviewers).
 
-### Moros contracts
-
-| Contract | Mainnet contract ID |
-| --- | --- |
-| Groth16 verifier | [CD4RRUKDBQ6IP6LQJYTBGF5OOVFHIJWUULJCV52LANOLQEGYG4C5JQWL](https://stellar.expert/explorer/public/contract/CD4RRUKDBQ6IP6LQJYTBGF5OOVFHIJWUULJCV52LANOLQEGYG4C5JQWL) |
-| Price resolver | [CAUDDAZVWDGWHDC6IHV66RAQ2CTLMXGXUEOT6VNU7OF4ACZPMXUEDLWA](https://stellar.expert/explorer/public/contract/CAUDDAZVWDGWHDC6IHV66RAQ2CTLMXGXUEOT6VNU7OF4ACZPMXUEDLWA) |
-| Resolver registry | [CCK6GQ7DQDWCBZEIGVGDZ3AF3STHHXNVFYDKMFU634YHA7QDIQY3YKEB](https://stellar.expert/explorer/public/contract/CCK6GQ7DQDWCBZEIGVGDZ3AF3STHHXNVFYDKMFU634YHA7QDIQY3YKEB) |
-| Shared shielded vault | [CBXZUAUEFAXZFRL4J7DTLS3GLAEY5OMIBBAUI672KJJE7FGU5LQJGXXL](https://stellar.expert/explorer/public/contract/CBXZUAUEFAXZFRL4J7DTLS3GLAEY5OMIBBAUI672KJJE7FGU5LQJGXXL) |
-| Pooled liquidity vault | [CB45XJ65Y46J2KGLUI6ZGUQ6C5EN7KS2BGI636ISIKSSBHVDYICPWP3F](https://stellar.expert/explorer/public/contract/CB45XJ65Y46J2KGLUI6ZGUQ6C5EN7KS2BGI636ISIKSSBHVDYICPWP3F) |
-| Market factory | [CDJ44IRLMZFEA4XY3J2XJMFLD4XIB3OIMRTYWBQZVX5ESBXMHNTOO3O7](https://stellar.expert/explorer/public/contract/CDJ44IRLMZFEA4XY3J2XJMFLD4XIB3OIMRTYWBQZVX5ESBXMHNTOO3O7) |
-
-### Mainnet dependencies
-
-| Dependency | Mainnet ID |
-| --- | --- |
-| Circle USDC issuer | [GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN](https://stellar.expert/explorer/public/account/GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN) |
-| Circle USDC Stellar Asset Contract | [CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75](https://stellar.expert/explorer/public/contract/CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75) |
-| Reflector CEX feed | [CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN](https://stellar.expert/explorer/public/contract/CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN) |
-| Reflector fiat and metals feed | [CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC](https://stellar.expert/explorer/public/contract/CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC) |
+The mainnet deployment started from a clean state. Testnet markets, private notes, and application records were not migrated.
 
 ### Deployment provenance
 
@@ -439,7 +503,7 @@ agentic-payment-infra/
 │   ├── shielded-collateral-vault/    Reusable private USDC notes
 │   └── zk-verifier/                  Groth16 proof verification
 ├── deployments/                      Network-scoped deployment and artifact records
-├── docs/                             Architecture, operations, plans, and specifications
+├── docs/                             Technical whitepaper source and PDF
 ├── services/
 │   ├── private-server.mjs            Private relay, coordinator, RPC proxy, and artifact host
 │   ├── resolve-keeper.mjs            Resolution, LP allocation, harvesting, and TTL keeper
@@ -605,7 +669,7 @@ A reviewer can verify the production graph without trusting this README:
 8. Confirm a market's resolver route is enabled before funding or ordering.
 9. Treat any contract, collateral, network, or artifact mismatch as a hard stop.
 
-For deeper operational detail, see [services/README.md](./services/README.md) and the documents under [docs](./docs).
+For deeper operational detail, see [services/README.md](./services/README.md) and the [technical whitepaper](./docs/Moros-Technical-Whitepaper.pdf).
 
 ---
 
