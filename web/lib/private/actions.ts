@@ -2,6 +2,7 @@
 
 import { poseidon2Hash } from "@zkpassport/poseidon2";
 import { unlockPositionBackup } from "@/lib/positions/backup";
+import type { RpcReadOptions } from "@/lib/stellar/rpc-read";
 import {
   getPrivateConfig,
   getPrivateAllocation,
@@ -2838,7 +2839,7 @@ export async function getPrivatePositionState({
   positionBudget: bigint;
   executionChangeNullifier: bigint;
   terminalNullifier: bigint;
-}): Promise<PrivatePositionChainState> {
+}, readOptions: RpcReadOptions = {}): Promise<PrivatePositionChainState> {
   const config = await getPrivateConfig();
   const [registration, epoch, order, accounting, changeRecovered, terminalSpent] =
     await Promise.all([
@@ -2847,36 +2848,42 @@ export async function getPrivatePositionState({
         address,
         "registration",
         { market },
+        readOptions,
       ),
       readPrivateContract<PrivateEpoch | undefined>(
         config.contracts.sharedVault,
         address,
         "epoch",
         { market, epoch_number: epochNumber },
+        readOptions,
       ),
       readPrivateContract<PrivateOrderRecord | undefined>(
         config.contracts.sharedVault,
         address,
         "order",
         { market, sequence },
+        readOptions,
       ),
       readPrivateContract<PrivateMarketAccounting | undefined>(
         config.contracts.sharedVault,
         address,
         "accounting",
         { market },
+        readOptions,
       ),
       readPrivateContract<boolean>(
         config.contracts.sharedVault,
         address,
         "is_spent",
         { nullifier: executionChangeNullifier },
+        readOptions,
       ),
       readPrivateContract<boolean>(
         config.contracts.sharedVault,
         address,
         "is_spent",
         { nullifier: terminalNullifier },
+        readOptions,
       ),
     ]);
   if (
@@ -2911,6 +2918,7 @@ export async function getPrivatePositionState({
       address,
       "batch",
       { market, epoch_number: epochNumber },
+      readOptions,
     );
     if (!batch) throw new Error("Private batch record is unavailable");
     const chargePerUnit = side === 1

@@ -6,6 +6,10 @@ import {
   rpc,
 } from "@stellar/stellar-sdk";
 import { NETWORK } from "@/lib/network";
+import {
+  rpcReadScheduler,
+  type RpcReadOptions,
+} from "@/lib/stellar/rpc-read";
 import { getKit } from "@/lib/wallet";
 import { relayPrivateCall } from "./client";
 
@@ -23,11 +27,19 @@ export type DynamicContractClient = {
 
 const server = new rpc.Server(NETWORK.rpcUrl);
 const wasmCache = new Map<string, Promise<Buffer>>();
+const clientCache = new Map<string, Promise<DynamicContractClient>>();
+const readInFlight = new Map<string, Promise<unknown>>();
 
 async function contractWasm(contractId: string): Promise<Buffer> {
   let promise = wasmCache.get(contractId);
   if (!promise) {
-    promise = server.getContractWasmByContractId(contractId);
+    promise = rpcReadScheduler.schedule(
+      () => server.getContractWasmByContractId(contractId),
+      { priority: "interactive" },
+    ).catch((error) => {
+      wasmCache.delete(contractId);
+      throw error;
+    });
     wasmCache.set(contractId, promise);
   }
   return promise;
@@ -37,25 +49,53 @@ export async function privateContractClient(
   contractId: string,
   address: string,
 ): Promise<DynamicContractClient> {
-  const wasm = await contractWasm(contractId);
-  return contract.Client.fromWasm(wasm, {
-    contractId,
-    publicKey: address,
-    networkPassphrase: NETWORK.passphrase,
-    rpcUrl: NETWORK.rpcUrl,
-    signTransaction: async (
-      transactionXdr: string,
-      options: { networkPassphrase?: string } = {},
-    ) => {
-      const passphrase = options.networkPassphrase || NETWORK.passphrase;
-      const { signedTxXdr } = await getKit().signTransaction(
-        transactionXdr,
-        { networkPassphrase: passphrase, address },
-      );
-      TransactionBuilder.fromXDR(signedTxXdr, passphrase);
-      return { signedTxXdr, signerAddress: address };
-    },
-  }) as unknown as DynamicContractClient;
+  const key = `${contractId}:${address}`;
+  let promise = clientCache.get(key);
+  if (!promise) {
+    promise = contractWasm(contractId)
+      .then((wasm) => contract.Client.fromWasm(wasm, {
+        contractId,
+        publicKey: address,
+        networkPassphrase: NETWORK.passphrase,
+        rpcUrl: NETWORK.rpcUrl,
+        signTransaction: async (
+          transactionXdr: string,
+          options: { networkPassphrase?: string } = {},
+        ) => {
+          const passphrase = options.networkPassphrase || NETWORK.passphrase;
+          const { signedTxXdr } = await getKit().signTransaction(
+            transactionXdr,
+            { networkPassphrase: passphrase, address },
+          );
+          TransactionBuilder.fromXDR(signedTxXdr, passphrase);
+          return { signedTxXdr, signerAddress: address };
+        },
+      }) as unknown as DynamicContractClient)
+      .catch((error) => {
+        clientCache.delete(key);
+        throw error;
+      });
+    clientCache.set(key, promise);
+  }
+  return promise;
+}
+
+function stableValue(value: unknown): string {
+  if (typeof value === "bigint") return `${value}n`;
+  if (value instanceof Uint8Array) {
+    return Array.from(value, (byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableValue).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${key}:${stableValue(entry)}`)
+      .join(",")}}`;
+  }
+  return String(value);
 }
 
 export async function readPrivateContract<T>(
@@ -63,12 +103,32 @@ export async function readPrivateContract<T>(
   address: string,
   method: string,
   args: Record<string, unknown> = {},
+  options: RpcReadOptions = {},
 ): Promise<T> {
-  const client = await privateContractClient(contractId, address);
-  const call = client[method];
-  if (typeof call !== "function") throw new Error(`Contract method ${method} is unavailable`);
-  const transaction = await call.call(client, args) as ContractMethodResult<T>;
-  return transaction.result;
+  const key = [
+    options.priority ?? "normal",
+    contractId,
+    address,
+    method,
+    stableValue(args),
+  ].join(":");
+  const existing = readInFlight.get(key);
+  if (existing) return existing as Promise<T>;
+  const promise = (async () => {
+    const client = await privateContractClient(contractId, address);
+    return rpcReadScheduler.schedule(async () => {
+      const call = client[method];
+      if (typeof call !== "function") {
+        throw new Error(`Contract method ${method} is unavailable`);
+      }
+      const transaction = await call.call(client, args) as ContractMethodResult<T>;
+      return transaction.result;
+    }, options);
+  })().finally(() => {
+    readInFlight.delete(key);
+  });
+  readInFlight.set(key, promise);
+  return promise;
 }
 
 export async function sendPrivateWalletCall(

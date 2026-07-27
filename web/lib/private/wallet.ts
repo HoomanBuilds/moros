@@ -76,6 +76,7 @@ async function spentNullifierDomains(
       address,
       "is_spent",
       { nullifier },
+      { priority: "interactive" },
     );
     if (!spent) return null;
     knownSpentNullifiers.add(key);

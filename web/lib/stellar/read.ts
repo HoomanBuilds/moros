@@ -3,6 +3,7 @@ import { NETWORK } from "@/lib/network";
 import type { CollateralAsset } from "@/lib/network";
 import { privateOrderCountFromEpochs } from "./private-order-count";
 import { readContract } from "./client";
+import type { RpcReadOptions } from "./rpc-read";
 
 export async function getMarketState(marketId: string): Promise<[bigint, bigint, bigint]> {
   return readContract(marketId, "get_state");
@@ -13,8 +14,11 @@ export async function getPriceYes(marketId: string): Promise<bigint> {
 export async function getOutcome(marketId: string): Promise<unknown> {
   return readContract(marketId, "outcome");
 }
-export async function getMarketInfo(marketId: string): Promise<{ asset: string; threshold: bigint; expiry: bigint; finalize_after?: bigint }> {
-  return readContract(marketId, "market_info");
+export async function getMarketInfo(
+  marketId: string,
+  options: RpcReadOptions = {},
+): Promise<{ asset: string; threshold: bigint; expiry: bigint; finalize_after?: bigint }> {
+  return readContract(marketId, "market_info", [], options);
 }
 export async function getMarketResolver(marketId: string): Promise<string | null> {
   return readContract(marketId, "resolver");

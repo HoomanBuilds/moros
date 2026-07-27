@@ -84,6 +84,22 @@ const LIFECYCLE: Record<PositionLifecycle, { label: string; detail: string; tone
 
 const ACTIVE = new Set<PositionLifecycle>(["awaiting_submission", "awaiting_batch", "active", "closed", "recover_execution_change"]);
 
+function positionRefetchInterval(
+  query: { state: { data?: unknown } },
+): number | false {
+  const state = query.state.data as ChainState | undefined;
+  if (
+    state?.lifecycle &&
+    isSettledPositionLifecycle(state.lifecycle) &&
+    !state.action
+  ) {
+    return false;
+  }
+  return state?.lifecycle && ACTIVE.has(state.lifecycle)
+    ? 30_000
+    : 60_000;
+}
+
 function queryPosition(position: Position) {
   const entry = findMarket(position.market);
   const poolId = position.pool;
@@ -103,7 +119,7 @@ function queryPosition(position: Position) {
       return Promise.reject(new Error("Private activity record is incomplete"));
     }
     return Promise.all([
-      getMarketInfo(position.market),
+      getMarketInfo(position.market, { priority: "background" }),
       getPrivatePositionState({
         address: position.address,
         market: position.market,
@@ -115,7 +131,7 @@ function queryPosition(position: Position) {
         positionBudget: BigInt(position.stakeAmountAtomic),
         executionChangeNullifier: BigInt(position.executionChangeNullifier),
         terminalNullifier: BigInt(position.nullifier),
-      }),
+      }, { priority: "background" }),
     ]).then(([info, privateState]) => {
       const winner =
         (position.side === "1" && privateState.outcome === "YES") ||
@@ -487,8 +503,10 @@ export function PositionsList() {
   const states = useQueries({
     queries: positions.map((position) => ({
       queryKey: ["wallet-position", position.market, position.pool, position.commitment, position.status],
-      refetchInterval: 15_000,
-      retry: 1,
+      refetchInterval: positionRefetchInterval,
+      refetchOnWindowFocus: false,
+      retry: false,
+      staleTime: 15_000,
       queryFn: () => queryPosition(position),
     })),
   });

@@ -136,6 +136,7 @@ export type PrivateLiquidityExit = {
 
 const PRIVATE_SERVICE =
   process.env.NEXT_PUBLIC_PRIVATE_SERVICE_URL || COMMITTEE_URL;
+let privateConfigPromise: Promise<PrivateDeploymentConfig> | null = null;
 
 export function privateServiceUrl(path: string): string {
   return `${PRIVATE_SERVICE}${path.startsWith("/") ? path : `/${path}`}`;
@@ -160,6 +161,15 @@ async function errorMessage(response: Response): Promise<string> {
 }
 
 export async function getPrivateConfig(): Promise<PrivateDeploymentConfig> {
+  if (privateConfigPromise) return privateConfigPromise;
+  privateConfigPromise = loadPrivateConfig().catch((error) => {
+    privateConfigPromise = null;
+    throw error;
+  });
+  return privateConfigPromise;
+}
+
+async function loadPrivateConfig(): Promise<PrivateDeploymentConfig> {
   const response = await fetch(privateServiceUrl("/private/config"), {
     cache: "no-store",
   });
