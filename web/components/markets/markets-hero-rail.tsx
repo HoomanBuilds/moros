@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { ArrowUpRight, ShieldCheck, Boxes } from "lucide-react";
 import { Panel } from "@/components/app/app-kit";
+import { BRAND } from "@/lib/brand";
 import { useMarketCatalog } from "@/lib/markets/catalog";
 import { sortRows } from "@/lib/markets/sort";
 
@@ -32,20 +33,26 @@ export function MarketsHeroRail() {
         </Link>
       </Panel>
 
-      <Panel className="flex items-center gap-4 p-5">
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/10 text-foreground">
-          <Boxes className="h-4 w-4" />
-        </span>
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium">How it works</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            LMSR pricing, on-chain oracle settlement, in-browser proving.
-          </p>
-        </div>
-        <Link href="/" className="ml-auto shrink-0 text-muted-foreground transition-colors hover:text-foreground">
-          <ArrowUpRight className="h-4 w-4" />
-        </Link>
-      </Panel>
+      <Link
+        href={BRAND.whitepaperHref}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Read the Moros whitepaper"
+        className="group block"
+      >
+        <Panel className="flex items-center gap-4 p-5 transition-colors group-hover:border-foreground/20">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/10 text-foreground">
+            <Boxes className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium">How it works</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              LMSR pricing, on-chain oracle settlement, in-browser proving.
+            </p>
+          </div>
+          <ArrowUpRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+        </Panel>
+      </Link>
     </div>
   );
 }
