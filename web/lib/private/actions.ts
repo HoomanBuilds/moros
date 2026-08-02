@@ -49,6 +49,7 @@ import {
   selectSmallestSufficientNote,
 } from "./note-selection";
 import { nextPrivateOrderSequence } from "./order-sequence";
+import { readOrderedRecords } from "./order-records";
 import { privatePositionContractMethod } from "./position-action";
 import { calculateExecutedPositionAmounts } from "./position-accounting";
 import {
@@ -2201,28 +2202,29 @@ async function acceptedAppend(
     encryptedOrder: EncryptedOrder;
   },
 ) {
-  const leaves: bigint[] = [];
-  if (epoch.accepted_count > 0) {
-    for (
-      let sequence = epoch.first_sequence;
-      sequence <= epoch.last_sequence;
-      sequence++
-    ) {
-      const record = await readPrivateContract<PrivateOrderRecord | undefined>(
-        config.contracts.sharedVault,
-        address,
-        "order",
-        { market, sequence },
-      );
-      if (!record) throw new Error("Private epoch order history is incomplete");
-      leaves.push(await acceptedLeaf(
+  const records = epoch.accepted_count > 0
+    ? await readOrderedRecords({
+        firstSequence: epoch.first_sequence,
+        lastSequence: epoch.last_sequence,
+        maximumRecords: 8,
+        unavailableMessage: "Private epoch order history is incomplete",
+        read: (sequence) =>
+          readPrivateContract<PrivateOrderRecord | undefined>(
+            config.contracts.sharedVault,
+            address,
+            "order",
+            { market, sequence },
+          ),
+      })
+    : [];
+  const leaves = await Promise.all(records.map((record) =>
+    acceptedLeaf(
         market,
         epoch.epoch,
         record,
         epoch.committee_epoch,
-      ));
-    }
-  }
+      )
+  ));
   if (leaves.length !== epoch.accepted_count) {
     throw new Error("Private epoch order count is inconsistent");
   }
@@ -2340,7 +2342,7 @@ export async function placePrivateOrder({
   onStatus?.("Preparing the private order prover");
   await preparePrivateProver("order");
   onStatus?.("Reading the private market epoch");
-  let wallet = await openPrivateWallet(address);
+  const config = await getPrivateConfig();
   const { registration, epoch } = await waitForPrivateBatch<
     PrivateMarketRegistration,
     PrivateEpoch
@@ -2348,7 +2350,7 @@ export async function placePrivateOrder({
     read: async () => {
       const currentRegistration =
         await readPrivateContract<PrivateMarketRegistration | undefined>(
-          wallet.config.contracts.sharedVault,
+          config.contracts.sharedVault,
           address,
           "registration",
           { market },
@@ -2358,7 +2360,7 @@ export async function placePrivateOrder({
       }
       let currentEpoch =
         await readPrivateContract<PrivateEpoch | undefined>(
-          wallet.config.contracts.sharedVault,
+          config.contracts.sharedVault,
           address,
           "epoch",
           {
@@ -2374,13 +2376,13 @@ export async function placePrivateOrder({
       ) {
         onStatus?.("Opening the private batch window");
         await relayPrivateContractCall(
-          wallet.config.contracts.sharedVault,
+          config.contracts.sharedVault,
           address,
           "open_epoch",
           { market },
         );
         currentEpoch = await readPrivateContract<PrivateEpoch | undefined>(
-          wallet.config.contracts.sharedVault,
+          config.contracts.sharedVault,
           address,
           "epoch",
           {
@@ -2408,7 +2410,7 @@ export async function placePrivateOrder({
     positionBudget,
     onStatus,
   );
-  wallet = spendable.wallet;
+  const wallet = spendable.wallet;
   const input = spendable.note;
   const inputTotal = input.amount;
   const sequence = await nextOrderSequence(
@@ -2674,23 +2676,19 @@ async function acceptedWitness(
   epoch: PrivateEpoch,
   sequence: bigint,
 ) {
-  const records: PrivateOrderRecord[] = [];
-  for (
-    let current = epoch.first_sequence;
-    current <= epoch.last_sequence;
-    current++
-  ) {
-    const record = await readPrivateContract<PrivateOrderRecord | undefined>(
-      config.contracts.sharedVault,
-      address,
-      "order",
-      { market, sequence: current },
-    );
-    if (!record || record.sequence !== current) {
-      throw new Error("Private accepted-order history is incomplete");
-    }
-    records.push(record);
-  }
+  const records = await readOrderedRecords({
+    firstSequence: epoch.first_sequence,
+    lastSequence: epoch.last_sequence,
+    maximumRecords: 8,
+    unavailableMessage: "Private accepted-order history is incomplete",
+    read: (current) =>
+      readPrivateContract<PrivateOrderRecord | undefined>(
+        config.contracts.sharedVault,
+        address,
+        "order",
+        { market, sequence: current },
+      ),
+  });
   const leaves = await Promise.all(records.map((record) =>
     acceptedLeaf(market, epoch.epoch, record, epoch.committee_epoch)
   ));

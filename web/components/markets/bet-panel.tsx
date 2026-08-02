@@ -28,6 +28,7 @@ import { estimatePrivateProfit } from "@/lib/markets/private-estimate";
 import { getPrivateConfig } from "@/lib/private/client";
 import { openPrivateWallet } from "@/lib/private/wallet";
 import { getPrivateOrderUnitReserve } from "@/lib/private/actions";
+import { preparePrivateProver } from "@/lib/private/prover";
 
 const STAGES: { key: BetStage; label: string }[] = [
   { key: "securing", label: "Unlocking private recovery" },
@@ -86,6 +87,7 @@ export function BetPanel() {
   const [privateBalance, setPrivateBalance] = useState<bigint | null>(null);
   const [privateUnitReserve, setPrivateUnitReserve] = useState<bigint | null>(null);
   const [privateUnlocking, setPrivateUnlocking] = useState(false);
+  const [privateProverReady, setPrivateProverReady] = useState(false);
   const busy = stage !== null && stage !== "done";
   const rulesInvalid = data?.resolverType === "event" && !data.rulesVerified;
   const closed = data ? !data.acceptingOrders || rulesInvalid : false;
@@ -164,6 +166,22 @@ export function BetPanel() {
       cancelled = true;
     };
   }, [address, marketId, privateStack]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPrivateProverReady(false);
+    if (!privateStack || privateBalance === null || closed) return;
+    preparePrivateProver("order")
+      .then(() => {
+        if (!cancelled) setPrivateProverReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setPrivateProverReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [closed, privateBalance, privateStack]);
 
   useEffect(() => {
     let cancelled = false;
@@ -346,9 +364,16 @@ export function BetPanel() {
             </>
           )}
           {privateStack && privateBalance !== null ? (
-            <p className="text-[10px] leading-snug text-muted-foreground/70">
-              Private balance: {formatTokenAmount(privateBalance, collateral.decimals, 2)} {collateral.code}
-            </p>
+            <>
+              <p className="text-[10px] leading-snug text-muted-foreground/70">
+                Private balance: {formatTokenAmount(privateBalance, collateral.decimals, 2)} {collateral.code}
+              </p>
+              <p className="text-[10px] leading-snug text-muted-foreground/70">
+                {privateProverReady
+                  ? "Private order proof ready"
+                  : "Preparing private order proof"}
+              </p>
+            </>
           ) : address && accountState?.hasTrustline && (
             <p className="text-[10px] leading-snug text-muted-foreground/70">
               Available: {formatTokenAmount(accountState.balanceAtomic, collateral.decimals, 2)} {collateral.code}
