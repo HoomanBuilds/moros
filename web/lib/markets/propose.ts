@@ -79,6 +79,8 @@ type FactoryClient = {
   }) => Promise<FactoryTransaction>;
 };
 
+const factoryClients = new Map<string, Promise<FactoryClient>>();
+
 function key(address: string, factoryId: string): string {
   return `${PENDING_KEY}.${factoryId}.${address}`;
 }
@@ -202,27 +204,37 @@ function requestFrom(value: PendingProposal) {
 async function factoryClient(
   factoryId: string,
   address: string,
-) {
-  const server = new rpc.Server(NETWORK.rpcUrl);
-  const wasm = await server.getContractWasmByContractId(factoryId);
-  return contract.Client.fromWasm(wasm, {
-    contractId: factoryId,
-    publicKey: address,
-    networkPassphrase: NETWORK.passphrase,
-    rpcUrl: NETWORK.rpcUrl,
-    signTransaction: async (
-      transactionXdr: string,
-      options: { networkPassphrase?: string } = {},
-    ) => {
-      const passphrase = options.networkPassphrase || NETWORK.passphrase;
-      const { signedTxXdr } = await getKit().signTransaction(
-        transactionXdr,
-        { networkPassphrase: passphrase, address },
-      );
-      TransactionBuilder.fromXDR(signedTxXdr, passphrase);
-      return { signedTxXdr, signerAddress: address };
-    },
-  }) as unknown as FactoryClient;
+): Promise<FactoryClient> {
+  const cacheKey = `${factoryId}:${address}`;
+  let pending = factoryClients.get(cacheKey);
+  if (!pending) {
+    const server = new rpc.Server(NETWORK.rpcUrl);
+    pending = server.getContractWasmByContractId(factoryId)
+      .then((wasm) => contract.Client.fromWasm(wasm, {
+        contractId: factoryId,
+        publicKey: address,
+        networkPassphrase: NETWORK.passphrase,
+        rpcUrl: NETWORK.rpcUrl,
+        signTransaction: async (
+          transactionXdr: string,
+          options: { networkPassphrase?: string } = {},
+        ) => {
+          const passphrase = options.networkPassphrase || NETWORK.passphrase;
+          const { signedTxXdr } = await getKit().signTransaction(
+            transactionXdr,
+            { networkPassphrase: passphrase, address },
+          );
+          TransactionBuilder.fromXDR(signedTxXdr, passphrase);
+          return { signedTxXdr, signerAddress: address };
+        },
+      }) as unknown as FactoryClient)
+      .catch((error) => {
+        factoryClients.delete(cacheKey);
+        throw error;
+      });
+    factoryClients.set(cacheKey, pending);
+  }
+  return pending;
 }
 
 export async function proposeMarket({
@@ -264,14 +276,16 @@ export async function proposeMarket({
       config,
     );
     const nonce = randomId();
-    const rulesHash = await digest({
-      kind: "price",
-      asset,
-      strikeUsd,
-      expiryUnix,
-      resolver: config.contracts.resolver,
-    });
-    const metadataHash = await digest(metadata);
+    const [rulesHash, metadataHash] = await Promise.all([
+      digest({
+        kind: "price",
+        asset,
+        strikeUsd,
+        expiryUnix,
+        resolver: config.contracts.resolver,
+      }),
+      digest(metadata),
+    ]);
     const draft = {
       address,
       factoryId: config.contracts.factory,
@@ -298,15 +312,19 @@ export async function proposeMarket({
         request: requestFrom(draft),
       })).result,
     );
+    const [marketId, liquidityVaultId] = await Promise.all([
+      factory.market_address({
+        proposal_id: fromHex(proposalId),
+      }).then((result) => result.result),
+      factory.liquidity_address({
+        proposal_id: fromHex(proposalId),
+      }).then((result) => result.result),
+    ]);
     proposal = {
       ...draft,
       proposalId,
-      marketId: (await factory.market_address({
-        proposal_id: fromHex(proposalId),
-      })).result,
-      liquidityVaultId: (await factory.liquidity_address({
-        proposal_id: fromHex(proposalId),
-      })).result,
+      marketId,
+      liquidityVaultId,
     };
     savePendingProposal(proposal);
     onProgress?.(proposal);

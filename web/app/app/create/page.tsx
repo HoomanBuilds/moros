@@ -378,32 +378,34 @@ export default function CreatePage() {
         onProgress: setPendingProposal,
       });
       setStage("listing");
-      await saveMarketToRegistry({
-        marketId: proposal.marketId,
-        asset: proposal.asset,
-        collateralCode: NETWORK.collateral.code,
-        collateralIssuer: NETWORK.collateral.issuer,
-        collateralSac: NETWORK.collateral.sac,
-        collateralDecimals: NETWORK.collateral.decimals,
-        creator: address,
-        title: proposal.metadata.title,
-        category: proposal.metadata.category,
-        bannerSourceUrl: proposal.metadata.bannerSourceUrl,
-        bannerAttribution: proposal.metadata.bannerAttribution,
-        bannerLicense: proposal.metadata.bannerLicense,
-        bannerLicenseUrl: proposal.metadata.bannerLicenseUrl,
-        resolverType: "price",
-        rulesHash: proposal.rulesHash,
-        proposalId: proposal.proposalId,
-        factoryId: proposal.factoryId,
-        liquidityVaultId: proposal.liquidityVaultId,
-        marketState: "funding",
-        liquidityTarget: proposal.liquidityTarget,
-        fundingDeadline: proposal.fundingDeadline * 1_000,
-        activationCutoff: proposal.activationCutoff * 1_000,
-        settlementTime: proposal.expiryUnix * 1_000,
-      });
-      await registerPrivateProposal(proposal.proposalId);
+      await Promise.all([
+        saveMarketToRegistry({
+          marketId: proposal.marketId,
+          asset: proposal.asset,
+          collateralCode: NETWORK.collateral.code,
+          collateralIssuer: NETWORK.collateral.issuer,
+          collateralSac: NETWORK.collateral.sac,
+          collateralDecimals: NETWORK.collateral.decimals,
+          creator: address,
+          title: proposal.metadata.title,
+          category: proposal.metadata.category,
+          bannerSourceUrl: proposal.metadata.bannerSourceUrl,
+          bannerAttribution: proposal.metadata.bannerAttribution,
+          bannerLicense: proposal.metadata.bannerLicense,
+          bannerLicenseUrl: proposal.metadata.bannerLicenseUrl,
+          resolverType: "price",
+          rulesHash: proposal.rulesHash,
+          proposalId: proposal.proposalId,
+          factoryId: proposal.factoryId,
+          liquidityVaultId: proposal.liquidityVaultId,
+          marketState: "funding",
+          liquidityTarget: proposal.liquidityTarget,
+          fundingDeadline: proposal.fundingDeadline * 1_000,
+          activationCutoff: proposal.activationCutoff * 1_000,
+          settlementTime: proposal.expiryUnix * 1_000,
+        }),
+        registerPrivateProposal(proposal.proposalId),
+      ]);
       const bannerSource = selectedImage
         ? selectedImage.kind === "upload"
           ? { kind: "upload" as const, file: selectedImage.file }
