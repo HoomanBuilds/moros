@@ -61,6 +61,40 @@ export function createBatchProver({ wasmPath, zkeyPath, vkeyPath }) {
   };
 }
 
+export async function readEpochOrders(
+  vault,
+  market,
+  epoch,
+  maximumRecords = 8,
+) {
+  const firstSequence = BigInt(epoch.first_sequence);
+  const lastSequence = BigInt(epoch.last_sequence);
+  const count = lastSequence - firstSequence + 1n;
+  if (
+    firstSequence < 0n ||
+    lastSequence < firstSequence ||
+    count !== BigInt(epoch.accepted_count) ||
+    !Number.isSafeInteger(maximumRecords) ||
+    maximumRecords < 1 ||
+    count > BigInt(maximumRecords)
+  ) {
+    throw new Error("private epoch order range is inconsistent");
+  }
+  const sequences = Array.from(
+    { length: Number(count) },
+    (_, index) => firstSequence + BigInt(index),
+  );
+  return Promise.all(sequences.map(async (sequence) => {
+    const order = invocationResultValue(
+      await vault.order({ market, sequence }),
+    );
+    if (!order || BigInt(order.sequence) !== sequence) {
+      throw new Error(`private order ${sequence} is unavailable`);
+    }
+    return order;
+  }));
+}
+
 export class PrivateBatchCoordinator {
   constructor({
     vault,
@@ -187,18 +221,12 @@ export class PrivateBatchCoordinator {
       Number(epoch.accepted_count) <=
         Number(registration.maximum_batch_size)
     ) {
-      const orders = [];
-      for (
-        let sequence = BigInt(epoch.first_sequence);
-        sequence <= BigInt(epoch.last_sequence);
-        sequence++
-      ) {
-        const order = invocationResultValue(
-          await this.vault.order({ market, sequence }),
-        );
-        if (!order) throw new Error(`private order ${sequence} is unavailable`);
-        orders.push(order);
-      }
+      const orders = await readEpochOrders(
+        this.vault,
+        market,
+        epoch,
+        Number(registration.maximum_batch_size),
+      );
       const quantities = decryptBatchQuantities(orders, this.committeeSecret);
       const yesCount = quantities.reduce((total, value) => total + value.yes, 0);
       const noCount = quantities.reduce((total, value) => total + value.no, 0);
@@ -260,11 +288,28 @@ export class PrivateBatchCoordinator {
         },
       }));
       this.batchProofs.delete(proofKey);
+      let nextEpoch;
+      let nextEpochPending = false;
+      if (this.now() < Number(registration.expiry)) {
+        try {
+          const next = invocationResultValue(
+            await this.submitBuilt(() => this.vault.open_next_epoch({
+              market,
+              prior_epoch: epochNumber,
+            })),
+          );
+          nextEpoch = String(next?.epoch ?? epochNumber + 1n);
+        } catch {
+          nextEpochPending = true;
+        }
+      }
       return {
         status: "executed",
         epoch: epochNumber.toString(),
         yesCount,
         noCount,
+        nextEpoch,
+        nextEpochPending,
       };
     }
 

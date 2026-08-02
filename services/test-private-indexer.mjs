@@ -51,6 +51,10 @@ try {
   );
   assert.equal(first.outputs.length, 4);
   assert.equal(first.outputs[0].actionId, "01".repeat(32));
+  const firstState = readFileSync(stateFile, "utf8");
+  const unchanged = await indexer.sync();
+  assert.equal(unchanged.updatedAt, first.updatedAt);
+  assert.equal(readFileSync(stateFile, "utf8"), firstState);
 
   const concurrentStateFile = resolve(directory, "concurrent-outputs.json");
   let concurrentReads = 0;

@@ -8,6 +8,7 @@ import {
   PrivateBatchCoordinator,
   phaseName,
   quoteResultValue,
+  readEpochOrders,
 } from "./private-batch-coordinator.mjs";
 import {
   acceptedLeaf,
@@ -25,6 +26,62 @@ assert.deepEqual(
 assert.deepEqual(
   quoteResultValue({ result: { yes_count: 4, no_count: 4 } }),
   { yes_count: 4, no_count: 4 },
+);
+
+let releaseFirstOrder;
+let secondOrderStarted = false;
+const parallelOrders = await readEpochOrders(
+  {
+    order: async ({ sequence }) => {
+      if (sequence === 1n) {
+        await new Promise((resolve) => {
+          releaseFirstOrder = resolve;
+          setImmediate(() => {
+            assert.equal(secondOrderStarted, true);
+            resolve();
+          });
+        });
+      } else {
+        secondOrderStarted = true;
+        releaseFirstOrder?.();
+      }
+      return { result: { sequence } };
+    },
+  },
+  "market",
+  { accepted_count: 2, first_sequence: 1n, last_sequence: 2n },
+);
+assert.deepEqual(
+  parallelOrders.map((order) => order.sequence),
+  [1n, 2n],
+);
+await assert.rejects(
+  readEpochOrders(
+    {
+      order: async ({ sequence }) => ({
+        result: sequence === 2n ? undefined : { sequence },
+      }),
+    },
+    "market",
+    { accepted_count: 2, first_sequence: 1n, last_sequence: 2n },
+  ),
+  /private order 2 is unavailable/u,
+);
+await assert.rejects(
+  readEpochOrders(
+    { order: async ({ sequence }) => ({ result: { sequence } }) },
+    "market",
+    { accepted_count: 1, first_sequence: 1n, last_sequence: 2n },
+  ),
+  /order range is inconsistent/u,
+);
+await assert.rejects(
+  readEpochOrders(
+    { order: async ({ sequence }) => ({ result: { sequence: sequence + 1n } }) },
+    "market",
+    { accepted_count: 1, first_sequence: 1n, last_sequence: 1n },
+  ),
+  /private order 1 is unavailable/u,
 );
 
 function transaction(result, effect = () => {}) {
@@ -145,6 +202,7 @@ let adaptiveSubmitCalls = 0;
 let adaptiveSubmitAttempts = 0;
 let adaptiveProofCalls = 0;
 let adaptiveAllocationCount = 0;
+let adaptiveOpenCalls = 0;
 const adaptiveRegistration = {
   finalized: false,
   current_epoch: 1n,
@@ -199,6 +257,9 @@ const adaptiveVault = {
     adaptiveSubmitCalls++;
     adaptivePhase = "Executed";
   }),
+  open_next_epoch: async () => transaction({ epoch: 2n }, () => {
+    adaptiveOpenCalls++;
+  }),
 };
 const adaptiveCoordinator = new PrivateBatchCoordinator({
   vault: adaptiveVault,
@@ -236,6 +297,35 @@ assert.equal(adaptiveResult.noCount, 0);
 assert.equal(adaptiveProofCalls, 1);
 assert.equal(adaptiveAllocationCount, 1);
 assert.equal(adaptiveSubmitCalls, 1);
-assert.equal(adaptiveSubmitAttempts, 2);
+assert.equal(adaptiveSubmitAttempts, 3);
+assert.equal(adaptiveOpenCalls, 1);
+assert.equal(adaptiveResult.nextEpoch, "2");
+assert.equal(adaptiveResult.nextEpochPending, false);
+
+let pendingOpenAttempts = 0;
+adaptivePhase = "Sealed";
+const pendingOpenCoordinator = new PrivateBatchCoordinator({
+  vault: {
+    ...adaptiveVault,
+    open_next_epoch: async () => transaction(undefined, () => {
+      throw new Error("next epoch unavailable");
+    }),
+  },
+  vaultId: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+  networkDomain: Buffer.alloc(32, 1),
+  committeeSecret: adaptiveSecret,
+  marketClient: adaptiveCoordinator.marketClient,
+  prove: async () => Buffer.alloc(192, 1),
+  submit: async (pending) => {
+    pendingOpenAttempts++;
+    return (await pending).signAndSend();
+  },
+  now: () => 201,
+});
+const pendingOpenResult = await pendingOpenCoordinator.process(adaptiveMarket);
+assert.equal(pendingOpenResult.status, "executed");
+assert.equal(pendingOpenResult.nextEpoch, undefined);
+assert.equal(pendingOpenResult.nextEpochPending, true);
+assert.equal(pendingOpenAttempts, 2);
 
 process.stdout.write("private batch coordinator tests passed\n");

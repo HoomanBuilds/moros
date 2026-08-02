@@ -56,4 +56,52 @@ assert.equal(
   200,
 );
 
+const timeoutCalls = [];
+const timeoutResponse = await rpcFetch(
+  ["https://slow.example", "https://healthy.example"],
+  "https://slow.example",
+  { method: "POST", body: "{}" },
+  async (url, init) => {
+    timeoutCalls.push(String(url));
+    if (String(url) === "https://healthy.example") {
+      return new Response("{}", { status: 200 });
+    }
+    return new Promise((resolve, reject) => {
+      init.signal.addEventListener(
+        "abort",
+        () => reject(init.signal.reason),
+        { once: true },
+      );
+    });
+  },
+  { attemptTimeoutMs: 5 },
+);
+assert.equal(timeoutResponse.status, 200);
+assert.deepEqual(timeoutCalls, [
+  "https://slow.example",
+  "https://healthy.example",
+]);
+
+const caller = new AbortController();
+caller.abort(new Error("request cancelled"));
+await assert.rejects(
+  rpcFetch(
+    ["https://primary.example", "https://fallback.example"],
+    "https://primary.example",
+    { method: "POST", body: "{}", signal: caller.signal },
+    async () => new Response("{}", { status: 200 }),
+  ),
+  /request cancelled/u,
+);
+await assert.rejects(
+  rpcFetch(
+    ["https://primary.example"],
+    "https://primary.example",
+    undefined,
+    async () => new Response("{}", { status: 200 }),
+    { attemptTimeoutMs: 0 },
+  ),
+  /positive integer/u,
+);
+
 console.log("RPC failover ok");

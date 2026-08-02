@@ -87,6 +87,16 @@ export class PrivateOutputIndexer {
       throw new Error("vault tree state is incompatible with the local index");
     }
     const nextLeafIndex = Number(info.next_leaf_index);
+    const currentRoot = decimal(info.current_root, "current root");
+    if (
+      nextLeafIndex === this.state.outputs.length &&
+      this.state.currentRoot !== undefined
+    ) {
+      if (decimal(this.state.currentRoot) !== currentRoot) {
+        throw new Error("indexed commitments do not reconstruct the vault root");
+      }
+      return this.snapshot();
+    }
     const outputs = [...this.state.outputs];
     for (
       let leafIndex = outputs.length;
@@ -109,7 +119,7 @@ export class PrivateOutputIndexer {
       outputs.map((output) => output.commitment),
       this.levels,
     );
-    if (tree.root !== decimal(info.current_root, "current root")) {
+    if (tree.root !== currentRoot) {
       throw new Error("indexed commitments do not reconstruct the vault root");
     }
     this.state = {
