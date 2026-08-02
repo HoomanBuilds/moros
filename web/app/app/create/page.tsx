@@ -413,13 +413,6 @@ export default function CreatePage() {
         : proposal.metadata.bannerDownloadUrl
           ? { kind: "commons" as const, downloadUrl: proposal.metadata.bannerDownloadUrl }
           : null;
-      if (bannerSource) {
-        try {
-          await uploadMarketBanner({ address, marketId: proposal.marketId, source: bannerSource });
-        } catch (cause) {
-          setError(cause instanceof Error ? cause.message : "The market is registered, but its image could not be attached.");
-        }
-      }
       clearPendingProposal(address, proposal.factoryId);
       setPendingProposal(null);
       setStage("done");
@@ -428,6 +421,17 @@ export default function CreatePage() {
         marketId: proposal.marketId,
         liquidityVaultId: proposal.liquidityVaultId,
       });
+      if (bannerSource) {
+        void uploadMarketBanner({
+          address,
+          marketId: proposal.marketId,
+          source: bannerSource,
+        }).catch((cause) => {
+          setError(cause instanceof Error
+            ? cause.message
+            : "The market is registered, but its image could not be attached.");
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Market proposal failed");
       setStage(null);

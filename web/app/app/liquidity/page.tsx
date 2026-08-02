@@ -30,6 +30,8 @@ import {
   type PooledRedemptionPreview,
 } from "@/lib/private/actions";
 import { openPrivateWallet } from "@/lib/private/wallet";
+import { waitForPrivateOutput } from "@/lib/private/output-index";
+import { preparePrivateProver } from "@/lib/private/prover";
 import {
   formatTokenAmount,
   parseTokenAmount,
@@ -166,6 +168,7 @@ export default function LiquidityPage() {
   async function deposit() {
     if (!address || privateBalance === null) return;
     setDepositAction({ busy: true, status: "Preparing private pool deposit", error: "" });
+    let confirmed = false;
     try {
       const amount = parseTokenAmount(depositAmount, NETWORK.collateral.decimals);
       if (amount > privateBalance) {
@@ -176,17 +179,28 @@ export default function LiquidityPage() {
         amount,
         (status) => setDepositAction({ busy: true, status, error: "" }),
       );
+      confirmed = true;
+      setDepositAction({
+        busy: true,
+        status: "Deposit confirmed. Updating private pool shares",
+        error: "",
+      });
+      await waitForPrivateOutput(result.outputCommitment);
+      await loadPrivateState();
       setDepositAction({
         busy: false,
         status: `${token(result.assets, 4)} private USDC added to the Moros liquidity pool`,
         error: "",
       });
-      await loadPrivateState();
     } catch (error) {
       setDepositAction({
         busy: false,
-        status: "",
-        error: error instanceof Error ? error.message : "Private pool deposit failed",
+        status: confirmed ? "Pool deposit confirmed" : "",
+        error: confirmed
+          ? "The latest private share state is still indexing. Refresh in a moment."
+          : error instanceof Error
+            ? error.message
+            : "Private pool deposit failed",
       });
     }
   }
@@ -209,6 +223,7 @@ export default function LiquidityPage() {
       status: "Preparing private pool withdrawal",
       error: "",
     });
+    let confirmed = false;
     try {
       const requested = parseTokenAmount(
         withdrawAmounts[key] || "",
@@ -224,17 +239,28 @@ export default function LiquidityPage() {
         shares: requested,
         onStatus: (status) => updateShareAction(key, { status }),
       });
+      confirmed = true;
+      updateShareAction(key, {
+        busy: true,
+        status: "Withdrawal confirmed. Updating private balance",
+        error: "",
+      });
+      await waitForPrivateOutput(result.outputCommitment);
+      await loadPrivateState();
       updateShareAction(key, {
         busy: false,
         status: `${token(result.assets, 4)} private USDC returned to your reusable balance`,
         error: "",
       });
-      await loadPrivateState();
     } catch (error) {
       updateShareAction(key, {
         busy: false,
-        status: "",
-        error: error instanceof Error ? error.message : "Private pool withdrawal failed",
+        status: confirmed ? "Pool withdrawal confirmed" : "",
+        error: confirmed
+          ? "The latest private balance is still indexing. Refresh in a moment."
+          : error instanceof Error
+            ? error.message
+            : "Private pool withdrawal failed",
       });
     }
   }
@@ -389,6 +415,11 @@ export default function LiquidityPage() {
                     value={depositAmount}
                     disabled={depositAction.busy}
                     aria-label="USDC pool deposit"
+                    onFocus={() => {
+                      if (privateBalance !== null) {
+                        void preparePrivateProver("liquidity_fund").catch(() => undefined);
+                      }
+                    }}
                     onChange={(event) => {
                       setDepositAmount(event.target.value);
                       setDepositAction(EMPTY_ACTION);
@@ -404,7 +435,16 @@ export default function LiquidityPage() {
                     Unlock balance
                   </Button>
                 ) : canDeposit ? (
-                  <Button disabled={depositAction.busy} onClick={() => void deposit()}>
+                  <Button
+                    disabled={depositAction.busy}
+                    onPointerEnter={() => {
+                      void preparePrivateProver("liquidity_fund").catch(() => undefined);
+                    }}
+                    onFocus={() => {
+                      void preparePrivateProver("liquidity_fund").catch(() => undefined);
+                    }}
+                    onClick={() => void deposit()}
+                  >
                     {depositAction.busy && <Spinner />}
                     Deposit privately
                   </Button>
@@ -519,6 +559,9 @@ export default function LiquidityPage() {
                             value={withdrawAmounts[key] || ""}
                             disabled={action.busy}
                             aria-label="Pool shares to withdraw"
+                            onFocus={() => {
+                              void preparePrivateProver("liquidity_exit").catch(() => undefined);
+                            }}
                             onChange={(event) => setWithdrawAmounts((current) => ({
                               ...current,
                               [key]: event.target.value,
@@ -532,6 +575,12 @@ export default function LiquidityPage() {
                         <Button
                           size="sm"
                           disabled={action.busy || !canWithdraw}
+                          onPointerEnter={() => {
+                            void preparePrivateProver("liquidity_exit").catch(() => undefined);
+                          }}
+                          onFocus={() => {
+                            void preparePrivateProver("liquidity_exit").catch(() => undefined);
+                          }}
                           onClick={() => void withdraw(share)}
                         >
                           {action.busy && <Spinner />}

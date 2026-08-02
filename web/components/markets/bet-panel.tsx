@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { Panel, Tag } from "@/components/app/app-kit";
@@ -91,6 +91,7 @@ export function BetPanel() {
   const [privateUnitReserve, setPrivateUnitReserve] = useState<bigint | null>(null);
   const [privateUnlocking, setPrivateUnlocking] = useState(false);
   const [privateProverReady, setPrivateProverReady] = useState(false);
+  const backupSequence = useRef(0);
   const busy = stage !== null && stage !== "done";
   const rulesInvalid = data?.resolverType === "event" && !data.rulesVerified;
   const closed = data ? !data.acceptingOrders || rulesInvalid : false;
@@ -189,7 +190,10 @@ export function BetPanel() {
   useEffect(() => {
     let cancelled = false;
     setAccountState(null);
-    if (!address) return;
+    if (!address || privateStack !== false) {
+      setAccountLoading(false);
+      return;
+    }
     setAccountLoading(true);
     getCollateralAccountState(address, collateral)
       .then((state) => {
@@ -204,7 +208,7 @@ export function BetPanel() {
     return () => {
       cancelled = true;
     };
-  }, [address, collateral]);
+  }, [address, collateral, privateStack]);
 
   async function connect() {
     try {
@@ -216,6 +220,7 @@ export function BetPanel() {
   }
 
   async function submit() {
+    const sequence = ++backupSequence.current;
     setError("");
     setWarning("");
     setStage(null);
@@ -241,9 +246,20 @@ export function BetPanel() {
         backupReady,
         onStage: setStage,
       });
-      if (!result.backupSynced) setWarning("Position placed, but encrypted cloud backup needs attention in Portfolio. Keep this browser data safe.");
+      setWarning("Position placed. Encrypted backup is syncing.");
+      void result.backupSync.then((synced) => {
+        if (backupSequence.current === sequence) {
+          setWarning(synced
+            ? ""
+            : "Position placed, but encrypted cloud backup needs attention in Portfolio. Keep this browser data safe.");
+        }
+      });
       if (privateStack) {
-        setPrivateBalance((await openPrivateWallet(address)).balance);
+        setPrivateBalance((current) => current === null
+          ? null
+          : current > result.reservedAmount
+            ? current - result.reservedAmount
+            : 0n);
       } else {
         setAccountState(await getCollateralAccountState(address, collateral));
       }
@@ -287,6 +303,7 @@ export function BetPanel() {
   }
 
   function reset() {
+    backupSequence.current++;
     setStage(null);
     setError("");
     setWarning("");
@@ -438,12 +455,12 @@ export function BetPanel() {
             This quantity needs up to {formatTokenAmount(privateRequiredBalance, collateral.decimals, 4)} private USDC. Add funds once and reuse the balance across bets and liquidity.
           </p>
         </div>
-      ) : accountLoading ? (
+      ) : !privateStack && accountLoading ? (
         <Button className="w-full" disabled>
           <Spinner />
           Checking {collateral.code}
         </Button>
-      ) : accountState && !accountState.exists ? (
+      ) : !privateStack && accountState && !accountState.exists ? (
         <div className="space-y-3">
           <Button className="w-full" asChild>
             <Link href="/app/portfolio">Activate Stellar account</Link>
@@ -452,7 +469,7 @@ export function BetPanel() {
             Send XLM to this wallet first to create its Stellar account and cover reserves and network fees.
           </p>
         </div>
-      ) : accountState &&
+      ) : !privateStack && accountState &&
         !accountState.hasTrustline &&
         accountState.trustlineReserveShortfallAtomic > 0n ? (
         <div className="space-y-3">
@@ -463,7 +480,7 @@ export function BetPanel() {
             This wallet needs at least {formatTokenAmount(accountState.trustlineReserveShortfallAtomic, 7, 7)} more XLM before it can enable {collateral.code}.
           </p>
         </div>
-      ) : accountState && !accountState.hasTrustline ? (
+      ) : !privateStack && accountState && !accountState.hasTrustline ? (
         <div className="space-y-3">
           <Button className="w-full" disabled={trustlineLoading} onClick={enableCollateral}>
             {trustlineLoading && <Spinner />}

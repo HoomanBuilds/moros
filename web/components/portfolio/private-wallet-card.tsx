@@ -20,6 +20,7 @@ import {
   withdrawPrivateUsdc,
 } from "@/lib/private/actions";
 import { waitForPrivateOutput } from "@/lib/private/output-index";
+import { preparePrivateProver } from "@/lib/private/prover";
 import { openPrivateWallet } from "@/lib/private/wallet";
 import {
   addCollateralTrustline,
@@ -66,6 +67,12 @@ export function PrivateWalletCard() {
       setError(cause instanceof Error ? cause.message : "Wallet USDC balance could not be read");
     });
   }, [refreshPublicBalance]);
+
+  function prepareCurrentProver(): void {
+    if (privateBalance === null) return;
+    void preparePrivateProver(mode === "deposit" ? "deposit" : "withdraw")
+      .catch(() => undefined);
+  }
 
   async function unlock() {
     if (!address) return;
@@ -320,6 +327,10 @@ export function PrivateWalletCard() {
                       setAmount("5");
                       setStatus("");
                       setError("");
+                      if (privateBalance !== null) {
+                        void preparePrivateProver(nextMode === "deposit" ? "deposit" : "withdraw")
+                          .catch(() => undefined);
+                      }
                     }}
                     className={`rounded px-3 py-2 text-xs font-medium capitalize transition-colors ${
                       mode === nextMode
@@ -341,6 +352,7 @@ export function PrivateWalletCard() {
                     inputMode="decimal"
                     value={amount}
                     disabled={busy}
+                    onFocus={prepareCurrentProver}
                     onChange={(event) => {
                       setAmount(event.target.value);
                       setError("");
@@ -358,6 +370,8 @@ export function PrivateWalletCard() {
               <Button
                 className="w-full"
                 disabled={busy}
+                onPointerEnter={prepareCurrentProver}
+                onFocus={prepareCurrentProver}
                 onClick={() => void (mode === "deposit" ? deposit() : withdraw())}
               >
                 {busy

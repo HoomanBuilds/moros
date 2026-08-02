@@ -10,7 +10,7 @@ import {
   getPrivateTree,
   registerPrivateLiquidityExit,
   type PrivateDeploymentConfig,
-  type PrivateTreeSnapshot,
+  type EncryptedPrivateAllocation,
 } from "./client";
 import {
   readPrivateContract,
@@ -44,14 +44,16 @@ import {
 } from "./primitives";
 import { preparePrivateProver, provePrivateAction } from "./prover";
 import { waitForPrivateBatch } from "./batch-window";
+import { waitForPrivateOutput } from "./output-index";
 import {
   liquidPrivateTotal,
   selectConsolidationPair,
   selectSmallestSufficientNote,
 } from "./note-selection";
-import { nextPrivateOrderSequence } from "./order-sequence";
 import { readOrderedRecords } from "./order-records";
+import { preparePrivateOrderSequence } from "./order-sequence";
 import { privatePositionContractMethod } from "./position-action";
+import { verifiedPrivateTree } from "./verified-tree";
 import { calculateExecutedPositionAmounts } from "./position-accounting";
 import {
   openPrivateWallet,
@@ -508,23 +510,6 @@ function startProverPreparation(circuitName: string): Promise<void> {
   return pending;
 }
 
-function verifiedTree(
-  config: PrivateDeploymentConfig,
-  snapshot: PrivateTreeSnapshot,
-): PrivateTree {
-  if (
-    snapshot.vaultId !== config.contracts.sharedVault ||
-    snapshot.levels !== config.privacy.treeLevels
-  ) {
-    throw new Error("Private tree does not match the configured vault");
-  }
-  const tree = merkleTree(snapshot.commitments.map(BigInt), snapshot.levels);
-  if (tree.root !== BigInt(snapshot.currentRoot)) {
-    throw new Error("Private tree failed local verification");
-  }
-  return tree;
-}
-
 export async function shieldUsdc(
   address: string,
   amount: bigint,
@@ -538,7 +523,7 @@ export async function shieldUsdc(
     unlockPositionBackup(address),
     getPrivateTree(),
   ]);
-  const tree = verifiedTree(config, treeSnapshot);
+  const tree = verifiedPrivateTree(config, treeSnapshot);
   const id = actionId();
   const expiry = actionExpiry();
   const contextFields = await operationContextFields({
@@ -769,14 +754,12 @@ async function waitForIndexedPrivateOutput(
   address: string,
   commitment: bigint,
 ): Promise<PrivateWalletSnapshot> {
-  for (let attempt = 0; attempt < 30; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
-    const wallet = await openPrivateWallet(address);
-    if (wallet.notes.some((note) => note.commitment === commitment)) {
-      return wallet;
-    }
+  await waitForPrivateOutput(commitment);
+  const wallet = await openPrivateWallet(address);
+  if (wallet.notes.some((note) => note.commitment === commitment)) {
+    return wallet;
   }
-  throw new Error("Private transfer confirmed, but the new note is not indexed yet");
+  throw new Error("Private transfer output could not be recovered locally");
 }
 
 async function consolidatePrivateNotes(
@@ -892,11 +875,12 @@ async function privateWalletWithSpendableNote(
   address: string,
   amount: bigint,
   onStatus?: (status: string) => void,
+  initialWallet?: Promise<PrivateWalletSnapshot>,
 ): Promise<{
   wallet: PrivateWalletSnapshot;
   note: OwnedIndexedNote;
 }> {
-  let wallet = await openPrivateWallet(address);
+  let wallet = await (initialWallet ?? openPrivateWallet(address));
   for (let attempt = 0; attempt < 64; attempt++) {
     const note = selectSmallestSufficientNote(wallet.notes, amount);
     if (note) return { wallet, note };
@@ -976,7 +960,12 @@ async function fundLiquidity(
   liquidityVaultId: string,
   requestedAmount: bigint,
   onStatus?: (status: string) => void,
-): Promise<{ hash: string; assets: bigint; shares: bigint }> {
+): Promise<{
+  hash: string;
+  assets: bigint;
+  shares: bigint;
+  outputCommitment: bigint;
+}> {
   assertAmount(requestedAmount);
   const proverPreparation = startProverPreparation("liquidity_fund");
   onStatus?.("Reading private balance and LP vault");
@@ -1141,14 +1130,24 @@ async function fundLiquidity(
       ),
     },
   );
-  return { hash, assets: amount, shares };
+  return {
+    hash,
+    assets: amount,
+    shares,
+    outputCommitment: outputs[1].commitment,
+  };
 }
 
 export async function fundPooledLiquidity(
   address: string,
   requestedAmount: bigint,
   onStatus?: (status: string) => void,
-): Promise<{ hash: string; assets: bigint; shares: bigint }> {
+): Promise<{
+  hash: string;
+  assets: bigint;
+  shares: bigint;
+  outputCommitment: bigint;
+}> {
   const config = await getPrivateConfig();
   return fundLiquidity(
     address,
@@ -1163,7 +1162,12 @@ export async function fundMarketLiquidity(
   liquidityVaultId: string,
   requestedAmount: bigint,
   onStatus?: (status: string) => void,
-): Promise<{ hash: string; assets: bigint; shares: bigint }> {
+): Promise<{
+  hash: string;
+  assets: bigint;
+  shares: bigint;
+  outputCommitment: bigint;
+}> {
   return fundLiquidity(address, liquidityVaultId, requestedAmount, onStatus);
 }
 
@@ -1212,7 +1216,12 @@ export async function withdrawLiquidity({
   shareCommitment: bigint;
   shares: bigint;
   onStatus?: (status: string) => void;
-}): Promise<{ hash: string; assets: bigint; remainingShares: bigint }> {
+}): Promise<{
+  hash: string;
+  assets: bigint;
+  remainingShares: bigint;
+  outputCommitment: bigint;
+}> {
   assertAmount(shares);
   onStatus?.("Reading the private LP position");
   const config = await getPrivateConfig();
@@ -1412,7 +1421,12 @@ export async function withdrawLiquidity({
       ),
     },
   );
-  return { hash, assets, remainingShares };
+  return {
+    hash,
+    assets,
+    remainingShares,
+    outputCommitment: outputs[0].commitment,
+  };
 }
 
 export type PrivateLiquidityExitOffer = {
@@ -2195,31 +2209,6 @@ export async function matchLiquidityExit({
   return { hash, shares, payment };
 }
 
-async function nextOrderSequence(
-  config: PrivateDeploymentConfig,
-  address: string,
-  market: string,
-  epoch: PrivateEpoch,
-): Promise<bigint> {
-  const priorEpochs: PrivateEpoch[] = [];
-  let priorNumber = epoch.epoch;
-  while (epoch.accepted_count === 0 && priorNumber > 0n) {
-    priorNumber--;
-    const prior = await readPrivateContract<PrivateEpoch | undefined>(
-      config.contracts.sharedVault,
-      address,
-      "epoch",
-      { market, epoch_number: priorNumber },
-    );
-    if (!prior || prior.epoch !== priorNumber) {
-      throw new Error("Prior private epoch is unavailable");
-    }
-    priorEpochs.push(prior);
-    if (prior.last_sequence > 0n) break;
-  }
-  return nextPrivateOrderSequence(epoch, priorEpochs);
-}
-
 async function acceptedLeaf(
   market: string,
   epoch: bigint,
@@ -2395,6 +2384,8 @@ export async function placePrivateOrder({
     throw new Error("Private position quantity must be between 1 and 1,000");
   }
   const proverPreparation = startProverPreparation("order");
+  const walletPreparation = openPrivateWallet(address);
+  void walletPreparation.catch(() => undefined);
   onStatus?.("Preparing the private order prover");
   onStatus?.("Reading the private market epoch");
   const config = await getPrivateConfig();
@@ -2430,7 +2421,6 @@ export async function placePrivateOrder({
         currentEpoch.opened_at === 0n
       ) {
         onStatus?.("Opening the private batch window");
-        await proverPreparation;
         await relayPrivateContractCall(
           config.contracts.sharedVault,
           address,
@@ -2465,16 +2455,11 @@ export async function placePrivateOrder({
     address,
     positionBudget,
     onStatus,
+    walletPreparation,
   );
   const wallet = spendable.wallet;
   const input = spendable.note;
   const inputTotal = input.amount;
-  const sequence = await nextOrderSequence(
-    wallet.config,
-    address,
-    market,
-    epoch,
-  );
   const id = actionId();
   const idBytes = hexToBytes(id);
   const encryptionRandomness = randomPrivateScalar();
@@ -2512,7 +2497,7 @@ export async function placePrivateOrder({
   });
   const domain = privateDomain(wallet.config, staticContext);
   const change = inputTotal - positionBudget;
-  const outputs = [
+  const createPositionOutputs = (sequence: bigint) => [
     createOutputNote({
       outputIndex: 0,
       domain,
@@ -2534,30 +2519,40 @@ export async function placePrivateOrder({
       ...outputSecrets(),
     }),
   ];
-  const accepted = await acceptedAppend(
-    wallet.config,
-    address,
-    market,
-    epoch,
-    {
-      sequence,
-      actionId: idBytes,
-      positionCommitment: outputs[1].commitment,
-      encryptedOrder,
-    },
-  );
-  const binding = await readPrivateContract<PrivateOrderBinding>(
-    wallet.config.contracts.sharedVault,
-    address,
-    "order_binding",
-    {
+  const readBinding = (positionCommitment: bigint) =>
+    readPrivateContract<PrivateOrderBinding>(
+      wallet.config.contracts.sharedVault,
+      address,
+      "order_binding",
+      {
+        market,
+        epoch_number: epoch.epoch,
+        action_id: idBytes,
+        position_commitment: positionCommitment,
+        encrypted_order: encryptedOrder,
+      },
+    );
+  const bound = await preparePrivateOrderSequence({
+    initialSequence: epoch.accepted_count > 0
+      ? epoch.last_sequence + 1n
+      : 1n,
+    build: createPositionOutputs,
+    read: (candidate) => readBinding(candidate[1].commitment),
+    prepare: (candidate, sequence) => acceptedAppend(
+      wallet.config,
+      address,
       market,
-      epoch_number: epoch.epoch,
-      action_id: idBytes,
-      position_commitment: outputs[1].commitment,
-      encrypted_order: encryptedOrder,
-    },
-  );
+      epoch,
+      {
+        sequence,
+        actionId: idBytes,
+        positionCommitment: candidate[1].commitment,
+        encryptedOrder,
+      },
+    ),
+  });
+  const { sequence, candidate: outputs, binding } = bound;
+  const accepted = bound.prepared;
   if (
     binding.sequence !== sequence ||
     binding.position_commitment !== outputs[1].commitment ||
@@ -2769,6 +2764,7 @@ async function acceptedWitness(
 }
 
 async function allocationWitness({
+  encrypted,
   market,
   epoch,
   batch,
@@ -2778,6 +2774,7 @@ async function allocationWitness({
   quantity,
   encryptionRandomness,
 }: {
+  encrypted: EncryptedPrivateAllocation;
   market: string;
   epoch: PrivateEpoch;
   batch: PrivateBatchRecord;
@@ -2787,11 +2784,6 @@ async function allocationWitness({
   quantity: bigint;
   encryptionRandomness: bigint;
 }) {
-  const encrypted = await getPrivateAllocation(
-    market,
-    epoch.epoch,
-    positionCommitment,
-  );
   const sharedSecret = multiplyPoint(
     [epoch.committee_public_key_x, epoch.committee_public_key_y],
     8n * encryptionRandomness,
@@ -3041,7 +3033,11 @@ export async function runPrivatePositionAction({
   encryptionRandomness: bigint;
   action: PrivatePositionAction;
   onStatus?: (status: string) => void;
-}): Promise<{ hash: string; amount: bigint }> {
+}): Promise<{
+  hash: string;
+  amount: bigint;
+  outputCommitment: bigint;
+}> {
   const artifact = action === "recover-change"
     ? "execution_change"
     : action === "claim"
@@ -3087,16 +3083,6 @@ export async function runPrivatePositionAction({
   if (!registration || !epoch || !accounting || epoch.epoch !== epochNumber) {
     throw new Error("Private market settlement state is unavailable");
   }
-  const accepted = await acceptedWitness(
-    wallet.config,
-    address,
-    market,
-    epoch,
-    sequence,
-  );
-  if (accepted.record.position_commitment !== positionCommitment) {
-    throw new Error("Private position commitment does not match its order");
-  }
   const quantity = note.privateData[1] % 1_024n;
   if (quantity <= 0n || quantity > 1_000n) {
     throw new Error("Private position quantity is invalid");
@@ -3122,19 +3108,38 @@ export async function runPrivatePositionAction({
   ) {
     throw new Error("This private position action is not currently available");
   }
-  const batch = acceptedMode
-    ? undefined
-    : await readPrivateContract<PrivateBatchRecord | undefined>(
-        wallet.config.contracts.sharedVault,
-        address,
-        "batch",
-        { market, epoch_number: epochNumber },
-      );
+  const [accepted, batch, encryptedAllocation] = await Promise.all([
+    acceptedWitness(
+      wallet.config,
+      address,
+      market,
+      epoch,
+      sequence,
+    ),
+    acceptedMode
+      ? Promise.resolve(undefined)
+      : readPrivateContract<PrivateBatchRecord | undefined>(
+          wallet.config.contracts.sharedVault,
+          address,
+          "batch",
+          { market, epoch_number: epochNumber },
+        ),
+    acceptedMode
+      ? Promise.resolve(undefined)
+      : getPrivateAllocation(market, epoch.epoch, positionCommitment),
+  ]);
+  if (accepted.record.position_commitment !== positionCommitment) {
+    throw new Error("Private position commitment does not match its order");
+  }
   if (!acceptedMode && !batch) {
     throw new Error("Private batch allocation is unavailable");
   }
-  const allocation = batch
+  if (!acceptedMode && !encryptedAllocation) {
+    throw new Error("Private allocation witness is unavailable");
+  }
+  const allocation = batch && encryptedAllocation
     ? await allocationWitness({
+        encrypted: encryptedAllocation,
         market,
         epoch,
         batch,
@@ -3301,7 +3306,11 @@ export async function runPrivatePositionAction({
       ),
     },
   );
-  return { hash, amount: outputAmount };
+  return {
+    hash,
+    amount: outputAmount,
+    outputCommitment: outputs[0].commitment,
+  };
 }
 
 export function privateBalanceNotes(

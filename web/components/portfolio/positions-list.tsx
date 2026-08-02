@@ -40,6 +40,7 @@ import {
   runPrivatePositionAction,
 } from "@/lib/private/actions";
 import { getPrivateConfig } from "@/lib/private/client";
+import { preparePrivateProver } from "@/lib/private/prover";
 import { NETWORK } from "@/lib/network";
 import { formatTokenAmount } from "@/lib/stellar/amount";
 import { outcomeLabel } from "@/lib/stellar/derive";
@@ -240,6 +241,13 @@ function actionLabel(action: PositionAction, busy: boolean): string {
   return "Unavailable";
 }
 
+function positionActionArtifact(action: PositionAction): string | null {
+  if (action === "recover-change") return "execution_change";
+  if (action === "claim") return "claim";
+  if (action === "refund") return "refund";
+  return null;
+}
+
 function PositionActionButton({
   position,
   state,
@@ -317,22 +325,24 @@ function PositionActionButton({
         settlementTxHash,
         changeTxHash,
       });
-      try {
-        const backupKey = await (
-          backupPreparation ?? preparePositionBackup(address)
-        );
-        await savePositionBackup({
-          ...position,
-          status,
-          settlementTxHash,
-          changeTxHash,
-        }, backupKey);
-      } catch (cause) {
-        updatePosition(address, position.commitment, {
-          backupStatus: "local",
-          backupError: cause instanceof Error ? cause.message : "Encrypted backup update failed",
-        });
-      }
+      void (async () => {
+        try {
+          const backupKey = await (
+            backupPreparation ?? preparePositionBackup(address)
+          );
+          await savePositionBackup({
+            ...position,
+            status,
+            settlementTxHash,
+            changeTxHash,
+          }, backupKey);
+        } catch (cause) {
+          updatePosition(address, position.commitment, {
+            backupStatus: "local",
+            backupError: cause instanceof Error ? cause.message : "Encrypted backup update failed",
+          });
+        }
+      })();
       onCompleted();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Position action failed";
@@ -346,9 +356,23 @@ function PositionActionButton({
   }
 
   if (!action) return null;
+  const artifact = position.protocol === "shared-vault"
+    ? positionActionArtifact(action)
+    : null;
+  const prepareArtifact = () => {
+    if (artifact) {
+      void preparePrivateProver(artifact).catch(() => undefined);
+    }
+  };
   return (
     <div className="space-y-2">
-      <Button size="sm" disabled={busy} onClick={execute}>
+      <Button
+        size="sm"
+        disabled={busy}
+        onPointerEnter={prepareArtifact}
+        onFocus={prepareArtifact}
+        onClick={execute}
+      >
         {busy && <Spinner className="size-3" />}
         {actionLabel(action, busy)}
       </Button>

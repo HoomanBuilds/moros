@@ -54,7 +54,7 @@ type ChainProposal = {
 };
 
 type FactoryTransaction = {
-  signAndSend: () => Promise<unknown>;
+  signAndSend: () => Promise<{ result?: unknown }>;
 };
 
 type FactoryClient = {
@@ -79,7 +79,23 @@ type FactoryClient = {
   }) => Promise<FactoryTransaction>;
 };
 
-const factoryClients = new Map<string, Promise<FactoryClient>>();
+const factoryReadClients = new Map<string, Promise<FactoryClient>>();
+const factoryWalletClients = new Map<string, Promise<FactoryClient>>();
+const factoryWasmCache = new Map<string, Promise<Buffer>>();
+
+function factoryWasm(factoryId: string): Promise<Buffer> {
+  let pending = factoryWasmCache.get(factoryId);
+  if (!pending) {
+    const server = new rpc.Server(NETWORK.rpcUrl);
+    pending = server.getContractWasmByContractId(factoryId)
+      .catch((error) => {
+        factoryWasmCache.delete(factoryId);
+        throw error;
+      });
+    factoryWasmCache.set(factoryId, pending);
+  }
+  return pending;
+}
 
 function key(address: string, factoryId: string): string {
   return `${PENDING_KEY}.${factoryId}.${address}`;
@@ -201,15 +217,34 @@ function requestFrom(value: PendingProposal) {
   };
 }
 
-async function factoryClient(
+async function factoryReadClient(
+  factoryId: string,
+): Promise<FactoryClient> {
+  let pending = factoryReadClients.get(factoryId);
+  if (!pending) {
+    pending = factoryWasm(factoryId)
+      .then((wasm) => contract.Client.fromWasm(wasm, {
+        contractId: factoryId,
+        networkPassphrase: NETWORK.passphrase,
+        rpcUrl: NETWORK.rpcUrl,
+      }) as unknown as FactoryClient)
+      .catch((error) => {
+        factoryReadClients.delete(factoryId);
+        throw error;
+      });
+    factoryReadClients.set(factoryId, pending);
+  }
+  return pending;
+}
+
+async function factoryWalletClient(
   factoryId: string,
   address: string,
 ): Promise<FactoryClient> {
   const cacheKey = `${factoryId}:${address}`;
-  let pending = factoryClients.get(cacheKey);
+  let pending = factoryWalletClients.get(cacheKey);
   if (!pending) {
-    const server = new rpc.Server(NETWORK.rpcUrl);
-    pending = server.getContractWasmByContractId(factoryId)
+    pending = factoryWasm(factoryId)
       .then((wasm) => contract.Client.fromWasm(wasm, {
         contractId: factoryId,
         publicKey: address,
@@ -229,10 +264,10 @@ async function factoryClient(
         },
       }) as unknown as FactoryClient)
       .catch((error) => {
-        factoryClients.delete(cacheKey);
+        factoryWalletClients.delete(cacheKey);
         throw error;
       });
-    factoryClients.set(cacheKey, pending);
+    factoryWalletClients.set(cacheKey, pending);
   }
   return pending;
 }
@@ -262,7 +297,7 @@ export async function proposeMarket({
 }): Promise<PendingProposal> {
   onStep("configuration");
   const config = await getPrivateConfig();
-  const factory = await factoryClient(config.contracts.factory, address);
+  const factory = await factoryReadClient(config.contracts.factory);
   let proposal = resume;
   if (!proposal) {
     const policyTiers = config.marketPolicy.liquidityTiers.map(BigInt);
@@ -342,12 +377,20 @@ export async function proposeMarket({
 
   onStep("proposal");
   if (!chainProposal) {
-    await (
-      await factory.propose({ request: requestFrom(proposal) })
+    const walletFactory = await factoryWalletClient(
+      config.contracts.factory,
+      address,
+    );
+    const submitted = await (
+      await walletFactory.propose({ request: requestFrom(proposal) })
     ).signAndSend();
-    chainProposal = (
-      await factory.proposal({ proposal_id: proposalId })
-    ).result;
+    if (
+      !(submitted.result instanceof Uint8Array) ||
+      hex(submitted.result) !== proposal.proposalId
+    ) {
+      throw new Error("Factory confirmed a different proposal identifier");
+    }
+    chainProposal = { state_version: 0n };
   }
   if (!chainProposal) throw new Error("Factory did not confirm the proposal");
   proposal = { ...proposal, proposed: true };
@@ -356,15 +399,24 @@ export async function proposeMarket({
 
   onStep("liquidity");
   if (!chainProposal.liquidity_vault) {
-    await (
-      await factory.deploy_liquidity({
+    const walletFactory = await factoryWalletClient(
+      config.contracts.factory,
+      address,
+    );
+    const submitted = await (
+      await walletFactory.deploy_liquidity({
         proposal_id: proposalId,
         expected_version: BigInt(chainProposal.state_version),
       })
     ).signAndSend();
-    chainProposal = (
-      await factory.proposal({ proposal_id: proposalId })
-    ).result;
+    if (submitted.result !== proposal.liquidityVaultId) {
+      throw new Error("Factory confirmed a different liquidity address");
+    }
+    chainProposal = {
+      ...chainProposal,
+      liquidity_vault: proposal.liquidityVaultId,
+      state_version: BigInt(chainProposal.state_version) + 1n,
+    };
   }
   if (chainProposal?.liquidity_vault !== proposal.liquidityVaultId) {
     throw new Error("Factory liquidity deployment did not match its address");

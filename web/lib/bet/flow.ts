@@ -15,6 +15,7 @@ import { NETWORK, type CollateralAsset } from "@/lib/network";
 import { parsePrivatePositionQuantity, privacyStakeForOrder } from "@/lib/stellar/amount";
 import { getPrivateConfig } from "@/lib/private/client";
 import { placePrivateOrder } from "@/lib/private/actions";
+import { isPrivateRootRaceError } from "@/lib/private/contract";
 
 const R = 6554484396890773809930967563523245729705921265872317281365359162392183254199n;
 
@@ -41,17 +42,25 @@ export async function runBet(
     const quantity = parsePrivatePositionQuantity(amount);
     onStage("hashing");
     onStage("placing");
-    const placed = await placePrivateOrder({
-      address,
-      market: marketId,
-      side: side === "1" ? 1 : 0,
-      quantity,
-      onStatus: (status) => {
-        if (status.includes("Waiting")) onStage("waiting");
-        else if (status.includes("Generating")) onStage("proving");
-        else if (status.includes("Relaying")) onStage("submitting");
-      },
-    });
+    const place = () => placePrivateOrder({
+        address,
+        market: marketId,
+        side: side === "1" ? 1 : 0,
+        quantity,
+        onStatus: (status) => {
+          if (status.includes("Waiting")) onStage("waiting");
+          else if (status.includes("Generating")) onStage("proving");
+          else if (status.includes("Relaying")) onStage("submitting");
+        },
+      });
+    let placed: Awaited<ReturnType<typeof place>>;
+    try {
+      placed = await place();
+    } catch (cause) {
+      if (!isPrivateRootRaceError(cause)) throw cause;
+      onStage("placing");
+      placed = await place();
+    }
     const stakeUnits = (
       (placed.positionBudget + 10n ** BigInt(collateral.decimals) - 1n) /
       10n ** BigInt(collateral.decimals)
@@ -78,19 +87,24 @@ export async function runBet(
       privateSequence: placed.sequence.toString(),
     };
     addPosition(position);
-    let backupSynced = false;
-    try {
-      await backupReady;
-      await savePositionBackup(position, backupKey);
-      backupSynced = true;
-    } catch (cause) {
-      updatePosition(address, position.commitment, {
-        backupStatus: "local",
-        backupError: cause instanceof Error ? cause.message : "Encrypted backup failed",
-      });
-    }
+    const backupSync = (async () => {
+      try {
+        await backupReady;
+        await savePositionBackup(position, backupKey);
+        return true;
+      } catch (cause) {
+        updatePosition(address, position.commitment, {
+          backupStatus: "local",
+          backupError: cause instanceof Error ? cause.message : "Encrypted backup failed",
+        });
+        return false;
+      }
+    })();
     onStage("done");
-    return { backupSynced };
+    return {
+      backupSync,
+      reservedAmount: placed.positionBudget,
+    };
   }
   await registerPool(marketId, poolId);
   const pk = await getPk();
@@ -156,7 +170,10 @@ export async function runBet(
     throw cause;
   }
   onStage("done");
-  return { backupSynced };
+  return {
+    backupSync: Promise.resolve(backupSynced),
+    reservedAmount: privateStake.stakeAtomic,
+  };
 }
 
 export async function retryBetSubmission({
