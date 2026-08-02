@@ -36,7 +36,7 @@ function readState(path, vaultId, levels) {
   ) {
     throw new Error("private index state does not match this vault");
   }
-  return {
+  const normalized = {
     ...state,
     outputs: state.outputs.map((output) => ({
       ...output,
@@ -44,6 +44,20 @@ function readState(path, vaultId, levels) {
       root: decimal(output.root),
     })),
   };
+  if (
+    normalized.currentRoot === undefined ||
+    (
+      normalized.nextLeafIndex !== undefined &&
+      Number(normalized.nextLeafIndex) !== normalized.outputs.length
+    ) ||
+    merkleTree(
+      normalized.outputs.map((output) => output.commitment),
+      levels,
+    ).root !== decimal(normalized.currentRoot)
+  ) {
+    throw new Error("private index state does not reconstruct its stored root");
+  }
+  return normalized;
 }
 
 function saveState(path, state) {

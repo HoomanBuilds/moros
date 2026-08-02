@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -95,6 +96,20 @@ try {
   await resumed.sync();
   assert.equal(outputReads, 4, "resume must not reread indexed outputs");
   assert.equal(JSON.parse(readFileSync(stateFile, "utf8")).outputs.length, 4);
+
+  const corruptedStateFile = resolve(directory, "corrupted-outputs.json");
+  const corruptedState = JSON.parse(firstState);
+  corruptedState.outputs[0].commitment = "99";
+  writeFileSync(corruptedStateFile, JSON.stringify(corruptedState));
+  assert.throws(
+    () => new PrivateOutputIndexer({
+      client,
+      stateFile: corruptedStateFile,
+      vaultId: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+      levels: 8,
+    }),
+    /does not reconstruct its stored root/u,
+  );
 
   const broken = new PrivateOutputIndexer({
     client: {
