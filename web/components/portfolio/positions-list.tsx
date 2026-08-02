@@ -263,6 +263,7 @@ function PositionActionButton({
       let status: "submitted" | "redeemed" | "refunded";
       let settlementTxHash: string | undefined;
       let changeTxHash: string | undefined;
+      let backupPreparation: ReturnType<typeof preparePositionBackup> | undefined;
       if (position.protocol === "shared-vault") {
         if (
           action === "retry" ||
@@ -272,6 +273,8 @@ function PositionActionButton({
         ) {
           throw new Error("Private position action is incompatible");
         }
+        backupPreparation = preparePositionBackup(address);
+        void backupPreparation.catch(() => undefined);
         const result = await runPrivatePositionAction({
           address,
           market: position.market,
@@ -315,7 +318,9 @@ function PositionActionButton({
         changeTxHash,
       });
       try {
-        const backupKey = await preparePositionBackup(address);
+        const backupKey = await (
+          backupPreparation ?? preparePositionBackup(address)
+        );
         await savePositionBackup({
           ...position,
           status,

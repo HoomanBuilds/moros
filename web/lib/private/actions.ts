@@ -10,6 +10,7 @@ import {
   getPrivateTree,
   registerPrivateLiquidityExit,
   type PrivateDeploymentConfig,
+  type PrivateTreeSnapshot,
 } from "./client";
 import {
   readPrivateContract,
@@ -501,8 +502,16 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator - 1n) / denominator;
 }
 
-async function freshTree(config: PrivateDeploymentConfig): Promise<PrivateTree> {
-  const snapshot = await getPrivateTree();
+function startProverPreparation(circuitName: string): Promise<void> {
+  const pending = preparePrivateProver(circuitName);
+  void pending.catch(() => undefined);
+  return pending;
+}
+
+function verifiedTree(
+  config: PrivateDeploymentConfig,
+  snapshot: PrivateTreeSnapshot,
+): PrivateTree {
   if (
     snapshot.vaultId !== config.contracts.sharedVault ||
     snapshot.levels !== config.privacy.treeLevels
@@ -520,12 +529,16 @@ export async function shieldUsdc(
   address: string,
   amount: bigint,
   onStatus?: (status: string) => void,
-): Promise<string> {
+): Promise<{ hash: string; outputCommitment: bigint }> {
   assertAmount(amount);
+  const proverPreparation = startProverPreparation("deposit");
   onStatus?.("Reading the shared vault");
-  const config = await getPrivateConfig();
-  const tree = await freshTree(config);
-  const keys = await unlockPositionBackup(address);
+  const [config, keys, treeSnapshot] = await Promise.all([
+    getPrivateConfig(),
+    unlockPositionBackup(address),
+    getPrivateTree(),
+  ]);
+  const tree = verifiedTree(config, treeSnapshot);
   const id = actionId();
   const expiry = actionExpiry();
   const contextFields = await operationContextFields({
@@ -587,6 +600,7 @@ export async function shieldUsdc(
     appendSiblings: appended.siblings,
   };
   onStatus?.("Generating the deposit proof");
+  await proverPreparation;
   const proved = await provePrivateAction(
     "deposit",
     stringifyWitness(witness) as Record<string, unknown>,
@@ -603,7 +617,7 @@ export async function shieldUsdc(
     publicAmount: amount,
   }));
   onStatus?.("Authorizing the public USDC deposit");
-  return sendPrivateWalletCall(
+  const hash = await sendPrivateWalletCall(
     config.contracts.sharedVault,
     address,
     "deposit",
@@ -615,14 +629,16 @@ export async function shieldUsdc(
       transition: transition(proved.proof, tree, appended.newRoot, [], outputs),
     },
   );
+  return { hash, outputCommitment: outputs[0].commitment };
 }
 
 export async function withdrawPrivateUsdc(
   address: string,
   amount: bigint,
   onStatus?: (status: string) => void,
-): Promise<string> {
+): Promise<{ hash: string; outputCommitment: bigint }> {
   assertAmount(amount);
+  const proverPreparation = startProverPreparation("withdraw");
   onStatus?.("Preparing private USDC withdrawal");
   const { wallet, note: input } = await privateWalletWithSpendableNote(
     address,
@@ -693,6 +709,7 @@ export async function withdrawPrivateUsdc(
     appendSiblings: appended.siblings,
   };
   onStatus?.("Generating the private withdrawal proof");
+  await proverPreparation;
   const proved = await provePrivateAction(
     "withdraw",
     stringifyWitness(witness) as Record<string, unknown>,
@@ -709,7 +726,7 @@ export async function withdrawPrivateUsdc(
     publicAmount: -amount,
   }));
   onStatus?.("Relaying the public USDC withdrawal");
-  return relayPrivateContractCall(
+  const hash = await relayPrivateContractCall(
     wallet.config.contracts.sharedVault,
     address,
     "withdraw",
@@ -727,6 +744,7 @@ export async function withdrawPrivateUsdc(
       ),
     },
   );
+  return { hash, outputCommitment: outputs[0].commitment };
 }
 
 function selectFundingInputs(
@@ -767,6 +785,7 @@ async function consolidatePrivateNotes(
   inputs: [OwnedIndexedNote, OwnedIndexedNote],
   onStatus?: (status: string) => void,
 ): Promise<PrivateWalletSnapshot> {
+  const proverPreparation = startProverPreparation("transfer");
   onStatus?.("Consolidating encrypted private notes");
   const id = actionId();
   const expiry = actionExpiry();
@@ -832,6 +851,7 @@ async function consolidatePrivateNotes(
     ...outputFields(outputs),
     appendSiblings: appended.siblings,
   };
+  await proverPreparation;
   const proved = await provePrivateAction(
     "transfer",
     stringifyWitness(witness) as Record<string, unknown>,
@@ -958,19 +978,23 @@ async function fundLiquidity(
   onStatus?: (status: string) => void,
 ): Promise<{ hash: string; assets: bigint; shares: bigint }> {
   assertAmount(requestedAmount);
+  const proverPreparation = startProverPreparation("liquidity_fund");
   onStatus?.("Reading private balance and LP vault");
   const config = await getPrivateConfig();
   let amount = requestedAmount;
   let shares: bigint;
   let stateVersion: bigint;
   if (liquidityVaultId === config.contracts.liquidityPool) {
-    const state = await getPooledLiquidityState(address);
-    shares = await readPrivateContract<bigint>(
-      liquidityVaultId,
-      address,
-      "preview_deposit",
-      { assets: amount },
-    );
+    const [state, previewShares] = await Promise.all([
+      getPooledLiquidityState(address),
+      readPrivateContract<bigint>(
+        liquidityVaultId,
+        address,
+        "preview_deposit",
+        { assets: amount },
+      ),
+    ]);
+    shares = previewShares;
     stateVersion = state.info.state_version;
   } else {
     const info = await getLiquidityVaultInfo(address, liquidityVaultId);
@@ -1079,6 +1103,7 @@ async function fundLiquidity(
     appendSiblings: append.siblings,
   };
   onStatus?.("Generating the private LP proof");
+  await proverPreparation;
   const proved = await provePrivateAction(
     "liquidity_fund",
     stringifyWitness(witness) as Record<string, unknown>,
@@ -1190,7 +1215,52 @@ export async function withdrawLiquidity({
 }): Promise<{ hash: string; assets: bigint; remainingShares: bigint }> {
   assertAmount(shares);
   onStatus?.("Reading the private LP position");
-  const wallet = await openPrivateWallet(address);
+  const config = await getPrivateConfig();
+  const walletPromise = openPrivateWallet(address);
+  const valuationPromise = liquidityVaultId === config.contracts.liquidityPool
+    ? (() => {
+        const proverPreparation = startProverPreparation("liquidity_exit");
+        return readPrivateContract<PooledRedemptionPreview>(
+          liquidityVaultId,
+          address,
+          "preview_redeem",
+          { shares },
+        ).then((preview) => ({
+          terminal: false,
+          assets: preview.assets,
+          stateVersion: preview.state_version,
+          immediateAssets: preview.immediate_assets,
+          canRedeemNow: preview.can_redeem_now,
+          proverPreparation,
+        }));
+      })()
+    : getLiquidityVaultInfo(address, liquidityVaultId).then((info) => {
+        const phase = phaseName(info.phase);
+        const terminal = phase === "Cancelled" || phase === "Settled";
+        const proverPreparation = startProverPreparation(
+          terminal ? "liquidity_redeem" : "liquidity_exit",
+        );
+        if (!terminal && phase !== "Funding" && phase !== "Ready") {
+          throw new Error("Active LP shares require a replacement exit");
+        }
+        const assetsAvailable = terminal
+          ? info.terminal_assets
+          : info.funded_assets;
+        return {
+          terminal,
+          assets: shares === info.total_shares
+            ? assetsAvailable
+            : shares * assetsAvailable / info.total_shares,
+          stateVersion: info.state_version,
+          immediateAssets: assetsAvailable,
+          canRedeemNow: true,
+          proverPreparation,
+        };
+      });
+  const [wallet, valuation] = await Promise.all([
+    walletPromise,
+    valuationPromise,
+  ]);
   const liquidityFields = await addressLimbs(liquidityVaultId);
   const liquidityPayload = poseidon2Hash([1011n, ...liquidityFields]);
   const note = wallet.notes.find((candidate) =>
@@ -1201,41 +1271,19 @@ export async function withdrawLiquidity({
   if (!note || shares > note.amount) {
     throw new Error("The private LP share note is unavailable");
   }
-  const config = await getPrivateConfig();
-  let terminal = false;
-  let assets: bigint;
-  let stateVersion: bigint;
-  if (liquidityVaultId === config.contracts.liquidityPool) {
-    const preview = await readPrivateContract<PooledRedemptionPreview>(
-      liquidityVaultId,
-      address,
-      "preview_redeem",
-      { shares },
+  if (!valuation.canRedeemNow) {
+    const available = formatPrivateAtomic(valuation.immediateAssets);
+    const requested = formatPrivateAtomic(valuation.assets);
+    throw new Error(
+      `This withdrawal is worth ${requested} USDC, but current immediate exit capacity is ${available} USDC. Enter fewer shares or wait until active market exposure is released.`,
     );
-    if (!preview.can_redeem_now) {
-      const available = formatPrivateAtomic(preview.immediate_assets);
-      const requested = formatPrivateAtomic(preview.assets);
-      throw new Error(
-        `This withdrawal is worth ${requested} USDC, but current immediate exit capacity is ${available} USDC. Enter fewer shares or wait until active market exposure is released.`,
-      );
-    }
-    assets = preview.assets;
-    stateVersion = preview.state_version;
-  } else {
-    const info = await getLiquidityVaultInfo(address, liquidityVaultId);
-    const phase = phaseName(info.phase);
-    terminal = phase === "Cancelled" || phase === "Settled";
-    if (!terminal && phase !== "Funding" && phase !== "Ready") {
-      throw new Error("Active LP shares require a replacement exit");
-    }
-    const assetsAvailable = terminal
-      ? info.terminal_assets
-      : info.funded_assets;
-    assets = shares === info.total_shares
-      ? assetsAvailable
-      : shares * assetsAvailable / info.total_shares;
-    stateVersion = info.state_version;
   }
+  const {
+    terminal,
+    assets,
+    stateVersion,
+    proverPreparation,
+  } = valuation;
   assertAmount(assets);
   const remainingShares = note.amount - shares;
   const id = actionId();
@@ -1324,6 +1372,7 @@ export async function withdrawLiquidity({
     appendSiblings: appended.siblings,
   };
   onStatus?.("Generating the private LP withdrawal proof");
+  await proverPreparation;
   const proved = await provePrivateAction(
     terminal ? "liquidity_redeem" : "liquidity_exit",
     stringifyWitness(witness) as Record<string, unknown>,
@@ -1549,6 +1598,7 @@ export async function requestLiquidityExit({
 }> {
   assertAmount(shares);
   assertAmount(minimumPayment);
+  const proverPreparation = startProverPreparation("exit_request");
   onStatus?.("Reading the active LP position");
   const wallet = await openPrivateWallet(address);
   const liquidityFields = await addressLimbs(liquidityVaultId);
@@ -1703,6 +1753,7 @@ export async function requestLiquidityExit({
     appendSiblings: appended.siblings,
   };
   onStatus?.("Generating the private exit offer proof");
+  await proverPreparation;
   const proved = await provePrivateAction(
     "exit_request",
     stringifyWitness(witness) as Record<string, unknown>,
@@ -1781,6 +1832,7 @@ export async function cancelLiquidityExit({
   exitId: string;
   onStatus?: (status: string) => void;
 }): Promise<string> {
+  const proverPreparation = startProverPreparation("exit_cancel");
   onStatus?.("Reading the private exit receipt");
   const [wallet, state] = await Promise.all([
     openPrivateWallet(address),
@@ -1879,6 +1931,7 @@ export async function cancelLiquidityExit({
     appendSiblings: appended.siblings,
   };
   onStatus?.("Generating the private exit cancellation proof");
+  await proverPreparation;
   const proved = await provePrivateAction(
     "exit_cancel",
     stringifyWitness(witness) as Record<string, unknown>,
@@ -1930,6 +1983,7 @@ export async function matchLiquidityExit({
   exitId: string;
   onStatus?: (status: string) => void;
 }): Promise<{ hash: string; shares: bigint; payment: bigint }> {
+  const proverPreparation = startProverPreparation("exit_match");
   onStatus?.("Verifying the current LP risk snapshot");
   const [wallet, state] = await Promise.all([
     openPrivateWallet(address),
@@ -2094,6 +2148,7 @@ export async function matchLiquidityExit({
     appendSiblings1: appended.siblings1,
   };
   onStatus?.("Generating the private LP replacement proof");
+  await proverPreparation;
   const proved = await provePrivateAction(
     "exit_match",
     stringifyWitness(witness) as Record<string, unknown>,
@@ -2339,8 +2394,8 @@ export async function placePrivateOrder({
   if (quantity <= 0n || quantity > 1_000n) {
     throw new Error("Private position quantity must be between 1 and 1,000");
   }
+  const proverPreparation = startProverPreparation("order");
   onStatus?.("Preparing the private order prover");
-  await preparePrivateProver("order");
   onStatus?.("Reading the private market epoch");
   const config = await getPrivateConfig();
   const { registration, epoch } = await waitForPrivateBatch<
@@ -2375,6 +2430,7 @@ export async function placePrivateOrder({
         currentEpoch.opened_at === 0n
       ) {
         onStatus?.("Opening the private batch window");
+        await proverPreparation;
         await relayPrivateContractCall(
           config.contracts.sharedVault,
           address,
@@ -2558,6 +2614,7 @@ export async function placePrivateOrder({
     appendSiblings: appended.siblings,
   };
   onStatus?.("Generating the private order proof");
+  await proverPreparation;
   const proved = await provePrivateAction(
     "order",
     stringifyWitness(witness) as Record<string, unknown>,
@@ -2985,8 +3042,35 @@ export async function runPrivatePositionAction({
   action: PrivatePositionAction;
   onStatus?: (status: string) => void;
 }): Promise<{ hash: string; amount: bigint }> {
+  const artifact = action === "recover-change"
+    ? "execution_change"
+    : action === "claim"
+      ? "claim"
+      : "refund";
+  const proverPreparation = startProverPreparation(artifact);
   onStatus?.("Reading the private position");
-  const wallet = await openPrivateWallet(address);
+  const config = await getPrivateConfig();
+  const [wallet, registration, epoch, accounting] = await Promise.all([
+    openPrivateWallet(address),
+    readPrivateContract<PrivateMarketRegistration | undefined>(
+      config.contracts.sharedVault,
+      address,
+      "registration",
+      { market },
+    ),
+    readPrivateContract<PrivateEpoch | undefined>(
+      config.contracts.sharedVault,
+      address,
+      "epoch",
+      { market, epoch_number: epochNumber },
+    ),
+    readPrivateContract<PrivateMarketAccounting | undefined>(
+      config.contracts.sharedVault,
+      address,
+      "accounting",
+      { market },
+    ),
+  ]);
   const note = wallet.notes.find((candidate) =>
     candidate.purpose === 2n &&
     candidate.commitment === positionCommitment
@@ -3000,26 +3084,6 @@ export async function runPrivatePositionAction({
   ) {
     throw new Error("The encrypted activity record does not match the position note");
   }
-  const [registration, epoch, accounting] = await Promise.all([
-    readPrivateContract<PrivateMarketRegistration | undefined>(
-      wallet.config.contracts.sharedVault,
-      address,
-      "registration",
-      { market },
-    ),
-    readPrivateContract<PrivateEpoch | undefined>(
-      wallet.config.contracts.sharedVault,
-      address,
-      "epoch",
-      { market, epoch_number: epochNumber },
-    ),
-    readPrivateContract<PrivateMarketAccounting | undefined>(
-      wallet.config.contracts.sharedVault,
-      address,
-      "accounting",
-      { market },
-    ),
-  ]);
   if (!registration || !epoch || !accounting || epoch.epoch !== epochNumber) {
     throw new Error("Private market settlement state is unavailable");
   }
@@ -3201,11 +3265,7 @@ export async function runPrivatePositionAction({
     appendSiblings: appended.siblings,
   };
   onStatus?.("Generating the private settlement proof");
-  const artifact = action === "recover-change"
-    ? "execution_change"
-    : action === "claim"
-      ? "claim"
-      : "refund";
+  await proverPreparation;
   const proved = await provePrivateAction(
     artifact,
     stringifyWitness(witness) as Record<string, unknown>,

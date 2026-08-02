@@ -579,12 +579,12 @@ async function setup(): Promise<void> {
       log(
         `shielding ${atomicStellarAmount(missingPrivateAssets)} USDC for the pooled LP bootstrap`,
       );
-      const depositHash = await shieldUsdc(
+      const deposit = await shieldUsdc(
         lp,
         missingPrivateAssets,
         (status) => log(status),
       );
-      log(`LP public shield confirmed ${depositHash}`);
+      log(`LP public shield confirmed ${deposit.hash}`);
       wallet = await waitFor(
         "indexed LP private balance",
         180_000,
@@ -756,12 +756,12 @@ async function setup(): Promise<void> {
         log(
           `shielding ${atomicStellarAmount(missing)} USDC for ${bettor.name}`,
         );
-        const depositHash = await shieldUsdc(
+        const deposit = await shieldUsdc(
           bettor.address,
           missing,
           (status) => log(status),
         );
-        log(`${bettor.name} public shield confirmed ${depositHash}`);
+        log(`${bettor.name} public shield confirmed ${deposit.hash}`);
         await waitFor(
           `${bettor.name} indexed private balance`,
           180_000,

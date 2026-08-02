@@ -19,6 +19,7 @@ import {
   shieldUsdc,
   withdrawPrivateUsdc,
 } from "@/lib/private/actions";
+import { waitForPrivateOutput } from "@/lib/private/output-index";
 import { openPrivateWallet } from "@/lib/private/wallet";
 import {
   addCollateralTrustline,
@@ -30,10 +31,6 @@ import {
   parseTokenAmount,
 } from "@/lib/stellar/amount";
 import { connectWallet, useWalletAddress } from "@/lib/wallet-store";
-
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
 
 export function PrivateWalletCard() {
   const address = useWalletAddress();
@@ -114,7 +111,7 @@ export function PrivateWalletCard() {
   }
 
   async function deposit() {
-    if (!address) return;
+    if (!address || privateBalance === null) return;
     setBusy(true);
     setStatus("Checking deposit");
     setError("");
@@ -130,22 +127,15 @@ export function PrivateWalletCard() {
       if (publicAccount.balanceAtomic < amountAtomic) {
         throw new Error("Wallet USDC balance is lower than the deposit amount");
       }
-      const wallet = await openPrivateWallet(address);
-      const priorBalance = wallet.balance;
-      setPrivateBalance(priorBalance);
-      await shieldUsdc(address, amountAtomic, setStatus);
+      const result = await shieldUsdc(address, amountAtomic, setStatus);
       setStatus("Deposit confirmed. Waiting for encrypted notes");
-      for (let attempt = 0; attempt < 30; attempt++) {
-        await wait(2_000);
-        const refreshed = await openPrivateWallet(address);
-        if (refreshed.balance >= priorBalance + amountAtomic) {
-          setPrivateBalance(refreshed.balance);
-          await refreshPublicBalance();
-          setStatus("Private USDC is ready for bets and liquidity");
-          return;
-        }
-      }
-      throw new Error("Deposit confirmed, but the private indexer has not published the notes yet");
+      await waitForPrivateOutput(result.outputCommitment);
+      const [refreshed] = await Promise.all([
+        openPrivateWallet(address),
+        refreshPublicBalance(),
+      ]);
+      setPrivateBalance(refreshed.balance);
+      setStatus("Private USDC is ready for bets and liquidity");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Private USDC deposit failed");
       setStatus("");
@@ -164,20 +154,15 @@ export function PrivateWalletCard() {
       if (privateBalance < amountAtomic) {
         throw new Error("Private USDC balance is lower than the withdrawal amount");
       }
-      const priorBalance = privateBalance;
-      await withdrawPrivateUsdc(address, amountAtomic, setStatus);
+      const result = await withdrawPrivateUsdc(address, amountAtomic, setStatus);
       setStatus("Withdrawal confirmed. Waiting for encrypted notes");
-      for (let attempt = 0; attempt < 30; attempt++) {
-        await wait(2_000);
-        const refreshed = await openPrivateWallet(address);
-        if (refreshed.balance <= priorBalance - amountAtomic) {
-          setPrivateBalance(refreshed.balance);
-          await refreshPublicBalance();
-          setStatus("USDC returned to the connected Stellar wallet");
-          return;
-        }
-      }
-      throw new Error("Withdrawal confirmed, but the private indexer has not published the change note yet");
+      await waitForPrivateOutput(result.outputCommitment);
+      const [refreshed] = await Promise.all([
+        openPrivateWallet(address),
+        refreshPublicBalance(),
+      ]);
+      setPrivateBalance(refreshed.balance);
+      setStatus("USDC returned to the connected Stellar wallet");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Private USDC withdrawal failed");
       setStatus("");

@@ -29,8 +29,8 @@ export type BetSide = "0" | "1";
 export type BetStage = "securing" | "hashing" | "placing" | "waiting" | "proving" | "submitting" | "done";
 
 export async function runBet(
-  { side, amount, address, collateral, marketId, poolId, backupKey, onStage }:
-  { side: BetSide; amount: string; address: string; collateral: CollateralAsset; marketId: string; poolId: string; backupKey: PrivateArchiveKeys; onStage: (s: BetStage) => void }
+  { side, amount, address, collateral, marketId, poolId, backupKey, backupReady, onStage }:
+  { side: BetSide; amount: string; address: string; collateral: CollateralAsset; marketId: string; poolId: string; backupKey: PrivateArchiveKeys; backupReady?: Promise<PrivateArchiveKeys>; onStage: (s: BetStage) => void }
 ) {
   if (collateral.sac !== NETWORK.collateral.sac) {
     throw new Error(`Moros ${NETWORK.id} markets require Stellar USDC`);
@@ -80,6 +80,7 @@ export async function runBet(
     addPosition(position);
     let backupSynced = false;
     try {
+      await backupReady;
       await savePositionBackup(position, backupKey);
       backupSynced = true;
     } catch (cause) {
@@ -120,6 +121,7 @@ export async function runBet(
   addPosition(position);
   let backupSynced = false;
   try {
+    await backupReady;
     await savePositionBackup(position, backupKey);
     backupSynced = true;
   } catch (cause) {

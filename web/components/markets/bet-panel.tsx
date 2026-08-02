@@ -22,7 +22,10 @@ import {
   privacyStakeForOrder,
 } from "@/lib/stellar/amount";
 import { NETWORK } from "@/lib/network";
-import { unlockPositionBackup } from "@/lib/positions/backup";
+import {
+  preparePositionBackup,
+  unlockPositionBackup,
+} from "@/lib/positions/backup";
 import { PLATFORM_FEE_BPS } from "@/lib/markets/deploy-constants";
 import { estimatePrivateProfit } from "@/lib/markets/private-estimate";
 import { getPrivateConfig } from "@/lib/private/client";
@@ -223,6 +226,8 @@ export function BetPanel() {
       if (!privateStack && !accountState?.hasTrustline) throw new Error(`Enable ${collateral.code} before placing a bet`);
       if (!privateStack && insufficient) throw new Error(`Insufficient ${collateral.code} balance`);
       setStage("securing");
+      const backupReady = preparePositionBackup(address);
+      void backupReady.catch(() => undefined);
       const backupKey = await unlockPositionBackup(address);
       setStage("placing");
       const result = await runBet({
@@ -233,6 +238,7 @@ export function BetPanel() {
         marketId,
         poolId,
         backupKey,
+        backupReady,
         onStage: setStage,
       });
       if (!result.backupSynced) setWarning("Position placed, but encrypted cloud backup needs attention in Portfolio. Keep this browser data safe.");

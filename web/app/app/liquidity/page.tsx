@@ -123,8 +123,10 @@ export default function LiquidityPage() {
 
   const loadPrivateState = useCallback(async () => {
     if (!address) throw new Error("Connect a wallet first");
-    const wallet = await openPrivateWallet(address);
-    const state = await getPooledLiquidityState(address);
+    const [wallet, state] = await Promise.all([
+      openPrivateWallet(address),
+      getPooledLiquidityState(address),
+    ]);
     const owned = await getOwnedLiquidityShares(address, [state.poolId], wallet);
     const rows = await Promise.all(owned.map(async (share) => ({
       ...share,

@@ -26,6 +26,15 @@ import {
 import { createAsyncValueCache } from "./unlock-cache";
 
 const unlockedKeys = createAsyncValueCache<string, PrivateArchiveKeys>();
+const registeredArchives = createAsyncValueCache<string, number>();
+
+function ensurePrivateArchive(keys: PrivateArchiveKeys): Promise<number> {
+  const cacheKey = `${keys.context}:${keys.bucketId}`;
+  return registeredArchives.getOrCreate(
+    cacheKey,
+    () => registerPrivateArchive(keys),
+  );
+}
 
 async function archiveVault(): Promise<string> {
   const vault = resolveArchiveVault(
@@ -48,7 +57,7 @@ export async function unlockPositionBackup(address: string): Promise<PrivateArch
 
 export async function preparePositionBackup(address: string): Promise<PrivateArchiveKeys> {
   const keys = await unlockPositionBackup(address);
-  await registerPrivateArchive(keys);
+  await ensurePrivateArchive(keys);
   return keys;
 }
 
@@ -62,7 +71,7 @@ async function synchronize(
   includeLocal: boolean,
 ): Promise<Position[]> {
   if (keys.address !== address) throw new Error("Private activity key does not match this wallet");
-  await registerPrivateArchive(keys);
+  await ensurePrivateArchive(keys);
   for (let attempt = 0; attempt < 3; attempt++) {
     const snapshot = await readPrivateArchive(keys);
     const remote = snapshot.pages.length === 0 ? [] : await joinArchivePages(keys, snapshot.pages);
