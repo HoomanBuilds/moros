@@ -31,6 +31,8 @@ const SERVICE_URL =
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const LOCAL_ONLY = process.env.MOROS_FRESH_E2E_LOCAL_ONLY === "1";
+const SKIP_REGISTRY = process.env.MOROS_FRESH_E2E_SKIP_REGISTRY === "1";
 const STATE_FILE =
   process.env.MOROS_FRESH_E2E_STATE
   || "/tmp/moros-fresh-testnet-e2e.json";
@@ -38,15 +40,34 @@ const USDC_SCALE = 10_000_000n;
 const Q32 = 1n << 32n;
 const DEPLOYMENT_PATH = resolve(
   process.cwd(),
-  "../deployments/private-testnet.json",
+  process.env.MOROS_TESTNET_DEPLOYMENT
+    || "../deployments/private-testnet.json",
 );
 const ARTIFACT_ROOT = resolve(
   process.cwd(),
-  "../circuits/private-build/public",
+  process.env.MOROS_TESTNET_ZK_PUBLIC_DIR
+    || "../circuits/private-build/public",
 );
 const STELLAR_NETWORK = "Test SDF Network ; September 2015";
 const USDC_ISSUER =
   "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+
+if (!LOCAL_ONLY) {
+  throw new Error("Fresh testnet E2E requires local-only mode");
+}
+const service = new URL(SERVICE_URL);
+if (!["127.0.0.1", "localhost"].includes(service.hostname)) {
+  throw new Error("Local-only E2E requires a loopback private service URL");
+}
+if (process.env.NEXT_PUBLIC_STELLAR_NETWORK !== "testnet") {
+  throw new Error("Local-only E2E requires NEXT_PUBLIC_STELLAR_NETWORK=testnet");
+}
+if (!SKIP_REGISTRY) {
+  throw new Error("Local-only E2E must disable the hosted market registry");
+}
+if (SUPABASE_URL || SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error("Local-only E2E refuses Supabase configuration");
+}
 
 type BettorName = FreshBettorName;
 
@@ -254,6 +275,20 @@ function registryHeaders(): Record<string, string> {
   };
 }
 
+function enumName(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+  if (
+    value
+    && typeof value === "object"
+    && "tag" in value
+    && typeof value.tag === "string"
+  ) {
+    return value.tag;
+  }
+  throw new Error("Contract enum has an unknown representation");
+}
+
 async function createRegistryRow(
   proposal: {
     proposalId: string;
@@ -387,10 +422,10 @@ function loadState(requireBatched = true): E2eState {
     || !/^C[A-Z2-7]{55}$/u.test(state.market)
     || !/^[0-9a-f]{64}$/u.test(state.proposalId)
     || !Array.isArray(state.orders)
-    || state.orders.length > 8
+    || state.orders.length > 2
     || (requireBatched && (
       state.phase !== "batched"
-      || state.orders.length !== 8
+      || state.orders.length !== 2
     ))
   ) {
     throw new Error("Fresh testnet E2E state is invalid");
@@ -521,15 +556,17 @@ async function setup(): Promise<void> {
   }
 
   if (!phaseAtLeast(state, "registered")) {
-    const existingRegistry = await activeRegistryRow(proposal.proposalId);
-    if (!existingRegistry) {
-      await createRegistryRow(proposal);
-    } else if (
-      existingRegistry.market_id !== proposal.marketId
-      || existingRegistry.factory_id !== deployment.contracts.factory
-      || existingRegistry.liquidity_vault_id !== proposal.liquidityVaultId
-    ) {
-      throw new Error("Fresh registry row does not match its proposal");
+    if (!SKIP_REGISTRY) {
+      const existingRegistry = await activeRegistryRow(proposal.proposalId);
+      if (!existingRegistry) {
+        await createRegistryRow(proposal);
+      } else if (
+        existingRegistry.market_id !== proposal.marketId
+        || existingRegistry.factory_id !== deployment.contracts.factory
+        || existingRegistry.liquidity_vault_id !== proposal.liquidityVaultId
+      ) {
+        throw new Error("Fresh registry row does not match its proposal");
+      }
     }
     await registerPrivateProposal(proposal.proposalId);
     state = { ...state, phase: "registered" };
@@ -624,22 +661,39 @@ async function setup(): Promise<void> {
   ) {
     throw new Error("Fresh pooled LP state contains unexpected capital");
   }
-  state = { ...state, phase: "pool-funded" };
-  saveState(state);
+  if (!phaseAtLeast(state, "pool-funded")) {
+    state = { ...state, phase: "pool-funded" };
+    saveState(state);
+  }
 
   log("checking automatic market allocation and activation");
-  const registry = await waitFor(
+  const activatedMarket = await waitFor(
     "fresh market activation",
     300_000,
     async () => {
-      const row = await activeRegistryRow(proposal.proposalId);
-      return row?.market_state === "active"
-        && row.pool_id === deployment.contracts.sharedVault
-        ? row
+      if (!SKIP_REGISTRY) {
+        const row = await activeRegistryRow(proposal.proposalId);
+        return row?.market_state === "active"
+          && row.pool_id === deployment.contracts.sharedVault
+          ? String(row.market_id)
+          : null;
+      }
+      const current = await readPrivateContract<{
+        phase: unknown;
+        market?: string;
+      }>(
+        deployment.contracts.factory,
+        creator,
+        "proposal",
+        { proposal_id: Buffer.from(proposal.proposalId, "hex") },
+        { priority: "interactive" },
+      );
+      return enumName(current.phase) === "Active" && current.market
+        ? current.market
         : null;
     },
   );
-  if (registry.market_id !== proposal.marketId) {
+  if (activatedMarket !== proposal.marketId) {
     throw new Error("Activated registry market changed");
   }
   if (!phaseAtLeast(state, "active")) {
@@ -989,7 +1043,8 @@ async function setup(): Promise<void> {
   });
   const pool = await getPooledLiquidityState(primaryBettor);
   if (
-    pool.info.idle_assets !== USDC_SCALE
+    pool.info.idle_assets
+      !== desiredPoolAssets - 20n * USDC_SCALE
     || pool.info.deployed_principal !== 20n * USDC_SCALE
   ) {
     throw new Error("Pooled liquidity bootstrap accounting is incorrect");
@@ -1038,14 +1093,18 @@ async function settle(): Promise<void> {
     "private market finalization",
     900_000,
     async () => {
-      const accounting = await readPrivateContract<unknown>(
+      const accounting = await readPrivateContract<{
+        finalized_outcome: unknown;
+      }>(
         JSON.parse(readFileSync(DEPLOYMENT_PATH, "utf8"))
           .contracts.sharedVault,
         primaryBettor,
         "accounting",
         { market: state.market },
       );
-      return accounting || null;
+      return accounting && enumName(accounting.finalized_outcome) !== "Pending"
+        ? accounting
+        : null;
     },
   );
 
@@ -1135,7 +1194,7 @@ async function settle(): Promise<void> {
       return pool.info.active_allocations === 0 ? pool : null;
     },
   );
-  await deleteRegistryRow(state.proposalId);
+  if (!SKIP_REGISTRY) await deleteRegistryRow(state.proposalId);
   unlinkSync(STATE_FILE);
   log(
     `fresh lifecycle complete with ${winningPositions} winning positions and ${losingPositions} losing positions across two bettors`,
@@ -1343,7 +1402,7 @@ async function recoverLp(): Promise<void> {
     log(`withdrawing ${wallet.balance} recovered private atomic USDC`);
     await withdrawPrivateUsdc(lp, wallet.balance, (status) => log(status));
   }
-  await deleteRegistryRow(state.proposalId);
+  if (!SKIP_REGISTRY) await deleteRegistryRow(state.proposalId);
   unlinkSync(STATE_FILE);
   log("LP test funds recovered and obsolete registry state removed");
 }
