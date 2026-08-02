@@ -25,11 +25,11 @@ assert.deepEqual(calls, [
 const rateLimitedCalls = [];
 const rateLimitedResponse = await rpcFetch(
   [
-    "https://primary.example",
-    "https://fallback.example",
-    "https://public.example",
+    "https://rate-primary.example",
+    "https://rate-fallback.example",
+    "https://rate-public.example",
   ],
-  "https://primary.example",
+  "https://rate-primary.example",
   { method: "POST", body: "{}" },
   async (url) => {
     rateLimitedCalls.push(String(url));
@@ -40,9 +40,38 @@ const rateLimitedResponse = await rpcFetch(
 );
 assert.equal(rateLimitedResponse.status, 200);
 assert.deepEqual(rateLimitedCalls, [
-  "https://primary.example",
-  "https://fallback.example",
-  "https://public.example",
+  "https://rate-primary.example",
+  "https://rate-fallback.example",
+  "https://rate-public.example",
+]);
+
+const cooldownCalls = [];
+await rpcFetch(
+  ["https://cooldown-primary.example", "https://cooldown-fallback.example"],
+  "https://cooldown-primary.example",
+  { method: "POST", body: "{}" },
+  async (url) => {
+    cooldownCalls.push(String(url));
+    return new Response("{}", {
+      status: String(url).includes("primary") ? 503 : 200,
+    });
+  },
+  { cooldownMs: 60_000 },
+);
+await rpcFetch(
+  ["https://cooldown-primary.example", "https://cooldown-fallback.example"],
+  "https://cooldown-primary.example",
+  { method: "POST", body: "{}" },
+  async (url) => {
+    cooldownCalls.push(String(url));
+    return new Response("{}", { status: 200 });
+  },
+  { cooldownMs: 60_000 },
+);
+assert.deepEqual(cooldownCalls, [
+  "https://cooldown-primary.example",
+  "https://cooldown-fallback.example",
+  "https://cooldown-fallback.example",
 ]);
 assert.equal(
   (
@@ -102,6 +131,16 @@ await assert.rejects(
     { attemptTimeoutMs: 0 },
   ),
   /positive integer/u,
+);
+await assert.rejects(
+  rpcFetch(
+    ["https://primary.example"],
+    "https://primary.example",
+    undefined,
+    async () => new Response("{}", { status: 200 }),
+    { cooldownMs: 0 },
+  ),
+  /cooldown must be a positive integer/u,
 );
 
 console.log("RPC failover ok");

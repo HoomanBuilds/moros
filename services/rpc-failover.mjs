@@ -1,4 +1,5 @@
 const INSTALLED = Symbol.for("moros.rpcFailover");
+const providerCooldowns = new Map();
 
 function normalized(value) {
   return String(value).replace(/\/+$/u, "");
@@ -45,12 +46,20 @@ export async function rpcFetch(
   input,
   init,
   fetchImpl = globalThis.fetch,
-  { attemptTimeoutMs = 8_000 } = {},
+  { attemptTimeoutMs = 8_000, cooldownMs = 15_000 } = {},
 ) {
   if (!Number.isSafeInteger(attemptTimeoutMs) || attemptTimeoutMs < 1) {
     throw new Error("RPC attempt timeout must be a positive integer");
   }
-  const candidates = [...new Set(urls)];
+  if (!Number.isSafeInteger(cooldownMs) || cooldownMs < 1) {
+    throw new Error("RPC cooldown must be a positive integer");
+  }
+  const now = Date.now();
+  const candidates = [...new Set(urls)].sort((left, right) => {
+    const leftCooling = (providerCooldowns.get(normalized(left)) || 0) > now;
+    const rightCooling = (providerCooldowns.get(normalized(right)) || 0) > now;
+    return Number(leftCooling) - Number(rightCooling);
+  });
   const target = requestUrl(input);
   if (!candidates.some((url) => normalized(url) === target)) {
     return fetchImpl(input, init);
@@ -69,11 +78,14 @@ export async function rpcFetch(
         signal: attempt.signal,
       });
       if (response.status !== 429 && response.status < 500) {
+        providerCooldowns.delete(normalized(url));
         return response;
       }
+      providerCooldowns.set(normalized(url), Date.now() + cooldownMs);
       lastResponse = response;
     } catch (error) {
       if (callerSignal?.aborted) throw error;
+      providerCooldowns.set(normalized(url), Date.now() + cooldownMs);
       lastError = error;
     } finally {
       attempt.clear();

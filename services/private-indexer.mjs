@@ -81,15 +81,30 @@ export class PrivateOutputIndexer {
     this.levels = levels;
     this.state = readState(stateFile, vaultId, levels);
     this.syncQueue = Promise.resolve();
+    this.syncPending = null;
+    this.lastCheckedAt = 0;
   }
 
-  sync() {
-    const operation = this.syncQueue.then(
-      () => this.syncCurrent(),
-      () => this.syncCurrent(),
-    );
-    this.syncQueue = operation.catch(() => {});
-    return operation;
+  async sync(fromLeafIndex = 0, maximumAgeMs = 0) {
+    if (!Number.isSafeInteger(maximumAgeMs) || maximumAgeMs < 0) {
+      throw new Error("private output sync age is invalid");
+    }
+    const fresh = maximumAgeMs > 0 &&
+      Date.now() - this.lastCheckedAt <= maximumAgeMs;
+    if (!fresh) {
+      if (!this.syncPending) {
+        const operation = this.syncQueue.then(
+          () => this.syncCurrent(),
+          () => this.syncCurrent(),
+        );
+        this.syncPending = operation.finally(() => {
+          this.syncPending = null;
+        });
+        this.syncQueue = this.syncPending.catch(() => {});
+      }
+      await this.syncPending;
+    }
+    return this.snapshot(fromLeafIndex);
   }
 
   async syncCurrent() {
@@ -109,7 +124,8 @@ export class PrivateOutputIndexer {
       if (decimal(this.state.currentRoot) !== currentRoot) {
         throw new Error("indexed commitments do not reconstruct the vault root");
       }
-      return this.snapshot();
+      this.lastCheckedAt = Date.now();
+      return;
     }
     const outputs = [...this.state.outputs];
     for (
@@ -144,18 +160,39 @@ export class PrivateOutputIndexer {
       updatedAt: new Date().toISOString(),
     };
     saveState(this.stateFile, this.state);
-    return this.snapshot();
+    this.lastCheckedAt = Date.now();
   }
 
-  snapshot() {
+  size() {
+    return this.state.outputs.length;
+  }
+
+  snapshot(fromLeafIndex = 0) {
+    if (
+      !Number.isSafeInteger(fromLeafIndex) ||
+      fromLeafIndex < 0 ||
+      fromLeafIndex > this.state.outputs.length
+    ) {
+      throw new Error("private output offset is invalid");
+    }
+    const outputs = this.state.outputs.slice(fromLeafIndex);
     return jsonValue({
       vaultId: this.vaultId,
       levels: this.levels,
+      fromLeafIndex,
+      baseRoot: fromLeafIndex === 0
+        ? undefined
+        : this.state.outputs[fromLeafIndex - 1].root,
       nextLeafIndex: this.state.outputs.length,
       currentRoot: this.state.currentRoot,
-      commitments: this.state.outputs.map((output) => output.commitment),
-      outputs: this.state.outputs,
+      commitments: outputs.map((output) => output.commitment),
+      outputs,
       updatedAt: this.state.updatedAt,
     });
+  }
+
+  output(commitment) {
+    const value = decimal(commitment, "output commitment");
+    return this.state.outputs.find((output) => output.commitment === value);
   }
 }

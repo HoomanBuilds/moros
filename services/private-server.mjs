@@ -628,7 +628,7 @@ async function main() {
     if (ticking) return;
     ticking = true;
     try {
-      const tree = await indexer.sync();
+      const tree = await indexer.sync(indexer.size());
       runtime.outputs = tree.nextLeafIndex;
       runtime.lastIndexAt = new Date().toISOString();
       try {
@@ -840,7 +840,26 @@ async function main() {
         request.method === "GET" &&
         requestUrl.pathname === "/private/tree"
       ) {
-        sendJson(request, response, 200, await indexer.sync());
+        const from = Number(requestUrl.searchParams.get("from") || 0);
+        sendJson(request, response, 200, await indexer.sync(from, 500));
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/private/output"
+      ) {
+        const commitment = requestUrl.searchParams.get("commitment") || "";
+        if (!/^[1-9]\d*$/u.test(commitment)) {
+          throw new Error("invalid private output commitment");
+        }
+        const tree = await indexer.sync(indexer.size(), 500);
+        const output = indexer.output(commitment);
+        sendJson(request, response, 200, {
+          indexed: !!output,
+          output,
+          nextLeafIndex: tree.nextLeafIndex,
+          currentRoot: tree.currentRoot,
+        });
         return;
       }
       if (

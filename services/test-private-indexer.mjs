@@ -52,10 +52,22 @@ try {
   );
   assert.equal(first.outputs.length, 4);
   assert.equal(first.outputs[0].actionId, "01".repeat(32));
+  assert.equal(first.fromLeafIndex, 0);
+  assert.equal(first.baseRoot, undefined);
+  const delta = indexer.snapshot(2);
+  assert.equal(delta.fromLeafIndex, 2);
+  assert.equal(delta.baseRoot, root.toString());
+  assert.deepEqual(delta.commitments, ["13", "14"]);
+  assert.deepEqual(delta.outputs.map((output) => output.leafIndex), [2, 3]);
+  assert.equal(indexer.output("13")?.leafIndex, 2);
+  assert.equal(indexer.output("99"), undefined);
+  assert.equal(indexer.size(), 4);
+  assert.throws(() => indexer.snapshot(5), /offset is invalid/u);
   const firstState = readFileSync(stateFile, "utf8");
   const unchanged = await indexer.sync();
   assert.equal(unchanged.updatedAt, first.updatedAt);
   assert.equal(readFileSync(stateFile, "utf8"), firstState);
+  await assert.rejects(() => indexer.sync(0, -1), /sync age is invalid/u);
 
   const concurrentStateFile = resolve(directory, "concurrent-outputs.json");
   let concurrentReads = 0;

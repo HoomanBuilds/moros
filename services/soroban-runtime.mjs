@@ -68,22 +68,42 @@ export async function submitInvocation({
   if (sent.status === "ERROR") {
     throw new Error("transaction submission was rejected");
   }
-  for (let attempt = 0; attempt < 60; attempt++) {
-    await new Promise((done) => setTimeout(done, 2_000));
-    const result = await server.getTransaction(sent.hash);
+  return waitForSubmittedTransaction({ server, hash: sent.hash });
+}
+
+export async function waitForSubmittedTransaction({
+  server,
+  hash,
+  pollIntervalMs = 1_000,
+  maximumWaitMs = 120_000,
+  sleep = (milliseconds) =>
+    new Promise((done) => setTimeout(done, milliseconds)),
+}) {
+  if (
+    !Number.isSafeInteger(pollIntervalMs) ||
+    pollIntervalMs < 250 ||
+    !Number.isSafeInteger(maximumWaitMs) ||
+    maximumWaitMs < pollIntervalMs
+  ) {
+    throw new Error("invalid transaction confirmation polling configuration");
+  }
+  const attempts = Math.ceil(maximumWaitMs / pollIntervalMs);
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const result = await server.getTransaction(hash);
     if (result.status === "SUCCESS") {
       return {
-        hash: sent.hash,
+        hash,
         result: result.returnValue
           ? scValToNative(result.returnValue)
           : undefined,
       };
     }
     if (result.status === "FAILED") {
-      throw new Error(`transaction ${sent.hash} failed`);
+      throw new Error(`transaction ${hash} failed`);
     }
+    if (attempt + 1 < attempts) await sleep(pollIntervalMs);
   }
-  throw new Error(`transaction ${sent.hash} timed out`);
+  throw new Error(`transaction ${hash} timed out`);
 }
 
 export function runtimeSource(secret) {
