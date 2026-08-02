@@ -95,6 +95,18 @@ export type PrivateTreeSnapshot = {
   updatedAt: string;
 };
 
+type PrivateTreeResponse = PrivateTreeSnapshot & {
+  fromLeafIndex?: number;
+  baseRoot?: string;
+};
+
+export type PrivateOutputStatus = {
+  indexed: boolean;
+  output?: IndexedPrivateOutput;
+  nextLeafIndex: number;
+  currentRoot: string;
+};
+
 export type EncryptedPrivateAllocation = {
   market: string;
   epoch: string;
@@ -137,6 +149,8 @@ export type PrivateLiquidityExit = {
 const PRIVATE_SERVICE =
   process.env.NEXT_PUBLIC_PRIVATE_SERVICE_URL || COMMITTEE_URL;
 let privateConfigPromise: Promise<PrivateDeploymentConfig> | null = null;
+let privateTreeCache: PrivateTreeSnapshot | null = null;
+let privateTreePromise: Promise<PrivateTreeSnapshot> | null = null;
 
 export function privateServiceUrl(path: string): string {
   return `${PRIVATE_SERVICE}${path.startsWith("/") ? path : `/${path}`}`;
@@ -228,21 +242,152 @@ export async function registerPrivateProposal(proposalId: string): Promise<void>
   if (!response.ok) throw new Error(await errorMessage(response));
 }
 
-export async function getPrivateTree(): Promise<PrivateTreeSnapshot> {
-  const response = await fetch(privateServiceUrl("/private/tree"), {
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error(await errorMessage(response));
-  const tree = await response.json() as PrivateTreeSnapshot;
+function validOutput(
+  output: IndexedPrivateOutput,
+  leafIndex: number,
+): boolean {
+  return output?.leafIndex === leafIndex &&
+    /^\d+$/u.test(output.commitment) &&
+    /^\d+$/u.test(output.root) &&
+    /^[0-9a-f]{64}$/u.test(output.actionId) &&
+    /^[0-9a-f]+$/u.test(output.encryptedOutput);
+}
+
+export function mergePrivateTreeResponse(
+  cached: PrivateTreeSnapshot | null,
+  tree: PrivateTreeResponse,
+): PrivateTreeSnapshot {
+  const from = tree.fromLeafIndex ?? 0;
   if (
     tree.levels !== 20 ||
-    tree.nextLeafIndex !== tree.commitments?.length ||
-    tree.nextLeafIndex !== tree.outputs?.length ||
-    !/^\d+$/u.test(tree.currentRoot)
+    !Number.isSafeInteger(from) ||
+    from < 0 ||
+    !Number.isSafeInteger(tree.nextLeafIndex) ||
+    tree.nextLeafIndex < from ||
+    tree.commitments.length !== tree.outputs.length ||
+    tree.nextLeafIndex !== from + tree.outputs.length ||
+    !/^\d+$/u.test(tree.currentRoot) ||
+    tree.outputs.some((output, index) =>
+      !validOutput(output, from + index) ||
+      output.commitment !== tree.commitments[index]
+    )
   ) {
     throw new Error("Private tree response is incompatible");
   }
-  return tree;
+  if (from === 0) {
+    return {
+      vaultId: tree.vaultId,
+      levels: tree.levels,
+      nextLeafIndex: tree.nextLeafIndex,
+      currentRoot: tree.currentRoot,
+      commitments: [...tree.commitments],
+      outputs: [...tree.outputs],
+      updatedAt: tree.updatedAt,
+    };
+  }
+  if (
+    !cached ||
+    cached.vaultId !== tree.vaultId ||
+    cached.levels !== tree.levels ||
+    cached.nextLeafIndex !== from ||
+    cached.currentRoot !== tree.baseRoot
+  ) {
+    throw new Error("Private tree delta does not continue the cached tree");
+  }
+  if (
+    tree.nextLeafIndex === from &&
+    tree.currentRoot === cached.currentRoot
+  ) {
+    return cached;
+  }
+  return {
+    ...cached,
+    nextLeafIndex: tree.nextLeafIndex,
+    currentRoot: tree.currentRoot,
+    commitments: [...cached.commitments, ...tree.commitments],
+    outputs: [...cached.outputs, ...tree.outputs],
+    updatedAt: tree.updatedAt,
+  };
+}
+
+async function fetchPrivateTree(from: number): Promise<PrivateTreeResponse> {
+  const query = new URLSearchParams({ from: String(from) });
+  const response = await fetch(privateServiceUrl(`/private/tree?${query}`), {
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json() as Promise<PrivateTreeResponse>;
+}
+
+async function loadPrivateTree(): Promise<PrivateTreeSnapshot> {
+  const from = privateTreeCache?.nextLeafIndex ?? 0;
+  try {
+    const tree = await fetchPrivateTree(from);
+    privateTreeCache = mergePrivateTreeResponse(privateTreeCache, tree);
+  } catch (error) {
+    if (from === 0) throw error;
+    privateTreeCache = mergePrivateTreeResponse(
+      null,
+      await fetchPrivateTree(0),
+    );
+  }
+  return privateTreeCache;
+}
+
+export async function getPrivateTree(): Promise<PrivateTreeSnapshot> {
+  if (!privateTreePromise) {
+    privateTreePromise = loadPrivateTree().finally(() => {
+      privateTreePromise = null;
+    });
+  }
+  return privateTreePromise;
+}
+
+export async function getPrivateOutputStatus(
+  commitment: bigint,
+): Promise<PrivateOutputStatus> {
+  if (commitment <= 0n) {
+    throw new Error("Private output commitment is invalid");
+  }
+  const query = new URLSearchParams({ commitment: commitment.toString() });
+  const response = await fetch(
+    privateServiceUrl(`/private/output?${query}`),
+    { cache: "no-store" },
+  );
+  if (response.status === 404) {
+    const tree = await getPrivateTree();
+    const output = tree.outputs.find((entry) =>
+      BigInt(entry.commitment) === commitment
+    );
+    return {
+      indexed: !!output,
+      output,
+      nextLeafIndex: tree.nextLeafIndex,
+      currentRoot: tree.currentRoot,
+    };
+  }
+  if (!response.ok) throw new Error(await errorMessage(response));
+  const status = await response.json() as PrivateOutputStatus;
+  if (
+    typeof status.indexed !== "boolean" ||
+    !Number.isSafeInteger(status.nextLeafIndex) ||
+    status.nextLeafIndex < 0 ||
+    !/^\d+$/u.test(status.currentRoot) ||
+    (
+      status.indexed &&
+      (
+        !status.output ||
+        !Number.isSafeInteger(status.output.leafIndex) ||
+        status.output.leafIndex < 0 ||
+        status.output.leafIndex >= status.nextLeafIndex ||
+        !validOutput(status.output, status.output.leafIndex) ||
+        status.output.commitment !== commitment.toString()
+      )
+    )
+  ) {
+    throw new Error("Private output status is incompatible");
+  }
+  return status;
 }
 
 export async function getPrivateAllocation(

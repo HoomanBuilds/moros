@@ -1,20 +1,23 @@
-import { getPrivateTree, type PrivateTreeSnapshot } from "./client";
+import {
+  getPrivateOutputStatus,
+  type PrivateOutputStatus,
+} from "./client";
 
 export async function waitForPrivateOutput(
   commitment: bigint,
   {
-    read = getPrivateTree,
+    read = () => getPrivateOutputStatus(commitment),
     sleep = (milliseconds) =>
       new Promise((resolve) => setTimeout(resolve, milliseconds)),
     retryMilliseconds = 2_000,
     maximumAttempts = 30,
   }: {
-    read?: () => Promise<PrivateTreeSnapshot>;
+    read?: () => Promise<PrivateOutputStatus>;
     sleep?: (milliseconds: number) => Promise<void>;
     retryMilliseconds?: number;
     maximumAttempts?: number;
   } = {},
-): Promise<PrivateTreeSnapshot> {
+): Promise<PrivateOutputStatus> {
   if (commitment <= 0n) {
     throw new Error("Private output commitment is invalid");
   }
@@ -22,12 +25,8 @@ export async function waitForPrivateOutput(
     throw new Error("Private output attempts must be positive");
   }
   for (let attempt = 0; attempt < maximumAttempts; attempt++) {
-    const snapshot = await read();
-    if (
-      snapshot.outputs.some((output) => BigInt(output.commitment) === commitment)
-    ) {
-      return snapshot;
-    }
+    const status = await read();
+    if (status.indexed) return status;
     if (attempt + 1 < maximumAttempts) {
       await sleep(retryMilliseconds);
     }

@@ -15,13 +15,14 @@ import {
   decryptOutputNote,
   envelopeToFields,
   hexToBytes,
-  merkleTree,
   noteDomain,
   noteNullifier,
   spendPublicKey,
   type OwnedPrivateNote,
+  type PrivateNote,
   type PrivateTree,
 } from "./primitives";
+import { verifiedPrivateTree } from "./verified-tree";
 
 export type OwnedIndexedNote = OwnedPrivateNote & {
   leafIndex: number;
@@ -40,6 +41,31 @@ export type PrivateWalletSnapshot = {
 };
 
 const knownSpentNullifiers = new Set<string>();
+const knownUnspentNullifiers = new Map<string, Set<string>>();
+const recoveredOutputCaches = new Map<
+  string,
+  Map<string, PrivateNote | null>
+>();
+
+function recoveredOutputCache(
+  keys: PrivateArchiveKeys,
+): Map<string, PrivateNote | null> {
+  const key = `${keys.context}:${keys.bucketId}`;
+  const existing = recoveredOutputCaches.get(key);
+  if (existing) {
+    recoveredOutputCaches.delete(key);
+    recoveredOutputCaches.set(key, existing);
+    return existing;
+  }
+  const created = new Map<string, PrivateNote | null>();
+  recoveredOutputCaches.set(key, created);
+  while (recoveredOutputCaches.size > 4) {
+    const oldest = recoveredOutputCaches.keys().next().value;
+    if (typeof oldest !== "string") break;
+    recoveredOutputCaches.delete(oldest);
+  }
+  return created;
+}
 
 async function privateNoteDomain(
   config: PrivateDeploymentConfig,
@@ -66,11 +92,23 @@ async function spentNullifierDomains(
   config: PrivateDeploymentConfig,
   address: string,
   note: OwnedIndexedNote,
+  currentRoot: string,
 ): Promise<bigint[]> {
+  let unspentAtRoot = knownUnspentNullifiers.get(currentRoot);
+  if (!unspentAtRoot) {
+    unspentAtRoot = new Set();
+    knownUnspentNullifiers.set(currentRoot, unspentAtRoot);
+    while (knownUnspentNullifiers.size > 2) {
+      const oldest = knownUnspentNullifiers.keys().next().value;
+      if (typeof oldest !== "string") break;
+      knownUnspentNullifiers.delete(oldest);
+    }
+  }
   const checks = nullifierDomains(note.purpose).map(async (domain) => {
     const nullifier = noteNullifier(note, note.spendSecret, domain);
     const key = `${config.contracts.sharedVault}:${nullifier}`;
     if (knownSpentNullifiers.has(key)) return domain;
+    if (unspentAtRoot.has(key)) return null;
     const spent = await readPrivateContract<boolean>(
       config.contracts.sharedVault,
       address,
@@ -78,8 +116,12 @@ async function spentNullifierDomains(
       { nullifier },
       { priority: "interactive" },
     );
-    if (!spent) return null;
+    if (!spent) {
+      unspentAtRoot.add(key);
+      return null;
+    }
     knownSpentNullifiers.add(key);
+    unspentAtRoot.delete(key);
     return domain;
   });
   return (await Promise.all(checks)).filter(
@@ -91,12 +133,15 @@ async function filterUnspent(
   config: PrivateDeploymentConfig,
   address: string,
   notes: OwnedIndexedNote[],
+  currentRoot: string,
 ): Promise<OwnedIndexedNote[]> {
   const result: OwnedIndexedNote[] = [];
   for (let start = 0; start < notes.length; start += 8) {
     const batch = notes.slice(start, start + 8);
     const spent = await Promise.all(
-      batch.map((note) => spentNullifierDomains(config, address, note)),
+      batch.map((note) =>
+        spentNullifierDomains(config, address, note, currentRoot)
+      ),
     );
     batch.forEach((note, index) => {
       const domains = nullifierDomains(note.purpose);
@@ -125,27 +170,23 @@ export async function openPrivateWallet(
   ) {
     throw new Error("Private tree does not match the configured vault");
   }
-  const tree = merkleTree(
-    treeSnapshot.commitments.map(BigInt),
-    treeSnapshot.levels,
-  );
-  if (
-    tree.root !== BigInt(treeSnapshot.currentRoot) ||
-    tree.count !== treeSnapshot.nextLeafIndex
-  ) {
-    throw new Error("Private tree failed local verification");
-  }
+  const tree = verifiedPrivateTree(config, treeSnapshot);
   const domain = await privateNoteDomain(config);
   const ownerSpendPublicKey = spendPublicKey(keys.noteSpendSecret);
+  const recoveryCache = recoveredOutputCache(keys);
   const recovered: OwnedIndexedNote[] = [];
   for (const output of treeSnapshot.outputs) {
-    const note = decryptOutputNote(
-      envelopeToFields(output.encryptedOutput),
-      keys.noteViewingSecret,
-      domain,
-      BigInt(output.commitment),
-      ownerSpendPublicKey,
-    );
+    let note = recoveryCache.get(output.commitment);
+    if (note === undefined && !recoveryCache.has(output.commitment)) {
+      note = decryptOutputNote(
+        envelopeToFields(output.encryptedOutput),
+        keys.noteViewingSecret,
+        domain,
+        BigInt(output.commitment),
+        ownerSpendPublicKey,
+      );
+      recoveryCache.set(output.commitment, note);
+    }
     if (!note) continue;
     recovered.push({
       ...note,
@@ -157,7 +198,12 @@ export async function openPrivateWallet(
       spentDomains: [],
     });
   }
-  const notes = await filterUnspent(config, address, recovered);
+  const notes = await filterUnspent(
+    config,
+    address,
+    recovered,
+    treeSnapshot.currentRoot,
+  );
   return {
     config,
     keys,

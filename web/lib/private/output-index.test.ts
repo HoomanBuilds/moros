@@ -2,42 +2,32 @@ import assert from "node:assert/strict";
 import {
   waitForPrivateOutput,
 } from "./output-index.ts";
-import type { PrivateTreeSnapshot } from "./client.ts";
+import type { PrivateOutputStatus } from "./client.ts";
 
-function snapshot(commitments: string[]): PrivateTreeSnapshot {
+function status(indexed: boolean): PrivateOutputStatus {
   return {
-    vaultId: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    levels: 20,
-    nextLeafIndex: commitments.length,
+    indexed,
+    nextLeafIndex: indexed ? 2 : 1,
     currentRoot: "1",
-    commitments,
-    outputs: commitments.map((commitment, leafIndex) => ({
-      commitment,
-      leafIndex,
-      root: "1",
-      actionId: "00".repeat(32),
-      encryptedOutput: "00",
-    })),
-    updatedAt: new Date(0).toISOString(),
   };
 }
 
 async function main() {
-  const reads = [snapshot(["1"]), snapshot(["1", "2"])];
+  const reads = [status(false), status(true)];
   let waits = 0;
   const found = await waitForPrivateOutput(2n, {
-    read: async () => reads.shift() ?? snapshot([]),
+    read: async () => reads.shift() ?? status(false),
     sleep: async () => {
       waits++;
     },
     maximumAttempts: 2,
   });
-  assert.equal(found.nextLeafIndex, 2);
+  assert.equal(found.indexed, true);
   assert.equal(waits, 1);
 
   await assert.rejects(
     waitForPrivateOutput(3n, {
-      read: async () => snapshot(["1", "2"]),
+      read: async () => status(false),
       sleep: async () => {},
       maximumAttempts: 2,
     }),

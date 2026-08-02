@@ -25,10 +25,24 @@ export type DynamicContractClient = {
   [method: string]: unknown;
 };
 
+export function privateReadClientOptions(contractId: string) {
+  return {
+    contractId,
+    networkPassphrase: NETWORK.passphrase,
+    rpcUrl: NETWORK.rpcUrl,
+  };
+}
+
 const server = new rpc.Server(NETWORK.rpcUrl);
 const wasmCache = new Map<string, Promise<Buffer>>();
-const clientCache = new Map<string, Promise<DynamicContractClient>>();
+const readClientCache = new Map<string, Promise<DynamicContractClient>>();
+const walletClientCache = new Map<string, Promise<DynamicContractClient>>();
 const readInFlight = new Map<string, Promise<unknown>>();
+
+export function isPrivateRootRaceError(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return /simulation failed:[\s\S]*Error\(Contract, #8\)/u.test(message);
+}
 
 async function contractWasm(contractId: string): Promise<Buffer> {
   let promise = wasmCache.get(contractId);
@@ -50,7 +64,7 @@ export async function privateContractClient(
   address: string,
 ): Promise<DynamicContractClient> {
   const key = `${contractId}:${address}`;
-  let promise = clientCache.get(key);
+  let promise = walletClientCache.get(key);
   if (!promise) {
     promise = contractWasm(contractId)
       .then((wasm) => contract.Client.fromWasm(wasm, {
@@ -72,10 +86,29 @@ export async function privateContractClient(
         },
       }) as unknown as DynamicContractClient)
       .catch((error) => {
-        clientCache.delete(key);
+        walletClientCache.delete(key);
         throw error;
       });
-    clientCache.set(key, promise);
+    walletClientCache.set(key, promise);
+  }
+  return promise;
+}
+
+async function privateReadContractClient(
+  contractId: string,
+): Promise<DynamicContractClient> {
+  let promise = readClientCache.get(contractId);
+  if (!promise) {
+    promise = contractWasm(contractId)
+      .then((wasm) => contract.Client.fromWasm(
+        wasm,
+        privateReadClientOptions(contractId),
+      ) as unknown as DynamicContractClient)
+      .catch((error) => {
+        readClientCache.delete(contractId);
+        throw error;
+      });
+    readClientCache.set(contractId, promise);
   }
   return promise;
 }
@@ -100,7 +133,7 @@ function stableValue(value: unknown): string {
 
 export async function readPrivateContract<T>(
   contractId: string,
-  address: string,
+  _address: string,
   method: string,
   args: Record<string, unknown> = {},
   options: RpcReadOptions = {},
@@ -108,14 +141,13 @@ export async function readPrivateContract<T>(
   const key = [
     options.priority ?? "normal",
     contractId,
-    address,
     method,
     stableValue(args),
   ].join(":");
   const existing = readInFlight.get(key);
   if (existing) return existing as Promise<T>;
   const promise = (async () => {
-    const client = await privateContractClient(contractId, address);
+    const client = await privateReadContractClient(contractId);
     return rpcReadScheduler.schedule(async () => {
       const call = client[method];
       if (typeof call !== "function") {
@@ -149,11 +181,11 @@ export async function sendPrivateWalletCall(
 
 export async function relayPrivateContractCall(
   contractId: string,
-  address: string,
+  _address: string,
   method: string,
   args: Record<string, unknown>,
 ): Promise<string> {
-  const client = await privateContractClient(contractId, address);
+  const client = await privateReadContractClient(contractId);
   const encoded = client.spec.funcArgsToScVals(method, args)
     .map((value) => value.toXDR("base64"));
   return (await relayPrivateCall(method, encoded)).hash;
