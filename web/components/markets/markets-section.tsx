@@ -188,7 +188,7 @@ export function MarketsSection() {
       {filtered.length === 0 ? (
         <EmptyState title="No markets here" description={search || category !== "All" ? "Nothing matches these filters." : "No markets in this view yet."} />
       ) : view === "grid" ? (
-        <div className="flex flex-wrap gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((r) => (
             <MarketCard key={r.id} row={r} />
           ))}

@@ -9,7 +9,7 @@ import type { MarketRow } from "@/lib/markets/catalog";
 
 export function MarketCard({ row }: { row: MarketRow }) {
   return (
-    <div className="relative w-full sm:w-[380px]">
+    <div className="relative w-full">
       <Link href={row.href} className="block">
         <Panel className="space-y-5 p-6 transition-colors hover:border-white/20">
           {row.resolverType === "event" && (
