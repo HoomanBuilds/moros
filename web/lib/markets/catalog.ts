@@ -1,8 +1,19 @@
 "use client";
-import { useQueries } from "@tanstack/react-query";
-import { fetchMarket } from "@/lib/stellar/use-market";
-import { useMarkets, type MarketEntry } from "./registry";
+import { useQuery } from "@tanstack/react-query";
+import {
+  fetchMarket,
+  marketFromPrivateCatalog,
+} from "@/lib/stellar/use-market";
+import {
+  useMarketRegistryReady,
+  useMarkets,
+  type MarketEntry,
+} from "./registry";
 import { collateralForEntry } from "./market-context";
+import {
+  getPrivateMarketCatalog,
+  type PrivateMarketCatalogEntry,
+} from "@/lib/private/client";
 
 export type MarketRow = {
   id: string;
@@ -32,14 +43,19 @@ export type MarketRow = {
   flagship: boolean;
 };
 
-async function fetchRow(entry: MarketEntry): Promise<MarketRow> {
+async function fetchRow(
+  entry: MarketEntry,
+  snapshot?: PrivateMarketCatalogEntry,
+): Promise<MarketRow> {
   const collateral = collateralForEntry(entry);
-  const data = await fetchMarket(
-    entry.marketId,
-    entry.poolId,
-    collateral,
-    entry,
-  );
+  const data = snapshot && entry.resolverType !== "event"
+    ? marketFromPrivateCatalog(snapshot, collateral, entry)
+    : await fetchMarket(
+        entry.marketId,
+        entry.poolId,
+        collateral,
+        entry,
+      );
   return {
     id: entry.marketId,
     href: `/app/market/${entry.marketId}`,
@@ -71,20 +87,40 @@ async function fetchRow(entry: MarketEntry): Promise<MarketRow> {
 
 export function useMarketCatalog(): { rows: MarketRow[]; isLoading: boolean } {
   const markets = useMarkets();
-  const results = useQueries({
-    queries: markets.map((m) => ({
-      queryKey: [
-        "market-row",
-        m.marketId,
-        m.poolId,
-        m.liquidityVaultId ?? "missing-private-vault",
-      ],
-      refetchInterval: 20000,
-      retry: 1,
-      queryFn: () => fetchRow(m),
-    })),
+  const registryReady = useMarketRegistryReady();
+  const marketKey = markets.map((market) => [
+    market.marketId,
+    market.poolId,
+    market.liquidityVaultId ?? "missing-private-vault",
+  ]);
+  const result = useQuery({
+    queryKey: ["market-catalog", marketKey],
+    enabled: markets.length > 0,
+    refetchInterval: 15_000,
+    staleTime: 5_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
+    queryFn: async () => {
+      let snapshotByMarket = new Map<string, PrivateMarketCatalogEntry>();
+      try {
+        const snapshot = await getPrivateMarketCatalog();
+        snapshotByMarket = new Map(
+          snapshot.markets.map((entry) => [entry.market, entry]),
+        );
+      } catch {
+        // The direct read fallback keeps the page available during rollout.
+      }
+      const rows = await Promise.allSettled(markets.map((market) =>
+        fetchRow(market, snapshotByMarket.get(market.marketId))
+      ));
+      return rows.flatMap((row) =>
+        row.status === "fulfilled" ? [row.value] : []
+      );
+    },
   });
-  const rows = results.map((r) => r.data).filter(Boolean) as MarketRow[];
-  const isLoading = results.length > 0 && results.every((r) => r.isLoading);
-  return { rows, isLoading };
+  return {
+    rows: result.data ?? [],
+    isLoading: !registryReady || result.isLoading,
+  };
 }

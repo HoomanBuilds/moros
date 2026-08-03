@@ -21,6 +21,10 @@ import { PrivateArtifactStore } from "./private-artifacts.mjs";
 import { PrivateExitRegistry } from "./private-exit-registry.mjs";
 import { PrivateOutputIndexer } from "./private-indexer.mjs";
 import { PrivateMarketRegistry } from "./private-market-registry.mjs";
+import {
+  PrivateMarketCatalog,
+  marketCatalogChanged,
+} from "./private-market-catalog.mjs";
 import { PrivateProposalRegistry } from "./private-proposal-registry.mjs";
 import { syncPublicMarketState } from "./market-registry.mjs";
 import {
@@ -66,6 +70,9 @@ const RUNTIME_ROOT = resolve(
     "services/private-runtime",
 );
 const TICK_MS = Number(process.env.PRIVATE_TICK_MS || 10_000);
+const CATALOG_REFRESH_MS = Number(
+  process.env.PRIVATE_CATALOG_REFRESH_MS || 30_000,
+);
 const MAX_BODY = 256 * 1024;
 const FUNDER_SECRET = configuredSecret({
   secret: network.funderSecret,
@@ -157,6 +164,12 @@ async function main() {
   }
   if (!Number.isSafeInteger(TICK_MS) || TICK_MS < 2_000) {
     throw new Error("PRIVATE_TICK_MS must be at least 2000");
+  }
+  if (
+    !Number.isSafeInteger(CATALOG_REFRESH_MS) ||
+    CATALOG_REFRESH_MS < 2_000
+  ) {
+    throw new Error("PRIVATE_CATALOG_REFRESH_MS must be at least 2000");
   }
   const deployment = assertDeploymentNetwork(
     readJson(DEPLOYMENT_PATH),
@@ -418,6 +431,11 @@ async function main() {
     submit: (transaction) =>
       serialize(async () => (await transaction).signAndSend()),
   });
+  const catalog = new PrivateMarketCatalog({
+    registry,
+    vault,
+    marketClient: getMarketClient,
+  });
   const perClient = new FixedWindowRateLimiter({
     limit: Number(process.env.PRIVATE_RELAY_LIMIT || 30),
     windowMs: 60_000,
@@ -444,6 +462,16 @@ async function main() {
     liquidityPool: {},
     exits: {},
     errors: [],
+  };
+  const refreshCatalog = () => {
+    void catalog.refresh().catch((error) => {
+      runtime.errors.push({
+        at: new Date().toISOString(),
+        catalog: true,
+        error: String(error?.message || error),
+      });
+      runtime.errors = runtime.errors.slice(-20);
+    });
   };
   let ticking = false;
 
@@ -562,6 +590,7 @@ async function main() {
         throw new Error("activated proposal returned an unexpected market");
       }
       await registry.register(entry.market);
+      catalog.invalidate();
       info = invocationResultValue(await liquidity.info());
       const harvested = await harvestTerminalAllocation(entry, info);
       const sync = await syncPublicMarketState({
@@ -690,10 +719,15 @@ async function main() {
       }
       for (const market of registry.list()) {
         try {
+          const previous = runtime.markets[market];
+          const current = await coordinator.process(market);
           runtime.markets[market] = {
-            ...(await coordinator.process(market)),
+            ...current,
             checkedAt: new Date().toISOString(),
           };
+          if (marketCatalogChanged(previous, current)) {
+            catalog.invalidate();
+          }
         } catch (error) {
           runtime.markets[market] = {
             status: "error",
@@ -707,6 +741,9 @@ async function main() {
           });
           runtime.errors = runtime.errors.slice(-20);
         }
+      }
+      if (catalog.isStale(CATALOG_REFRESH_MS)) {
+        refreshCatalog();
       }
       runtime.lastTickAt = new Date().toISOString();
     } finally {
@@ -882,6 +919,19 @@ async function main() {
       }
       if (
         request.method === "GET" &&
+        requestUrl.pathname === "/private/catalog"
+      ) {
+        let snapshot = catalog.snapshot();
+        if (!snapshot.checkedAt) {
+          snapshot = await catalog.refresh();
+        } else if (catalog.isStale(CATALOG_REFRESH_MS)) {
+          refreshCatalog();
+        }
+        sendJson(request, response, 200, snapshot);
+        return;
+      }
+      if (
+        request.method === "GET" &&
         requestUrl.pathname === "/private/markets"
       ) {
         const markets = [];
@@ -964,6 +1014,8 @@ async function main() {
         }
         const body = await readBody(request);
         const market = await registry.register(body.market);
+        catalog.invalidate();
+        refreshCatalog();
         sendJson(request, response, 200, { market, registered: true });
         return;
       }

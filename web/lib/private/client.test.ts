@@ -9,12 +9,62 @@ async function main() {
     "utf8",
   ));
   const originalFetch = globalThis.fetch;
-  let requests = 0;
+  let configRequests = 0;
+  let catalogRequests = 0;
+  let catalogFailure = true;
+
+  const catalog = {
+    checkedAt: "2026-08-03T00:00:00.000Z",
+    markets: [{
+      market: deployment.contracts.factory,
+      checkedAt: "2026-08-03T00:00:00.000Z",
+      state: ["0", "0", "4294967296"],
+      priceYes: "2147483648",
+      outcome: null,
+      info: {
+        asset: "XLM",
+        threshold: "18900000000000",
+        expiry: "2000000000",
+        finalize_after: "2000000600",
+      },
+      scenario: { market_assets: "200000000" },
+      registration: {
+        market: deployment.contracts.factory,
+        current_epoch: "1",
+        lot_size: "4294967296",
+        fee_bps: 50,
+        maximum_batch_size: 8,
+        minimum_side_count: 0,
+      },
+      epoch: {
+        accepted_count: 0,
+        last_sequence: "0",
+        phase: "Collecting",
+      },
+      previousEpoch: {
+        accepted_count: 2,
+        last_sequence: "2",
+        phase: "Executed",
+      },
+    }],
+  };
 
   globalThis.fetch = (async (input) => {
-    assert.match(String(input), /\/private\/config$/u);
-    requests++;
-    if (requests === 1) {
+    const url = String(input);
+    if (url.endsWith("/private/catalog")) {
+      catalogRequests++;
+      if (catalogFailure) {
+        catalogFailure = false;
+        return Response.json(
+          { error: "catalog temporarily unavailable" },
+          { status: 503 },
+        );
+      }
+      return Response.json(catalog);
+    }
+    assert.match(url, /\/private\/config$/u);
+    configRequests++;
+    if (configRequests === 1) {
       return Response.json(
         { error: "temporary failure" },
         { status: 503 },
@@ -27,20 +77,56 @@ async function main() {
   }) as typeof fetch;
 
   try {
-    const { getPrivateConfig } = await import("./client");
+    const {
+      getPrivateConfig,
+      getPrivateMarketCatalog,
+      parsePrivateMarketCatalog,
+    } = await import("./client");
     await assert.rejects(getPrivateConfig(), /temporary failure/u);
     const [first, second, third] = await Promise.all([
       getPrivateConfig(),
       getPrivateConfig(),
       getPrivateConfig(),
     ]);
-    assert.equal(requests, 2);
+    assert.equal(configRequests, 2);
     assert.equal(first, second);
     assert.equal(second, third);
     assert.equal(first.network, NETWORK.id);
     assert.equal(
       first.contracts.sharedVault,
       deployment.contracts.sharedVault,
+    );
+    await assert.rejects(
+      getPrivateMarketCatalog(),
+      /catalog temporarily unavailable/u,
+    );
+    const [catalogA, catalogB] = await Promise.all([
+      getPrivateMarketCatalog(),
+      getPrivateMarketCatalog(),
+    ]);
+    assert.equal(catalogRequests, 2);
+    assert.equal(catalogA, catalogB);
+    assert.equal(catalogA.markets[0].previousEpoch?.last_sequence, "2");
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await getPrivateMarketCatalog(0);
+    assert.equal(catalogRequests, 3);
+    assert.throws(
+      () => parsePrivateMarketCatalog({ ...catalog, checkedAt: "invalid" }),
+      /catalog is invalid/u,
+    );
+    assert.throws(
+      () => parsePrivateMarketCatalog({
+        ...catalog,
+        markets: [{ ...catalog.markets[0], priceYes: "4294967297" }],
+      }),
+      /catalog is invalid/u,
+    );
+    assert.throws(
+      () => parsePrivateMarketCatalog({
+        ...catalog,
+        markets: [{ ...catalog.markets[0], registration: null }],
+      }),
+      /catalog is invalid/u,
     );
   } finally {
     globalThis.fetch = originalFetch;

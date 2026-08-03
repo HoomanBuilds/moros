@@ -107,6 +107,44 @@ export type PrivateOutputStatus = {
   currentRoot: string;
 };
 
+export type PrivateCatalogEpoch = {
+  accepted_count: number;
+  last_sequence: string;
+  phase: string | null;
+};
+
+export type PrivateMarketCatalogEntry = {
+  market: string;
+  checkedAt: string;
+  state: [string, string, string];
+  priceYes: string;
+  outcome: unknown | null;
+  info: {
+    asset: string;
+    threshold: string;
+    expiry: string;
+    finalize_after?: string;
+  };
+  scenario: {
+    market_assets: string;
+  };
+  registration: {
+    market: string;
+    current_epoch: string;
+    lot_size: string;
+    fee_bps: number;
+    maximum_batch_size: number;
+    minimum_side_count: number;
+  };
+  epoch: PrivateCatalogEpoch | null;
+  previousEpoch: PrivateCatalogEpoch | null;
+};
+
+export type PrivateMarketCatalogSnapshot = {
+  checkedAt: string;
+  markets: PrivateMarketCatalogEntry[];
+};
+
 export type EncryptedPrivateAllocation = {
   market: string;
   epoch: string;
@@ -149,6 +187,9 @@ export type PrivateLiquidityExit = {
 const PRIVATE_SERVICE =
   process.env.NEXT_PUBLIC_PRIVATE_SERVICE_URL || COMMITTEE_URL;
 let privateConfigPromise: Promise<PrivateDeploymentConfig> | null = null;
+let privateCatalogCache: PrivateMarketCatalogSnapshot | null = null;
+let privateCatalogLoadedAt = 0;
+let privateCatalogPromise: Promise<PrivateMarketCatalogSnapshot> | null = null;
 let privateTreeCache: PrivateTreeSnapshot | null = null;
 let privateTreePromise: Promise<PrivateTreeSnapshot> | null = null;
 
@@ -216,6 +257,114 @@ async function loadPrivateConfig(): Promise<PrivateDeploymentConfig> {
     throw new Error("Private service configuration is incompatible");
   }
   return config;
+}
+
+const INTEGER = /^-?\d+$/u;
+const NONNEGATIVE_INTEGER = /^\d+$/u;
+
+function validCatalogEpoch(
+  value: unknown,
+): value is PrivateCatalogEpoch | null {
+  if (value === null) return true;
+  if (!value || typeof value !== "object") return false;
+  const epoch = value as Record<string, unknown>;
+  return Number.isSafeInteger(epoch.accepted_count) &&
+    Number(epoch.accepted_count) >= 0 &&
+    typeof epoch.last_sequence === "string" &&
+    NONNEGATIVE_INTEGER.test(epoch.last_sequence) &&
+    (epoch.phase === null || typeof epoch.phase === "string");
+}
+
+function validCatalogEntry(value: unknown): value is PrivateMarketCatalogEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  const state = entry.state;
+  const info = entry.info as Record<string, unknown> | undefined;
+  const scenario = entry.scenario as Record<string, unknown> | undefined;
+  const registration = entry.registration as Record<string, unknown> | undefined;
+  return typeof entry.market === "string" &&
+    /^C[A-Z2-7]{55}$/u.test(entry.market) &&
+    typeof entry.checkedAt === "string" &&
+    Number.isFinite(Date.parse(entry.checkedAt)) &&
+    Array.isArray(state) &&
+    state.length === 3 &&
+    state.every((item) => typeof item === "string" && INTEGER.test(item)) &&
+    typeof entry.priceYes === "string" &&
+    NONNEGATIVE_INTEGER.test(entry.priceYes) &&
+    BigInt(entry.priceYes) <= 1n << 32n &&
+    !!info &&
+    typeof info.asset === "string" &&
+    typeof info.threshold === "string" &&
+    INTEGER.test(info.threshold) &&
+    typeof info.expiry === "string" &&
+    NONNEGATIVE_INTEGER.test(info.expiry) &&
+    (info.finalize_after === undefined ||
+      typeof info.finalize_after === "string" &&
+      NONNEGATIVE_INTEGER.test(info.finalize_after)) &&
+    !!scenario &&
+    typeof scenario.market_assets === "string" &&
+    NONNEGATIVE_INTEGER.test(scenario.market_assets) &&
+    !!registration &&
+    registration.market === entry.market &&
+    typeof registration.current_epoch === "string" &&
+    NONNEGATIVE_INTEGER.test(registration.current_epoch) &&
+    typeof registration.lot_size === "string" &&
+    NONNEGATIVE_INTEGER.test(registration.lot_size) &&
+    Number.isSafeInteger(registration.fee_bps) &&
+    Number(registration.fee_bps) >= 0 &&
+    Number.isSafeInteger(registration.maximum_batch_size) &&
+    Number(registration.maximum_batch_size) > 0 &&
+    Number.isSafeInteger(registration.minimum_side_count) &&
+    Number(registration.minimum_side_count) >= 0 &&
+    validCatalogEpoch(entry.epoch) &&
+    validCatalogEpoch(entry.previousEpoch);
+}
+
+export function parsePrivateMarketCatalog(
+  value: unknown,
+): PrivateMarketCatalogSnapshot {
+  if (!value || typeof value !== "object") {
+    throw new Error("Private market catalog is invalid");
+  }
+  const snapshot = value as Record<string, unknown>;
+  if (
+    typeof snapshot.checkedAt !== "string" ||
+    !Number.isFinite(Date.parse(snapshot.checkedAt)) ||
+    !Array.isArray(snapshot.markets) ||
+    !snapshot.markets.every(validCatalogEntry)
+  ) {
+    throw new Error("Private market catalog is invalid");
+  }
+  return {
+    checkedAt: snapshot.checkedAt,
+    markets: snapshot.markets,
+  };
+}
+
+export async function getPrivateMarketCatalog(
+  maximumAgeMs = 5_000,
+): Promise<PrivateMarketCatalogSnapshot> {
+  if (
+    privateCatalogCache &&
+    Date.now() - privateCatalogLoadedAt <= maximumAgeMs
+  ) {
+    return privateCatalogCache;
+  }
+  if (privateCatalogPromise) return privateCatalogPromise;
+  privateCatalogPromise = fetch(privateServiceUrl("/private/catalog"), {
+    cache: "no-store",
+  })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const snapshot = parsePrivateMarketCatalog(await response.json());
+      privateCatalogCache = snapshot;
+      privateCatalogLoadedAt = Date.now();
+      return snapshot;
+    })
+    .finally(() => {
+      privateCatalogPromise = null;
+    });
+  return privateCatalogPromise;
 }
 
 export async function registerPrivateMarket(market: string): Promise<void> {

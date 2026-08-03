@@ -13,7 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { EmptyState } from "@/components/app/app-kit";
+import { EmptyState, Panel } from "@/components/app/app-kit";
 import { MarketCard } from "./market-card";
 import { MarketListRow } from "./market-row";
 import { MarketCategoryIcon } from "./market-category-icon";
@@ -25,7 +25,7 @@ const TABS = ["All", "Live", "Favorites", "Closed"] as const;
 type Tab = (typeof TABS)[number];
 
 export function MarketsSection() {
-  const { rows } = useMarketCatalog();
+  const { rows, isLoading } = useMarketCatalog();
   const favorites = useFavorites();
   const [tab, setTab] = useState<Tab>("All");
   const [search, setSearch] = useState("");
@@ -185,7 +185,18 @@ export function MarketsSection() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {isLoading && filtered.length === 0 ? (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3" aria-label="Loading markets">
+          {Array.from({ length: 3 }, (_, index) => (
+            <Panel key={index} className="space-y-5 p-6">
+              <div className="h-6 w-28 animate-pulse rounded bg-white/[0.04]" />
+              <div className="h-16 animate-pulse rounded bg-white/[0.04]" />
+              <div className="h-2 animate-pulse rounded bg-white/[0.04]" />
+              <div className="h-16 animate-pulse rounded bg-white/[0.04]" />
+            </Panel>
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState title="No markets here" description={search || category !== "All" ? "Nothing matches these filters." : "No markets in this view yet."} />
       ) : view === "grid" ? (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
