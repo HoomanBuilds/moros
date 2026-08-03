@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { NETWORK } from "@/lib/network";
+import { StellarWordmark } from "./stellar-wordmark";
 
 const words = ["side", "position", "edge"];
 
@@ -173,10 +174,19 @@ export function HeroSection() {
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
-          <span className="inline-flex items-center gap-3 text-sm font-mono text-white/60">
+          <a
+            href="https://stellar.org"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-3 text-sm font-mono text-white/60 transition-colors hover:text-white"
+          >
             <span className="w-8 h-px bg-white/30" />
-            Live on {NETWORK.name}
-          </span>
+            <span>Built on</span>
+            <StellarWordmark className="w-[92px]" priority />
+            <span className="rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/50">
+              {NETWORK.id}
+            </span>
+          </a>
         </div>
 
         {/* Main headline */}

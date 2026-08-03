@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { StellarWordmark } from "./stellar-wordmark";
 
 const logos: Record<string, React.ReactNode> = {
-  Stellar: <span className="font-mono text-sm">STR</span>,
+  Stellar: <StellarWordmark className="w-20" />,
   "Circle USDC": <span className="font-mono text-sm">USDC</span>,
   Soroban: <span className="font-mono text-sm">SOR</span>,
   Reflector: <span className="font-mono text-sm">RFL</span>,
@@ -122,9 +123,17 @@ export function IntegrationsSection() {
                 {integration.category}
               </span>
 
-              <div className={`w-10 h-10 mb-6 flex items-center justify-center transition-colors ${
-                hoveredIndex === index ? "text-white" : "text-foreground/60"
-              }`}>
+              <div
+                className={`h-10 mb-6 flex items-center transition-colors ${
+                  integration.name === "Stellar"
+                    ? "w-20 justify-start"
+                    : "w-10 justify-center"
+                } ${
+                  hoveredIndex === index
+                    ? "text-white"
+                    : "text-foreground/60"
+                }`}
+              >
                 {logos[integration.name]}
               </div>
 

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { BRAND } from "@/lib/brand";
 import { NETWORK } from "@/lib/network";
+import { StellarWordmark } from "./stellar-wordmark";
 
 interface FooterLink {
   name: string;
@@ -118,6 +119,16 @@ export function FooterSection() {
                 <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
                 Live on {NETWORK.name}
               </span>
+
+              <a
+                href="https://stellar.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-6 flex w-fit items-center gap-3 text-xs font-mono uppercase tracking-[0.14em] text-white/35 transition-colors hover:text-white/60"
+              >
+                <span>Built on</span>
+                <StellarWordmark className="w-24" />
+              </a>
             </div>
 
             {/* Link Columns */}
@@ -157,6 +168,12 @@ export function FooterSection() {
             </span>
           </div>
         </div>
+
+        <p className="pb-8 text-center text-[11px] leading-relaxed text-white/30 md:text-left">
+          Stellar is a trademark of the Stellar Development Foundation. All
+          rights reserved. Moros is independent software, not affiliated with,
+          sponsored or endorsed by the Stellar Development Foundation.
+        </p>
       </div>
     </footer>
   );

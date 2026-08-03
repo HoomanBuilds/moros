@@ -5,6 +5,8 @@ test("landing renders brand, hero, and connect button", async ({ page }) => {
   await expect(page).toHaveTitle(/Moros/);
   await expect(page.getByText(/Bet privately/i).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /connect wallet/i }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /built on stellar/i }).first()).toBeVisible();
+  await expect(page.getByRole("img", { name: "Stellar" }).first()).toBeVisible();
 });
 
 test("launch app link points to /app", async ({ page }) => {
