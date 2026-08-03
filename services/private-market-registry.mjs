@@ -44,16 +44,26 @@ export class PrivateMarketRegistry {
     return [...this.markets];
   }
 
-  async register(market) {
+  has(market) {
+    return this.markets.includes(market);
+  }
+
+  async registerWithStatus(market) {
     if (typeof market !== "string" || !CONTRACT_ID.test(market)) {
       throw new Error("invalid market contract ID");
     }
     await this.verify(market);
+    let added = false;
     if (!this.markets.includes(market)) {
       this.markets.push(market);
       this.markets.sort();
       save(this.stateFile, this.markets);
+      added = true;
     }
-    return market;
+    return { market, added };
+  }
+
+  async register(market) {
+    return (await this.registerWithStatus(market)).market;
   }
 }

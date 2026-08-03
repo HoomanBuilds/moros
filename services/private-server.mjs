@@ -589,10 +589,12 @@ async function main() {
       if (proposal.market !== entry.market) {
         throw new Error("activated proposal returned an unexpected market");
       }
-      await registry.register(entry.market);
-      catalog.invalidate();
+      const registered = registry.has(entry.market)
+        ? { market: entry.market, added: false }
+        : await registry.registerWithStatus(entry.market);
       info = invocationResultValue(await liquidity.info());
       const harvested = await harvestTerminalAllocation(entry, info);
+      if (registered.added || harvested) catalog.invalidate();
       const sync = await syncPublicMarketState({
         proposalId: entry.proposalId,
         state: "active",
@@ -1013,10 +1015,17 @@ async function main() {
           return;
         }
         const body = await readBody(request);
-        const market = await registry.register(body.market);
-        catalog.invalidate();
-        refreshCatalog();
-        sendJson(request, response, 200, { market, registered: true });
+        const registered = registry.has(body.market)
+          ? { market: body.market, added: false }
+          : await registry.registerWithStatus(body.market);
+        if (registered.added) {
+          catalog.invalidate();
+          refreshCatalog();
+        }
+        sendJson(request, response, 200, {
+          market: registered.market,
+          registered: true,
+        });
         return;
       }
       if (

@@ -123,16 +123,39 @@ try {
     stateFile,
     verify: async (value) => verified.push(value),
   });
-  await registry.register(market);
-  await registry.register(market);
+  const initialRegistration = await registry.registerWithStatus(market);
+  const repeatedRegistration = await registry.registerWithStatus(market);
+  assert.deepEqual(initialRegistration, { market, added: true });
+  assert.deepEqual(repeatedRegistration, { market, added: false });
   assert.deepEqual(registry.list(), [market]);
-  assert.deepEqual(verified, [market, market]);
+  assert.equal(registry.has(market), true);
+  assert.equal(
+    registry.has(StrKey.encodeContract(Buffer.alloc(32, 9))),
+    false,
+  );
+  const concurrentMarket = StrKey.encodeContract(Buffer.alloc(32, 9));
+  const concurrentRegistrations = await Promise.all(
+    Array.from(
+      { length: 5 },
+      () => registry.registerWithStatus(concurrentMarket),
+    ),
+  );
+  assert.equal(
+    concurrentRegistrations.filter((entry) => entry.added).length,
+    1,
+  );
+  assert.equal(registry.has(concurrentMarket), true);
+  assert.equal(verified.filter((value) => value === market).length, 2);
+  assert.equal(
+    verified.filter((value) => value === concurrentMarket).length,
+    5,
+  );
 
   const resumed = new PrivateMarketRegistry({
     stateFile,
     verify: async () => {},
   });
-  assert.deepEqual(resumed.list(), [market]);
+  assert.deepEqual(resumed.list(), registry.list());
   await assert.rejects(() => resumed.register("bad"), /invalid/);
 } finally {
   rmSync(directory, { recursive: true, force: true });
