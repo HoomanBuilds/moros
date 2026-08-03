@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { fulfilledMarketRows } from "@/lib/markets/catalog";
 import { marketFromPrivateCatalog } from "@/lib/stellar/use-market";
 import { NETWORK } from "@/lib/network";
 import type { PrivateMarketCatalogEntry } from "@/lib/private/client";
@@ -98,6 +99,21 @@ assert.throws(
     resolverType: "event",
   }),
   /direct rule verification/u,
+);
+
+assert.deepEqual(
+  fulfilledMarketRows([
+    { status: "fulfilled", value: "verified" },
+    { status: "rejected", reason: new Error("temporary failure") },
+  ], 2),
+  ["verified"],
+);
+assert.deepEqual(fulfilledMarketRows([], 0), []);
+assert.throws(
+  () => fulfilledMarketRows([
+    { status: "rejected", reason: new Error("temporary failure") },
+  ], 1),
+  /No market state could be verified/u,
 );
 
 console.log("private market catalog mapping ok");

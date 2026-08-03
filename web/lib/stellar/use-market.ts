@@ -11,6 +11,8 @@ import { eventRulesHashHex } from "@/lib/markets/rules";
 import { marketReadPlan } from "@/lib/markets/market-read-plan";
 import {
   getPrivateMarketCatalog,
+  isPrivateMarketCatalogEntryFresh,
+  isPrivateMarketCatalogSnapshotFresh,
   type PrivateMarketCatalogEntry,
 } from "@/lib/private/client";
 import { privateOrderCountFromEpochs } from "./private-order-count";
@@ -250,11 +252,27 @@ export function useMarket() {
     ],
     refetchInterval: 15000,
     queryFn: async () => {
+      let catalogEntry: PrivateMarketCatalogEntry | undefined;
       if (descriptor?.resolverType !== "event") {
         try {
           const catalog = await getPrivateMarketCatalog();
-          const entry = catalog.markets.find((item) => item.market === marketId);
-          if (entry) return marketFromPrivateCatalog(entry, collateral, descriptor);
+          catalogEntry = catalog.markets.find((item) =>
+            item.market === marketId
+          );
+          if (
+            catalogEntry &&
+            isPrivateMarketCatalogSnapshotFresh(catalog) &&
+            isPrivateMarketCatalogEntryFresh(
+              catalogEntry,
+              Date.parse(catalog.checkedAt),
+            )
+          ) {
+            return marketFromPrivateCatalog(
+              catalogEntry,
+              collateral,
+              descriptor,
+            );
+          }
         } catch {
           // Direct Stellar reads remain available during service upgrades.
         }

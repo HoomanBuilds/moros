@@ -75,7 +75,7 @@ function SideButton({
 }
 
 export function BetPanel() {
-  const { data } = useMarket();
+  const { data, isError, isLoading } = useMarket();
   const { marketId, poolId, collateral } = useActiveMarket();
   const address = useWalletAddress();
   const [side, setSide] = useState<BetSide>("1");
@@ -94,7 +94,19 @@ export function BetPanel() {
   const backupSequence = useRef(0);
   const busy = stage !== null && stage !== "done";
   const rulesInvalid = data?.resolverType === "event" && !data.rulesVerified;
-  const closed = data ? !data.acceptingOrders || rulesInvalid : false;
+  const marketUnavailable = isError || (!data && !isLoading);
+  const closed = !data || isError || !data.acceptingOrders || rulesInvalid;
+  const closedMessage = !data && isLoading
+    ? "Reading verified market state."
+    : marketUnavailable
+      ? "Market state is temporarily unavailable. Betting stays disabled until the latest state is verified."
+      : rulesInvalid
+        ? "Betting is blocked because the displayed event rules do not match the immutable on-chain rules hash."
+        : data?.outcome === "LIVE"
+          ? "Betting is closed. The final encrypted batch and resolution are still pending."
+          : data?.outcome === "VOID"
+            ? "This market was voided. Head to your positions to claim a full refund."
+            : "This market has resolved. Head to your positions to redeem.";
 
   const prob = side === "1" ? data?.probYes ?? null : data ? 1 - data.probYes : null;
   const positionSize = Number(amount);
@@ -407,13 +419,7 @@ export function BetPanel() {
 
       {closed ? (
         <p className="text-sm text-muted-foreground">
-          {rulesInvalid
-            ? "Betting is blocked because the displayed event rules do not match the immutable on-chain rules hash."
-            : data?.outcome === "LIVE"
-            ? "Betting is closed. The final encrypted batch and resolution are still pending."
-            : data?.outcome === "VOID"
-              ? "This market was voided. Head to your positions to claim a full refund."
-              : "This market has resolved. Head to your positions to redeem."}
+          {closedMessage}
         </p>
       ) : stage === "done" ? (
         <div className="space-y-3 rounded-md border p-4" style={{ borderColor: `${YES}44`, backgroundColor: `${YES}0f` }}>

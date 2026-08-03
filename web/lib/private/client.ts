@@ -145,6 +145,40 @@ export type PrivateMarketCatalogSnapshot = {
   markets: PrivateMarketCatalogEntry[];
 };
 
+export const PRIVATE_CATALOG_ENTRY_MAX_AGE_MS = 90_000;
+
+function isPrivateCatalogTimestampFresh(
+  checkedAt: string,
+  now: number,
+  maximumAgeMs: number,
+): boolean {
+  const checkedAtMs = Date.parse(checkedAt);
+  const age = now - checkedAtMs;
+  return Number.isFinite(checkedAtMs) &&
+    age >= -60_000 &&
+    age <= maximumAgeMs;
+}
+
+export function isPrivateMarketCatalogEntryFresh(
+  entry: PrivateMarketCatalogEntry,
+  now = Date.now(),
+  maximumAgeMs = PRIVATE_CATALOG_ENTRY_MAX_AGE_MS,
+): boolean {
+  return isPrivateCatalogTimestampFresh(entry.checkedAt, now, maximumAgeMs);
+}
+
+export function isPrivateMarketCatalogSnapshotFresh(
+  snapshot: PrivateMarketCatalogSnapshot,
+  now = Date.now(),
+  maximumAgeMs = PRIVATE_CATALOG_ENTRY_MAX_AGE_MS,
+): boolean {
+  return isPrivateCatalogTimestampFresh(
+    snapshot.checkedAt,
+    now,
+    maximumAgeMs,
+  );
+}
+
 export type EncryptedPrivateAllocation = {
   market: string;
   epoch: string;

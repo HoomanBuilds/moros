@@ -4,11 +4,17 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMarketCatalog } from "@/lib/markets/catalog";
 import { FeaturedMarket } from "./featured-market";
 import { Panel } from "@/components/app/app-kit";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sortRows } from "@/lib/markets/sort";
 
 export function FeaturedCarousel() {
-  const { rows: catalogRows, isLoading } = useMarketCatalog();
+  const {
+    rows: catalogRows,
+    isLoading,
+    isError,
+    retry,
+  } = useMarketCatalog();
   const rows = sortRows(catalogRows, "ending");
   const [i, setI] = useState(0);
   const n = rows.length;
@@ -21,6 +27,14 @@ export function FeaturedCarousel() {
 
   if (isLoading && n === 0) {
     return <Panel className="p-6"><div className="h-[360px] animate-pulse rounded bg-white/[0.03]" /></Panel>;
+  }
+  if (isError && n === 0) {
+    return (
+      <Panel className="flex min-h-[360px] flex-col items-center justify-center gap-4 p-10 text-center">
+        <p className="text-sm text-muted-foreground">Market data is temporarily unavailable.</p>
+        <Button type="button" variant="outline" onClick={retry}>Retry market data</Button>
+      </Panel>
+    );
   }
   if (n === 0) {
     return <Panel className="p-10"><p className="text-sm text-muted-foreground">No markets available yet.</p></Panel>;

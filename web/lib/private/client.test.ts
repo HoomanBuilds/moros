@@ -80,6 +80,8 @@ async function main() {
     const {
       getPrivateConfig,
       getPrivateMarketCatalog,
+      isPrivateMarketCatalogEntryFresh,
+      isPrivateMarketCatalogSnapshotFresh,
       parsePrivateMarketCatalog,
     } = await import("./client");
     await assert.rejects(getPrivateConfig(), /temporary failure/u);
@@ -107,6 +109,43 @@ async function main() {
     assert.equal(catalogRequests, 2);
     assert.equal(catalogA, catalogB);
     assert.equal(catalogA.markets[0].previousEpoch?.last_sequence, "2");
+    const catalogEntry = catalogA.markets[0];
+    const catalogCheckedAt = Date.parse(catalogEntry.checkedAt);
+    assert.equal(
+      isPrivateMarketCatalogEntryFresh(
+        catalogEntry,
+        catalogCheckedAt + 89_999,
+      ),
+      true,
+    );
+    assert.equal(
+      isPrivateMarketCatalogEntryFresh(
+        catalogEntry,
+        catalogCheckedAt + 90_001,
+      ),
+      false,
+    );
+    assert.equal(
+      isPrivateMarketCatalogSnapshotFresh(
+        catalogA,
+        Date.parse(catalogA.checkedAt) + 89_999,
+      ),
+      true,
+    );
+    assert.equal(
+      isPrivateMarketCatalogSnapshotFresh(
+        catalogA,
+        Date.parse(catalogA.checkedAt) + 90_001,
+      ),
+      false,
+    );
+    assert.equal(
+      isPrivateMarketCatalogEntryFresh(
+        catalogEntry,
+        catalogCheckedAt - 60_001,
+      ),
+      false,
+    );
     await new Promise((resolve) => setTimeout(resolve, 2));
     await getPrivateMarketCatalog(0);
     assert.equal(catalogRequests, 3);

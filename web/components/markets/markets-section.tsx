@@ -6,6 +6,7 @@ import { useFavorites } from "@/lib/markets/favorites";
 import { sortRows, SORT_OPTIONS, type SortId } from "@/lib/markets/sort";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -25,7 +26,7 @@ const TABS = ["All", "Live", "Favorites", "Closed"] as const;
 type Tab = (typeof TABS)[number];
 
 export function MarketsSection() {
-  const { rows, isLoading } = useMarketCatalog();
+  const { rows, isLoading, isError, retry } = useMarketCatalog();
   const favorites = useFavorites();
   const [tab, setTab] = useState<Tab>("All");
   const [search, setSearch] = useState("");
@@ -196,6 +197,12 @@ export function MarketsSection() {
             </Panel>
           ))}
         </div>
+      ) : isError && filtered.length === 0 ? (
+        <EmptyState
+          title="Markets are temporarily unavailable"
+          description="Market state could not be verified. Retry the read without reconnecting your wallet."
+          action={<Button type="button" onClick={retry}>Retry market data</Button>}
+        />
       ) : filtered.length === 0 ? (
         <EmptyState title="No markets here" description={search || category !== "All" ? "Nothing matches these filters." : "No markets in this view yet."} />
       ) : view === "grid" ? (

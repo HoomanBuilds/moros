@@ -12,6 +12,8 @@ import {
 import { collateralForEntry } from "./market-context";
 import {
   getPrivateMarketCatalog,
+  isPrivateMarketCatalogEntryFresh,
+  isPrivateMarketCatalogSnapshotFresh,
   type PrivateMarketCatalogEntry,
 } from "@/lib/private/client";
 
@@ -46,16 +48,31 @@ export type MarketRow = {
 async function fetchRow(
   entry: MarketEntry,
   snapshot?: PrivateMarketCatalogEntry,
+  catalogCheckedAt = Date.now(),
+  catalogFresh = true,
 ): Promise<MarketRow> {
   const collateral = collateralForEntry(entry);
-  const data = snapshot && entry.resolverType !== "event"
-    ? marketFromPrivateCatalog(snapshot, collateral, entry)
-    : await fetchMarket(
-        entry.marketId,
-        entry.poolId,
-        collateral,
-        entry,
+  const directRead = () => fetchMarket(
+    entry.marketId,
+    entry.poolId,
+    collateral,
+    entry,
+  );
+  let data: Awaited<ReturnType<typeof fetchMarket>>;
+  if (snapshot && entry.resolverType !== "event") {
+    if (
+      catalogFresh &&
+      isPrivateMarketCatalogEntryFresh(snapshot, catalogCheckedAt)
+    ) {
+      data = marketFromPrivateCatalog(snapshot, collateral, entry);
+    } else {
+      data = await directRead().catch(() =>
+        marketFromPrivateCatalog(snapshot, collateral, entry)
       );
+    }
+  } else {
+    data = await directRead();
+  }
   return {
     id: entry.marketId,
     href: `/app/market/${entry.marketId}`,
@@ -85,7 +102,25 @@ async function fetchRow(
   };
 }
 
-export function useMarketCatalog(): { rows: MarketRow[]; isLoading: boolean } {
+export function fulfilledMarketRows<T>(
+  settled: PromiseSettledResult<T>[],
+  expected: number,
+): T[] {
+  const rows = settled.flatMap((row) =>
+    row.status === "fulfilled" ? [row.value] : []
+  );
+  if (expected > 0 && rows.length === 0) {
+    throw new Error("No market state could be verified");
+  }
+  return rows;
+}
+
+export function useMarketCatalog(): {
+  rows: MarketRow[];
+  isLoading: boolean;
+  isError: boolean;
+  retry: () => void;
+} {
   const markets = useMarkets();
   const registryReady = useMarketRegistryReady();
   const marketKey = markets.map((market) => [
@@ -103,24 +138,35 @@ export function useMarketCatalog(): { rows: MarketRow[]; isLoading: boolean } {
     placeholderData: (previous) => previous,
     queryFn: async () => {
       let snapshotByMarket = new Map<string, PrivateMarketCatalogEntry>();
+      let catalogCheckedAt = Date.now();
+      let catalogFresh = false;
       try {
         const snapshot = await getPrivateMarketCatalog();
+        catalogCheckedAt = Date.parse(snapshot.checkedAt);
+        catalogFresh = isPrivateMarketCatalogSnapshotFresh(snapshot);
         snapshotByMarket = new Map(
           snapshot.markets.map((entry) => [entry.market, entry]),
         );
       } catch {
         // The direct read fallback keeps the page available during rollout.
       }
-      const rows = await Promise.allSettled(markets.map((market) =>
-        fetchRow(market, snapshotByMarket.get(market.marketId))
+      const settled = await Promise.allSettled(markets.map((market) =>
+        fetchRow(
+          market,
+          snapshotByMarket.get(market.marketId),
+          catalogCheckedAt,
+          catalogFresh,
+        )
       ));
-      return rows.flatMap((row) =>
-        row.status === "fulfilled" ? [row.value] : []
-      );
+      return fulfilledMarketRows(settled, markets.length);
     },
   });
   return {
     rows: result.data ?? [],
     isLoading: !registryReady || result.isLoading,
+    isError: result.isError,
+    retry: () => {
+      void result.refetch();
+    },
   };
 }
