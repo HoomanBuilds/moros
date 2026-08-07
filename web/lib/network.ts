@@ -42,7 +42,7 @@ const DEFAULTS = {
     name: "Stellar mainnet",
     rpcUrl: "https://mainnet.sorobanrpc.com",
     horizonUrl: "https://horizon.stellar.org",
-    privateServiceUrl: "",
+    privateServiceUrl: "https://moros-market.duckdns.org",
     passphrase: "Public Global Stellar Network ; September 2015",
     explorerNetwork: "public",
   },
@@ -76,7 +76,7 @@ const BUILD_ENV: PublicNetworkEnv = {
 };
 
 export function networkConfig(env: PublicNetworkEnv = BUILD_ENV) {
-  const selectedId = env.NEXT_PUBLIC_STELLAR_NETWORK || "testnet";
+  const selectedId = env.NEXT_PUBLIC_STELLAR_NETWORK || "mainnet";
   if (selectedId !== "testnet" && selectedId !== "mainnet") {
     throw new Error(
       "NEXT_PUBLIC_STELLAR_NETWORK must be testnet or mainnet",

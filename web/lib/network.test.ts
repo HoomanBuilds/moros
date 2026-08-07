@@ -20,6 +20,16 @@ if (NETWORK.id === "testnet") {
     "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
   );
 }
+const defaultNetwork = networkConfig({});
+assert.equal(defaultNetwork.id, "mainnet");
+assert.equal(
+  defaultNetwork.privateServiceUrl,
+  "https://moros-market.duckdns.org",
+);
+assert.equal(
+  defaultNetwork.collateral.sac,
+  "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+);
 assert.equal(collateralFromRecord(), null);
 assert.equal(collateralFromRecord({
   collateralCode: "USDC",
@@ -56,6 +66,9 @@ assert.equal(
   mainnetWithoutScopedValues.rpcUrl,
   "https://mainnet.sorobanrpc.com",
 );
-assert.equal(mainnetWithoutScopedValues.privateServiceUrl, "");
+assert.equal(
+  mainnetWithoutScopedValues.privateServiceUrl,
+  "https://moros-market.duckdns.org",
+);
 
 console.log("network collateral ok");
