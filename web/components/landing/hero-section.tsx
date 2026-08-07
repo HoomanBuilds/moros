@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { NETWORK } from "@/lib/network";
+import { TokenUSDC } from "@web3icons/react";
 import { StellarWordmark } from "./stellar-wordmark";
 
 const words = ["side", "position", "edge"];
@@ -183,9 +183,6 @@ export function HeroSection() {
             <span className="w-8 h-px bg-white/30" />
             <span>Built on</span>
             <StellarWordmark className="w-[92px]" priority />
-            <span className="rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/50">
-              {NETWORK.id}
-            </span>
           </a>
         </div>
 
@@ -226,13 +223,20 @@ export function HeroSection() {
           {[
             { value: "USDC", label: "Circle collateral" },
             { value: "Up to 8", label: "orders per batch" },
-            {
-              value: NETWORK.id === "mainnet" ? "40" : "Live",
-              label: `${NETWORK.id} price routes`,
-            },
+            { value: "40", label: "price routes" },
           ].map((stat) => (
             <div key={stat.label} className="flex flex-col gap-2">
-              <span className="text-3xl lg:text-4xl font-display text-white">{stat.value}</span>
+              <span className="inline-flex items-center gap-3 text-3xl font-display text-white lg:text-4xl">
+                {stat.value === "USDC" && (
+                  <TokenUSDC
+                    variant="branded"
+                    size={40}
+                    aria-hidden="true"
+                    className="h-8 w-8 rounded-full lg:h-10 lg:w-10"
+                  />
+                )}
+                {stat.value}
+              </span>
               <span className="text-xs text-white/50 leading-tight">
                 {stat.label}
               </span>

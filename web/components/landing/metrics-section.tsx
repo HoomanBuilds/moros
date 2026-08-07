@@ -331,17 +331,6 @@ export function MetricsSection() {
           ))}
         </div>
 
-        <div className={`mt-16 pt-8 border-t border-foreground/10 flex flex-wrap items-center gap-x-12 gap-y-4 text-sm font-mono text-muted-foreground transition-all duration-1000 delay-500 ${
-          isVisible ? "opacity-100" : "opacity-0"
-        }`}>
-          <span>Live on {NETWORK.name}</span>
-          <span>circom + Groth16 order circuits</span>
-          <span>Reflector-oracle resolution</span>
-          <span>Circle USDC collateral</span>
-          <span className="text-foreground">
-            {NETWORK.id === "mainnet" ? "40 registered price routes" : "Registered price routes"}
-          </span>
-        </div>
       </div>
     </section>
   );

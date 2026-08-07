@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { TokenUSDC } from "@web3icons/react";
 import { NETWORK } from "@/lib/network";
 
 const regions = [
@@ -199,7 +200,17 @@ export function InfrastructureSection() {
                   {region.status}
                 </span>
               </div>
-              <span className="font-medium block mb-1">{region.name}</span>
+              <span className="mb-1 flex items-center gap-2 font-medium">
+                {region.name === "Circle USDC" && (
+                  <TokenUSDC
+                    variant="mono"
+                    size={22}
+                    aria-hidden="true"
+                    className="shrink-0 text-foreground"
+                  />
+                )}
+                {region.name}
+              </span>
               <span className="text-sm text-muted-foreground">{region.detail}</span>
             </div>
           ))}

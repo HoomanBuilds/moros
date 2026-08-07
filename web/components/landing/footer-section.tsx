@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { TokenUSDC } from "@web3icons/react";
 import { BRAND } from "@/lib/brand";
-import { NETWORK } from "@/lib/network";
 import { StellarWordmark } from "./stellar-wordmark";
 
 interface FooterLink {
@@ -116,8 +116,13 @@ export function FooterSection() {
               </p>
 
               <span className="inline-flex items-center gap-2 text-sm text-white/40">
-                <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
-                Live on {NETWORK.name}
+                <TokenUSDC
+                  variant="branded"
+                  size={20}
+                  aria-hidden="true"
+                  className="rounded-full"
+                />
+                Circle USDC collateral
               </span>
 
               <a
@@ -156,17 +161,10 @@ export function FooterSection() {
         </div>
 
         {/* Bottom Bar */}
-        <div className="py-8 border-t border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center border-t border-white/10 py-8">
           <p className="text-sm text-white/30">
             &copy; 2026 {BRAND.name}. All rights reserved.
           </p>
-
-          <div className="flex items-center gap-4 text-sm text-white/30">
-            <span className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#eca8d6]" />
-              Circle USDC collateral
-            </span>
-          </div>
         </div>
 
         <p className="pb-8 text-center text-[11px] leading-relaxed text-white/30 md:text-left">

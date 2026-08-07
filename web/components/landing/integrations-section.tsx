@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { TokenUSDC } from "@web3icons/react";
 import { StellarWordmark } from "./stellar-wordmark";
 
 const logos: Record<string, React.ReactNode> = {
   Stellar: <StellarWordmark className="w-20" />,
-  "Circle USDC": <span className="font-mono text-sm">USDC</span>,
+  "Circle USDC": (
+    <TokenUSDC
+      variant="branded"
+      size={36}
+      aria-hidden="true"
+      className="rounded-full"
+    />
+  ),
   Soroban: <span className="font-mono text-sm">SOR</span>,
   Reflector: <span className="font-mono text-sm">RFL</span>,
   circom: <span className="font-mono text-sm">CIR</span>,
