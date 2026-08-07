@@ -1098,8 +1098,12 @@ async function main() {
     }
   });
 
-  await tick();
-  setInterval(() => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    process.stdout.write(
+      `private ${network.id} service listening on ${PORT} for vault ${vaultId}\n`,
+    );
+  });
+  const runTick = () => {
     tick().catch((error) => {
       runtime.errors.push({
         at: new Date().toISOString(),
@@ -1107,12 +1111,9 @@ async function main() {
       });
       runtime.errors = runtime.errors.slice(-20);
     });
-  }, TICK_MS).unref();
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    process.stdout.write(
-      `private ${network.id} service listening on ${PORT} for vault ${vaultId}\n`,
-    );
-  });
+  };
+  runTick();
+  setInterval(runTick, TICK_MS).unref();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
