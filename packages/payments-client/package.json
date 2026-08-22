@@ -1,0 +1,13 @@
+{
+  "name": "@moros/payments-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.mjs",
+  "scripts": {
+    "test": "node test/config.test.mjs && node test/http.test.mjs && node test/client.test.mjs && node test/discovery.test.mjs && node test/journal.test.mjs"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "16.2.0"
+  }
+}
