@@ -8,7 +8,7 @@
     "setup:private": "node private/build.mjs all",
     "package:private": "node private/build.mjs package",
     "prepare:mainnet": "node private/prepare-mainnet.mjs",
-    "test:payments": "node payments/test.mjs",
+    "test:payments": "node payments/test.mjs && node payments/witness-test.mjs",
     "test:prepare-mainnet": "node private/test-prepare-mainnet.mjs",
     "test:private-artifacts": "node private/test.mjs",
     "test:shielded-vault": "node ../contracts/shielded-collateral-vault/circuits/test/run.mjs"
