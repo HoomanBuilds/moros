@@ -9,7 +9,7 @@ use crate::{
 
 pub const PAYMENT_CODE_PREFIX: &str = "moros_pay_";
 const PAYMENT_CODE_BODY_LENGTH: usize = 212;
-const PAYMENT_CODE_LENGTH: usize = PAYMENT_CODE_BODY_LENGTH + 4;
+pub const PAYMENT_CODE_BYTES: usize = PAYMENT_CODE_BODY_LENGTH + 4;
 const CHECKSUM_DOMAIN: &[u8] = b"moros/payment-code/checksum/v1";
 const FINGERPRINT_DOMAIN: &[u8] = b"moros/payment-code/fingerprint/v1";
 
@@ -89,7 +89,7 @@ impl PaymentCode {
         let bytes = URL_SAFE_NO_PAD
             .decode(payload)
             .map_err(|_| Error::InvalidPaymentCodeEncoding)?;
-        if bytes.len() != PAYMENT_CODE_LENGTH {
+        if bytes.len() != PAYMENT_CODE_BYTES {
             return Err(Error::InvalidPaymentCodeLength);
         }
         if URL_SAFE_NO_PAD.encode(&bytes) != payload {
@@ -127,7 +127,7 @@ impl PaymentCode {
     }
 
     pub(crate) fn from_canonical_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() != PAYMENT_CODE_LENGTH {
+        if bytes.len() != PAYMENT_CODE_BYTES {
             return Err(Error::InvalidPaymentCodeLength);
         }
         Self::from_bytes(bytes)
@@ -176,8 +176,8 @@ impl PaymentCode {
         Ok(code)
     }
 
-    fn to_bytes(&self) -> [u8; PAYMENT_CODE_LENGTH] {
-        let mut bytes = [0_u8; PAYMENT_CODE_LENGTH];
+    fn to_bytes(&self) -> [u8; PAYMENT_CODE_BYTES] {
+        let mut bytes = [0_u8; PAYMENT_CODE_BYTES];
         bytes[0] = self.protocol_version;
         bytes[1] = self.network as u8;
         bytes[2] = self.identity_version;

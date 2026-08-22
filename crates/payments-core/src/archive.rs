@@ -1,3 +1,4 @@
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit, Payload},
@@ -11,6 +12,7 @@ use crate::{Error, MasterEntropy, Network, PROTOCOL_VERSION, Result};
 
 pub const ARCHIVE_PAGE_CONTENT_BYTES: usize = 4_092;
 pub const ARCHIVE_PAGE_BYTES: usize = 4_221;
+pub const ACTIVITY_VIEW_PREFIX: &str = "moros_view_activity_";
 const ARCHIVE_PADDED_BYTES: usize = ARCHIVE_PAGE_CONTENT_BYTES + 4;
 const ARCHIVE_CIPHERTEXT_BYTES: usize = ARCHIVE_PADDED_BYTES + 16;
 const ARCHIVE_VERSION: u8 = 1;
@@ -18,9 +20,15 @@ const ARCHIVE_HEADER_BYTES: usize = 1 + 8 + 8 + 4 + 24 + 32;
 const ARCHIVE_SALT: &[u8] = b"moros/private-payments/archive/v1";
 const ARCHIVE_PAGE_DOMAIN: &[u8] = b"moros/payment-archive/page/v1";
 const SYNC_CHALLENGE_DOMAIN: &[u8] = b"moros/payment-sync/challenge/v1";
+const ACTIVITY_VIEW_VERSION: u8 = 1;
+const ACTIVITY_VIEW_BODY_BYTES: usize = 1 + 1 + 32 + 32 + 32 + 8;
+const ACTIVITY_VIEW_BYTES: usize = ACTIVITY_VIEW_BODY_BYTES + 32;
+const ACTIVITY_VIEW_CHECKSUM_DOMAIN: &[u8] = b"moros/activity-view/checksum/v1";
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct ArchiveIdentity {
+    network: u8,
+    vault: [u8; 32],
     locator: [u8; 32],
     signing_seed: [u8; 32],
     archive_root: [u8; 32],
@@ -36,6 +44,8 @@ impl ArchiveIdentity {
         let signing_seed = derive_signing_seed(&hkdf, network, vault)?;
         let archive_root = derive(&hkdf, network, vault, 3, 0)?;
         Ok(Self {
+            network: network as u8,
+            vault,
             locator,
             signing_seed,
             archive_root,
@@ -54,6 +64,19 @@ impl ArchiveIdentity {
         self.signing_key()
             .sign(&challenge_message(self.locator, challenge, expires_at))
             .to_bytes()
+    }
+
+    pub fn viewing_export(&self, maximum_epoch: u64) -> Result<ActivityViewingKey> {
+        if maximum_epoch == 0 {
+            return Err(Error::InvalidViewingExport);
+        }
+        Ok(ActivityViewingKey {
+            network: self.network,
+            vault: self.vault,
+            locator: self.locator,
+            archive_root: self.archive_root,
+            maximum_epoch,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -102,60 +125,95 @@ impl ArchiveIdentity {
     }
 
     pub fn decrypt_page(&self, encrypted: &EncryptedArchivePage) -> Result<Vec<u8>> {
-        let header = archive_header(
-            encrypted.epoch,
-            encrypted.generation,
-            encrypted.page,
-            encrypted.nonce,
-            encrypted.previous_hash,
-        );
-        if encrypted.epoch == 0
-            || encrypted.generation == 0
-            || encrypted.nonce == [0; 24]
-            || page_hash(self.locator, &header, &encrypted.ciphertext) != encrypted.hash
-        {
-            return Err(Error::InvalidArchive);
-        }
-        let key = self.page_key(encrypted.epoch)?;
-        let cipher = XChaCha20Poly1305::new((&key).into());
-        let padded = cipher
-            .decrypt(
-                XNonce::from_slice(&encrypted.nonce),
-                Payload {
-                    msg: &encrypted.ciphertext,
-                    aad: &archive_aad(self.locator, &header),
-                },
-            )
-            .map_err(|_| Error::ArchiveAuthenticationFailed)?;
-        if padded.len() != ARCHIVE_PADDED_BYTES {
-            return Err(Error::InvalidArchive);
-        }
-        let length =
-            u32::from_be_bytes(padded[..4].try_into().map_err(|_| Error::InvalidArchive)?) as usize;
-        if length > ARCHIVE_PAGE_CONTENT_BYTES || padded[4 + length..].iter().any(|byte| *byte != 0)
-        {
-            return Err(Error::InvalidArchive);
-        }
-        Ok(padded[4..4 + length].to_vec())
+        decrypt_page(self.locator, self.archive_root, encrypted)
     }
 
     fn page_key(&self, epoch: u64) -> Result<[u8; 32]> {
-        let hkdf = Hkdf::<Sha256>::new(Some(ARCHIVE_PAGE_DOMAIN), &self.archive_root);
-        let mut info = [0_u8; 17];
-        info[0] = PROTOCOL_VERSION;
-        info[1..9].copy_from_slice(&epoch.to_be_bytes());
-        info[9..].copy_from_slice(b"page-key");
-        let mut key = [0_u8; 32];
-        hkdf.expand(&info, &mut key)
-            .map_err(|_| Error::InvalidDerivation)?;
-        if key == [0; 32] {
-            return Err(Error::InvalidDerivation);
-        }
-        Ok(key)
+        page_key(self.archive_root, epoch)
     }
 
     fn signing_key(&self) -> SigningKey {
         SigningKey::from_bytes(&self.signing_seed)
+    }
+}
+
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct ActivityViewingKey {
+    network: u8,
+    pub vault: [u8; 32],
+    locator: [u8; 32],
+    archive_root: [u8; 32],
+    pub maximum_epoch: u64,
+}
+
+impl ActivityViewingKey {
+    pub fn network(&self) -> Result<Network> {
+        Network::try_from(self.network)
+    }
+
+    pub fn locator(&self) -> [u8; 32] {
+        self.locator
+    }
+
+    pub fn decrypt_page(&self, encrypted: &EncryptedArchivePage) -> Result<Vec<u8>> {
+        if encrypted.epoch > self.maximum_epoch {
+            return Err(Error::InvalidViewingExport);
+        }
+        decrypt_page(self.locator, self.archive_root, encrypted)
+    }
+
+    pub fn encode(&self) -> String {
+        let mut body = [0_u8; ACTIVITY_VIEW_BODY_BYTES];
+        body[0] = ACTIVITY_VIEW_VERSION;
+        body[1] = self.network;
+        body[2..34].copy_from_slice(&self.vault);
+        body[34..66].copy_from_slice(&self.locator);
+        body[66..98].copy_from_slice(&self.archive_root);
+        body[98..].copy_from_slice(&self.maximum_epoch.to_be_bytes());
+        let mut encoded = [0_u8; ACTIVITY_VIEW_BYTES];
+        encoded[..ACTIVITY_VIEW_BODY_BYTES].copy_from_slice(&body);
+        encoded[ACTIVITY_VIEW_BODY_BYTES..].copy_from_slice(&activity_view_checksum(&body));
+        format!("{ACTIVITY_VIEW_PREFIX}{}", URL_SAFE_NO_PAD.encode(encoded))
+    }
+
+    pub fn decode(encoded: &str) -> Result<Self> {
+        let payload = encoded
+            .strip_prefix(ACTIVITY_VIEW_PREFIX)
+            .ok_or(Error::InvalidViewingExport)?;
+        let bytes = URL_SAFE_NO_PAD
+            .decode(payload)
+            .map_err(|_| Error::InvalidViewingExport)?;
+        if URL_SAFE_NO_PAD.encode(&bytes) != payload || bytes.len() != ACTIVITY_VIEW_BYTES {
+            return Err(Error::InvalidViewingExport);
+        }
+        let body: [u8; ACTIVITY_VIEW_BODY_BYTES] = bytes[..ACTIVITY_VIEW_BODY_BYTES]
+            .try_into()
+            .map_err(|_| Error::InvalidViewingExport)?;
+        if body[0] != ACTIVITY_VIEW_VERSION
+            || activity_view_checksum(&body) != bytes[ACTIVITY_VIEW_BODY_BYTES..]
+        {
+            return Err(Error::InvalidViewingExport);
+        }
+        Network::try_from(body[1])?;
+        let network = body[1];
+        let vault = body[2..34].try_into().unwrap();
+        let locator = body[34..66].try_into().unwrap();
+        let archive_root = body[66..98].try_into().unwrap();
+        let maximum_epoch = u64::from_be_bytes(body[98..].try_into().unwrap());
+        if vault == [0; 32] || locator == [0; 32] || archive_root == [0; 32] || maximum_epoch == 0 {
+            return Err(Error::InvalidViewingExport);
+        }
+        let view = Self {
+            network,
+            vault,
+            locator,
+            archive_root,
+            maximum_epoch,
+        };
+        if view.encode() != encoded {
+            return Err(Error::InvalidViewingExport);
+        }
+        Ok(view)
     }
 }
 
@@ -311,6 +369,70 @@ fn challenge_message(locator: [u8; 32], challenge: [u8; 32], expires_at: u64) ->
     message
 }
 
+fn decrypt_page(
+    locator: [u8; 32],
+    archive_root: [u8; 32],
+    encrypted: &EncryptedArchivePage,
+) -> Result<Vec<u8>> {
+    let header = archive_header(
+        encrypted.epoch,
+        encrypted.generation,
+        encrypted.page,
+        encrypted.nonce,
+        encrypted.previous_hash,
+    );
+    if encrypted.epoch == 0
+        || encrypted.generation == 0
+        || encrypted.nonce == [0; 24]
+        || page_hash(locator, &header, &encrypted.ciphertext) != encrypted.hash
+    {
+        return Err(Error::InvalidArchive);
+    }
+    let key = page_key(archive_root, encrypted.epoch)?;
+    let cipher = XChaCha20Poly1305::new((&key).into());
+    let padded = cipher
+        .decrypt(
+            XNonce::from_slice(&encrypted.nonce),
+            Payload {
+                msg: &encrypted.ciphertext,
+                aad: &archive_aad(locator, &header),
+            },
+        )
+        .map_err(|_| Error::ArchiveAuthenticationFailed)?;
+    if padded.len() != ARCHIVE_PADDED_BYTES {
+        return Err(Error::InvalidArchive);
+    }
+    let length =
+        u32::from_be_bytes(padded[..4].try_into().map_err(|_| Error::InvalidArchive)?) as usize;
+    if length > ARCHIVE_PAGE_CONTENT_BYTES || padded[4 + length..].iter().any(|byte| *byte != 0) {
+        return Err(Error::InvalidArchive);
+    }
+    Ok(padded[4..4 + length].to_vec())
+}
+
+fn page_key(archive_root: [u8; 32], epoch: u64) -> Result<[u8; 32]> {
+    let hkdf = Hkdf::<Sha256>::new(Some(ARCHIVE_PAGE_DOMAIN), &archive_root);
+    let mut info = [0_u8; 17];
+    info[0] = PROTOCOL_VERSION;
+    info[1..9].copy_from_slice(&epoch.to_be_bytes());
+    info[9..].copy_from_slice(b"page-key");
+    let mut key = [0_u8; 32];
+    hkdf.expand(&info, &mut key)
+        .map_err(|_| Error::InvalidDerivation)?;
+    if key == [0; 32] {
+        return Err(Error::InvalidDerivation);
+    }
+    Ok(key)
+}
+
+fn activity_view_checksum(body: &[u8; ACTIVITY_VIEW_BODY_BYTES]) -> [u8; 32] {
+    Sha256::new()
+        .chain_update(ACTIVITY_VIEW_CHECKSUM_DOMAIN)
+        .chain_update(body)
+        .finalize()
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,5 +521,40 @@ mod tests {
         assert_ne!(testnet.locator(), mainnet.locator());
         assert_ne!(testnet.locator(), other_vault.locator());
         assert_ne!(testnet.signing_public_key(), mainnet.signing_public_key());
+    }
+
+    #[test]
+    fn activity_view_is_past_only_and_cannot_authenticate_sync() {
+        let current = identity(7);
+        let page = current
+            .encrypt_page(2, 1, 0, [0; 32], [3; 24], b"receipt")
+            .unwrap();
+        let encoded = current.viewing_export(2).unwrap().encode();
+        let restored = ActivityViewingKey::decode(&encoded).unwrap();
+        assert_eq!(restored.decrypt_page(&page).unwrap(), b"receipt");
+
+        let future = current
+            .encrypt_page(3, 2, 0, page.hash, [4; 24], b"future")
+            .unwrap();
+        assert_eq!(
+            restored.decrypt_page(&future),
+            Err(Error::InvalidViewingExport)
+        );
+        assert!(
+            !encoded
+                .as_bytes()
+                .windows(32)
+                .any(|window| window == current.signing_seed)
+        );
+    }
+
+    #[test]
+    fn activity_view_rejects_tampering_and_zero_epoch() {
+        let current = identity(7);
+        assert!(current.viewing_export(0).is_err());
+        let mut encoded = current.viewing_export(2).unwrap().encode().into_bytes();
+        let index = encoded.len() - 2;
+        encoded[index] = if encoded[index] == b'A' { b'B' } else { b'A' };
+        assert!(ActivityViewingKey::decode(core::str::from_utf8(&encoded).unwrap()).is_err());
     }
 }

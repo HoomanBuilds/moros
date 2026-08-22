@@ -1,10 +1,11 @@
 use core::str::FromStr;
 
 use moros_payments_core::{
-    ARCHIVE_PAGE_BYTES, ArchiveIdentity, AtomicUsdc, ChildIdentity, EncryptedArchivePage,
-    EncryptedAttachment as CoreEncryptedAttachment, EncryptedOutput as CoreEncryptedOutput,
-    FieldElement, MasterEntropy, Network, PaymentCode, PaymentRequest, PaymentRequestPolicy,
-    PrivateNote, PrivateNoteAmount, SignedPaymentRequest,
+    ARCHIVE_PAGE_BYTES, ActivityViewingKey, ArchiveIdentity, AtomicUsdc, ChildIdentity,
+    EncryptedArchivePage, EncryptedAttachment as CoreEncryptedAttachment,
+    EncryptedOutput as CoreEncryptedOutput, FieldElement, IncomingViewingExport, MasterEntropy,
+    Network, PaymentCode, PaymentRequest, PaymentRequestPolicy, PrivateNote, PrivateNoteAmount,
+    SignedPaymentRequest,
 };
 use wasm_bindgen::prelude::*;
 
@@ -67,6 +68,104 @@ impl PaymentArchiveIdentity {
         )?)
         .map_err(js_error)?;
         self.archive.decrypt_page(&encrypted).map_err(js_error)
+    }
+
+    pub fn activity_viewing_export(&self, maximum_epoch: u64) -> Result<String, JsError> {
+        self.archive
+            .viewing_export(maximum_epoch)
+            .map(|view| view.encode())
+            .map_err(js_error)
+    }
+}
+
+#[wasm_bindgen]
+pub struct IncomingViewingCapability {
+    viewing: IncomingViewingExport,
+}
+
+#[wasm_bindgen]
+impl IncomingViewingCapability {
+    #[wasm_bindgen(getter)]
+    pub fn maximum_child_index(&self) -> u64 {
+        self.viewing.maximum_child_index
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn identity_count(&self) -> u32 {
+        self.viewing.identities().len() as u32
+    }
+
+    pub fn payment_code(&self, index: u32) -> Result<String, JsError> {
+        self.viewing
+            .identities()
+            .get(index as usize)
+            .ok_or_else(|| JsError::new("viewing identity index is out of range"))?
+            .payment_code
+            .encode()
+            .map_err(js_error)
+    }
+
+    pub fn viewing_secret(&self, index: u32) -> Result<Vec<u8>, JsError> {
+        Ok(self
+            .viewing
+            .identities()
+            .get(index as usize)
+            .ok_or_else(|| JsError::new("viewing identity index is out of range"))?
+            .viewing_secret_le()
+            .to_vec())
+    }
+
+    pub fn decrypt_output(
+        &self,
+        index: u32,
+        envelope: Vec<u8>,
+        note_domain: Vec<u8>,
+        expected_commitment: Option<Vec<u8>>,
+    ) -> Result<DecryptedPaymentNote, JsError> {
+        let identity = self
+            .viewing
+            .identities()
+            .get(index as usize)
+            .ok_or_else(|| JsError::new("viewing identity index is out of range"))?;
+        let expected_commitment = expected_commitment
+            .map(|value| field(&value, "expected commitment"))
+            .transpose()?;
+        let note = identity
+            .decrypt_output(
+                CoreEncryptedOutput::envelope_from_bytes(array(&envelope, "encrypted output")?)
+                    .map_err(js_error)?,
+                field(&note_domain, "note domain")?,
+                expected_commitment,
+            )
+            .map_err(js_error)?;
+        Ok(DecryptedPaymentNote { note })
+    }
+}
+
+#[wasm_bindgen]
+pub struct ActivityViewingCapability {
+    viewing: ActivityViewingKey,
+}
+
+#[wasm_bindgen]
+impl ActivityViewingCapability {
+    #[wasm_bindgen(getter)]
+    pub fn locator(&self) -> Vec<u8> {
+        self.viewing.locator().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn maximum_epoch(&self) -> u64 {
+        self.viewing.maximum_epoch
+    }
+
+    pub fn decrypt_page(&self, encoded: Vec<u8>) -> Result<Vec<u8>, JsError> {
+        let page = EncryptedArchivePage::decode(array::<ARCHIVE_PAGE_BYTES>(
+            &encoded,
+            "encrypted archive page",
+        )?)
+        .map_err(js_error)?;
+        self.viewing.decrypt_page(&page).map_err(js_error)
     }
 }
 
@@ -353,6 +452,50 @@ pub fn payment_archive_from_phrase(
 }
 
 #[wasm_bindgen]
+pub fn incoming_viewing_export_from_entropy(
+    entropy: Vec<u8>,
+    network: u8,
+    vault: Vec<u8>,
+    maximum_child_index: u64,
+) -> Result<String, JsError> {
+    create_incoming_viewing_export(
+        MasterEntropy::from_bytes(array(&entropy, "master entropy")?).map_err(js_error)?,
+        network,
+        vault,
+        maximum_child_index,
+    )
+}
+
+#[wasm_bindgen]
+pub fn incoming_viewing_export_from_phrase(
+    recovery_phrase: &str,
+    network: u8,
+    vault: Vec<u8>,
+    maximum_child_index: u64,
+) -> Result<String, JsError> {
+    create_incoming_viewing_export(
+        MasterEntropy::from_recovery_phrase(recovery_phrase).map_err(js_error)?,
+        network,
+        vault,
+        maximum_child_index,
+    )
+}
+
+#[wasm_bindgen]
+pub fn decode_incoming_viewing_export(encoded: &str) -> Result<IncomingViewingCapability, JsError> {
+    IncomingViewingExport::decode(encoded)
+        .map(|viewing| IncomingViewingCapability { viewing })
+        .map_err(js_error)
+}
+
+#[wasm_bindgen]
+pub fn decode_activity_viewing_export(encoded: &str) -> Result<ActivityViewingCapability, JsError> {
+    ActivityViewingKey::decode(encoded)
+        .map(|viewing| ActivityViewingCapability { viewing })
+        .map_err(js_error)
+}
+
+#[wasm_bindgen]
 pub fn parse_usdc_amount(display: &str) -> Result<String, JsError> {
     AtomicUsdc::from_str(display)
         .map(|amount| amount.atomic().to_string())
@@ -534,6 +677,22 @@ fn derive_archive(
     )
     .map_err(js_error)?;
     Ok(PaymentArchiveIdentity { archive })
+}
+
+fn create_incoming_viewing_export(
+    master: MasterEntropy,
+    network: u8,
+    vault: Vec<u8>,
+    maximum_child_index: u64,
+) -> Result<String, JsError> {
+    IncomingViewingExport::derive(
+        &master,
+        Network::try_from(network).map_err(js_error)?,
+        array(&vault, "vault identifier")?,
+        maximum_child_index,
+    )
+    .and_then(|viewing| viewing.encode())
+    .map_err(js_error)
 }
 
 fn array<const LENGTH: usize>(bytes: &[u8], label: &str) -> Result<[u8; LENGTH], JsError> {

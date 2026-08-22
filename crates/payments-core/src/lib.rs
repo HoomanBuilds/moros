@@ -10,23 +10,29 @@ mod payment_code;
 mod poseidon;
 mod request;
 mod selection;
+mod viewing;
 
 pub use amount::{AtomicUsdc, MAX_ATOMIC_USDC};
 pub use archive::{
-    ARCHIVE_PAGE_BYTES, ARCHIVE_PAGE_CONTENT_BYTES, ArchiveIdentity, EncryptedArchivePage,
-    verify_sync_challenge,
+    ACTIVITY_VIEW_PREFIX, ARCHIVE_PAGE_BYTES, ARCHIVE_PAGE_CONTENT_BYTES, ActivityViewingKey,
+    ArchiveIdentity, EncryptedArchivePage, verify_sync_challenge,
 };
 pub use attachment::{EncryptedAttachment, MAX_MEMO_BYTES, PAYMENT_ATTACHMENT_BYTES};
 pub use babyjub::BabyJubPoint;
 pub use field::FieldElement;
 pub use identity::{ChildIdentity, MasterEntropy};
 pub use note::{EncryptedOutput, PrivateNote, PrivateNoteAmount};
-pub use payment_code::{Network, PAYMENT_CODE_PREFIX, PaymentCode, PaymentCodeExpectation};
+pub use payment_code::{
+    Network, PAYMENT_CODE_BYTES, PAYMENT_CODE_PREFIX, PaymentCode, PaymentCodeExpectation,
+};
 pub use poseidon::spend_public_key;
 pub use request::{
     PAYMENT_LINK_PREFIX, PaymentRequest, PaymentRequestPolicy, SignedPaymentRequest,
 };
 pub use selection::{MAX_SELECTION_CANDIDATES, NoteSelection, SpendableNote, TransferBudget};
+pub use viewing::{
+    INCOMING_VIEW_PREFIX, IncomingViewingExport, MAX_VIEWING_IDENTITIES, ViewingIdentity,
+};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const IDENTITY_VERSION: u8 = 1;
@@ -96,6 +102,10 @@ pub enum Error {
     ArchiveTooLarge,
     #[error("payment archive authentication failed")]
     ArchiveAuthenticationFailed,
+    #[error("invalid payment viewing export")]
+    InvalidViewingExport,
+    #[error("payment viewing export contains too many identities")]
+    ViewingExportTooLarge,
     #[error("private note envelope authentication failed")]
     EnvelopeAuthenticationFailed,
     #[error("private note recipient does not match")]
