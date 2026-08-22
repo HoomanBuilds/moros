@@ -1,4 +1,5 @@
 mod amount;
+mod attachment;
 mod babyjub;
 mod cbor;
 mod field;
@@ -10,6 +11,7 @@ mod request;
 mod selection;
 
 pub use amount::{AtomicUsdc, MAX_ATOMIC_USDC};
+pub use attachment::{EncryptedAttachment, MAX_MEMO_BYTES, PAYMENT_ATTACHMENT_BYTES};
 pub use babyjub::BabyJubPoint;
 pub use field::FieldElement;
 pub use identity::{ChildIdentity, MasterEntropy};
@@ -79,6 +81,10 @@ pub enum Error {
     InvalidNote,
     #[error("invalid private note envelope")]
     InvalidEnvelope,
+    #[error("invalid encrypted payment attachment")]
+    InvalidAttachment,
+    #[error("payment memo is too long")]
+    MemoTooLong,
     #[error("private note envelope authentication failed")]
     EnvelopeAuthenticationFailed,
     #[error("private note recipient does not match")]
