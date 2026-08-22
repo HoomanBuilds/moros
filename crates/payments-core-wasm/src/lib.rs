@@ -1,8 +1,9 @@
 use core::str::FromStr;
 
 use moros_payments_core::{
-    AtomicUsdc, ChildIdentity, MasterEntropy, Network, PaymentCode, PaymentRequest,
-    PaymentRequestPolicy, SignedPaymentRequest,
+    AtomicUsdc, ChildIdentity, EncryptedAttachment as CoreEncryptedAttachment,
+    EncryptedOutput as CoreEncryptedOutput, FieldElement, MasterEntropy, Network, PaymentCode,
+    PaymentRequest, PaymentRequestPolicy, PrivateNote, PrivateNoteAmount, SignedPaymentRequest,
 };
 use wasm_bindgen::prelude::*;
 
@@ -79,6 +80,108 @@ impl PaymentIdentity {
 #[wasm_bindgen]
 pub struct VerifiedPaymentRequest {
     signed: SignedPaymentRequest,
+}
+
+#[wasm_bindgen]
+pub struct EncryptedPaymentOutput {
+    output: CoreEncryptedOutput,
+}
+
+#[wasm_bindgen]
+impl EncryptedPaymentOutput {
+    #[wasm_bindgen(getter)]
+    pub fn commitment(&self) -> Vec<u8> {
+        self.output.note.commitment.to_be_bytes().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn envelope_hash(&self) -> Vec<u8> {
+        self.output.envelope_hash.to_be_bytes().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn envelope(&self) -> Vec<u8> {
+        self.output.envelope_bytes().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn amount_atomic(&self) -> String {
+        self.output.note.amount.atomic().to_string()
+    }
+}
+
+#[wasm_bindgen]
+pub struct DecryptedPaymentNote {
+    note: PrivateNote,
+}
+
+#[wasm_bindgen]
+impl DecryptedPaymentNote {
+    #[wasm_bindgen(getter)]
+    pub fn purpose(&self) -> u64 {
+        self.note.purpose
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn amount_atomic(&self) -> String {
+        self.note.amount.atomic().to_string()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn commitment(&self) -> Vec<u8> {
+        self.note.commitment.to_be_bytes().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn spend_public_key(&self) -> Vec<u8> {
+        self.note.spend_public_key.to_be_bytes().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn viewing_public_key(&self) -> Vec<u8> {
+        point_bytes(self.note.viewing_public_key)
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn note_id(&self) -> Vec<u8> {
+        self.note.note_id.to_be_bytes().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn payload_hash(&self) -> Vec<u8> {
+        self.note.payload_hash.to_be_bytes().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn private_data(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(64);
+        bytes.extend_from_slice(&self.note.private_data[0].to_be_bytes());
+        bytes.extend_from_slice(&self.note.private_data[1].to_be_bytes());
+        bytes
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn blinding(&self) -> Vec<u8> {
+        self.note.blinding.to_be_bytes().to_vec()
+    }
+}
+
+#[wasm_bindgen]
+pub struct EncryptedPaymentAttachment {
+    attachment: CoreEncryptedAttachment,
+}
+
+#[wasm_bindgen]
+impl EncryptedPaymentAttachment {
+    #[wasm_bindgen(getter)]
+    pub fn bytes(&self) -> Vec<u8> {
+        self.attachment.to_bytes().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn hash(&self) -> Vec<u8> {
+        self.attachment.hash.to_be_bytes().to_vec()
+    }
 }
 
 #[wasm_bindgen]
@@ -214,6 +317,111 @@ pub fn payment_code_fingerprint(encoded: &str) -> Result<String, JsError> {
         .map_err(js_error)
 }
 
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn create_payment_output(
+    recipient_code: &str,
+    output_index: u8,
+    note_domain: Vec<u8>,
+    amount_atomic: &str,
+    note_id: Vec<u8>,
+    payload_hash: Vec<u8>,
+    private_data: Vec<u8>,
+    blinding: Vec<u8>,
+    ephemeral_secret: Vec<u8>,
+    nonce: Vec<u8>,
+) -> Result<EncryptedPaymentOutput, JsError> {
+    let recipient = PaymentCode::decode(recipient_code).map_err(js_error)?;
+    let private_data: [u8; 64] = array(&private_data, "private data")?;
+    let amount = amount_atomic
+        .parse::<i128>()
+        .map_err(|_| JsError::new("invalid atomic USDC amount"))
+        .and_then(|value| PrivateNoteAmount::new(value).map_err(js_error))?;
+    let output = CoreEncryptedOutput::create(
+        output_index,
+        field(&note_domain, "note domain")?,
+        1,
+        amount,
+        &recipient,
+        field(&note_id, "note identifier")?,
+        field(&payload_hash, "payload hash")?,
+        [
+            FieldElement::from_be_bytes(private_data[..32].try_into().unwrap())
+                .map_err(js_error)?,
+            FieldElement::from_be_bytes(private_data[32..].try_into().unwrap())
+                .map_err(js_error)?,
+        ],
+        field(&blinding, "blinding")?,
+        array(&ephemeral_secret, "ephemeral secret")?,
+        field(&nonce, "nonce")?,
+    )
+    .map_err(js_error)?;
+    Ok(EncryptedPaymentOutput { output })
+}
+
+#[wasm_bindgen]
+pub fn decrypt_payment_output(
+    envelope: Vec<u8>,
+    viewing_secret: Vec<u8>,
+    recipient_code: &str,
+    note_domain: Vec<u8>,
+    expected_commitment: Option<Vec<u8>>,
+) -> Result<DecryptedPaymentNote, JsError> {
+    let recipient = PaymentCode::decode(recipient_code).map_err(js_error)?;
+    let envelope = CoreEncryptedOutput::envelope_from_bytes(array(&envelope, "encrypted output")?)
+        .map_err(js_error)?;
+    let expected_commitment = expected_commitment
+        .map(|value| field(&value, "expected commitment"))
+        .transpose()?;
+    let note = CoreEncryptedOutput::decrypt(
+        envelope,
+        array(&viewing_secret, "viewing secret")?,
+        &recipient,
+        field(&note_domain, "note domain")?,
+        expected_commitment,
+    )
+    .map_err(js_error)?;
+    Ok(DecryptedPaymentNote { note })
+}
+
+#[wasm_bindgen]
+pub fn create_payment_attachment(
+    memo: &str,
+    recipient_code: &str,
+    ephemeral_secret: Vec<u8>,
+    nonce: Vec<u8>,
+) -> Result<EncryptedPaymentAttachment, JsError> {
+    let recipient = PaymentCode::decode(recipient_code).map_err(js_error)?;
+    let attachment = CoreEncryptedAttachment::create(
+        memo,
+        &recipient,
+        array(&ephemeral_secret, "ephemeral secret")?,
+        field(&nonce, "nonce")?,
+    )
+    .map_err(js_error)?;
+    Ok(EncryptedPaymentAttachment { attachment })
+}
+
+#[wasm_bindgen]
+pub fn decrypt_payment_attachment(
+    attachment: Vec<u8>,
+    envelope: Vec<u8>,
+    viewing_secret: Vec<u8>,
+    recipient_code: &str,
+    expected_hash: Vec<u8>,
+) -> Result<String, JsError> {
+    let recipient = PaymentCode::decode(recipient_code).map_err(js_error)?;
+    CoreEncryptedAttachment::decrypt(
+        array(&attachment, "encrypted attachment")?,
+        CoreEncryptedOutput::envelope_from_bytes(array(&envelope, "encrypted output")?)
+            .map_err(js_error)?,
+        array(&viewing_secret, "viewing secret")?,
+        &recipient,
+        field(&expected_hash, "attachment hash")?,
+    )
+    .map_err(js_error)
+}
+
 fn derive_identity(
     master: MasterEntropy,
     network: u8,
@@ -234,6 +442,26 @@ fn array<const LENGTH: usize>(bytes: &[u8], label: &str) -> Result<[u8; LENGTH],
     bytes
         .try_into()
         .map_err(|_| JsError::new(&format!("invalid {label} length")))
+}
+
+fn field(bytes: &[u8], label: &str) -> Result<FieldElement, JsError> {
+    FieldElement::from_be_bytes(array(bytes, label)?).map_err(js_error)
+}
+
+fn point_bytes(point: moros_payments_core::BabyJubPoint) -> Vec<u8> {
+    let (x, y) = point.to_le_bytes();
+    let mut bytes = Vec::with_capacity(64);
+    bytes.extend_from_slice(
+        &FieldElement::from_le_bytes(x)
+            .expect("validated BabyJub x")
+            .to_be_bytes(),
+    );
+    bytes.extend_from_slice(
+        &FieldElement::from_le_bytes(y)
+            .expect("validated BabyJub y")
+            .to_be_bytes(),
+    );
+    bytes
 }
 
 fn js_error(error: moros_payments_core::Error) -> JsError {
