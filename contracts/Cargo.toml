@@ -6,6 +6,7 @@ members = [
     "market-factory",
     "market-liquidity-vault",
     "payment-types",
+    "payment-vault",
     "payment-verifier",
     "pooled-liquidity-vault",
     "privacy-types",

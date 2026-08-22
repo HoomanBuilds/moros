@@ -117,6 +117,15 @@ pub struct PaymentProofStatement {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PaymentTransition {
+    pub statement: PaymentProofStatement,
+    pub proof: Bytes,
+    pub encrypted_outputs: Vec<Bytes>,
+    pub attachment: Bytes,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentCircuitKey {
     pub circuit: PaymentCircuit,
     pub schema_hash: BytesN<32>,
