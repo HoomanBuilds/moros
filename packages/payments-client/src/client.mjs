@@ -1,8 +1,14 @@
 import { PaymentHttpClient } from "./http.mjs";
 import { validatePaymentDeployment } from "./config.mjs";
+import {
+  base64UrlToBytes,
+  bytesToBase64,
+  bytesToBase64Url,
+  bytesToHex,
+} from "./encoding.mjs";
 
 function hex(value, bytes, label) {
-  if (Buffer.isBuffer(value)) value = value.toString("hex");
+  if (value instanceof Uint8Array) value = bytesToHex(value);
   if (typeof value !== "string" || !new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(value)) {
     throw new Error(`invalid ${label}`);
   }
@@ -10,12 +16,16 @@ function hex(value, bytes, label) {
 }
 
 function base64url(value, bytes, label) {
-  if (Buffer.isBuffer(value)) value = value.toString("base64url");
-  const decoded = typeof value === "string" ? Buffer.from(value, "base64url") : null;
+  if (value instanceof Uint8Array) value = bytesToBase64Url(value);
+  let decoded;
+  try {
+    decoded = typeof value === "string" ? base64UrlToBytes(value) : null;
+  } catch {
+    throw new Error(`invalid ${label}`);
+  }
   if (
     typeof value !== "string" ||
-    decoded.length !== bytes ||
-    decoded.toString("base64url") !== value
+    decoded.length !== bytes
   ) {
     throw new Error(`invalid ${label}`);
   }
@@ -104,7 +114,7 @@ export class MorosPaymentClient {
   }
 
   syncPutPage(token, page, options) {
-    const encoded = Buffer.isBuffer(page) ? page.toString("base64") : page;
+    const encoded = page instanceof Uint8Array ? bytesToBase64(page) : page;
     return this.http.request("/v1/sync/pages", {
       ...options,
       method: "PUT",

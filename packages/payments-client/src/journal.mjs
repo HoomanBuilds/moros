@@ -20,7 +20,9 @@ const ALLOWED = Object.freeze({
 });
 
 function actionId(value) {
-  if (Buffer.isBuffer(value)) value = value.toString("hex");
+  if (value instanceof Uint8Array) {
+    value = [...value].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
   if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value) || /^0+$/.test(value)) {
     throw new Error("invalid payment action id");
   }

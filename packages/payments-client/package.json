@@ -3,9 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.mjs",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.mjs"
+    }
+  },
+  "types": "./src/index.d.ts",
   "scripts": {
-    "test": "node test/config.test.mjs && node test/http.test.mjs && node test/client.test.mjs && node test/discovery.test.mjs && node test/journal.test.mjs"
+    "test": "node test/config.test.mjs && node test/encoding.test.mjs && node test/http.test.mjs && node test/client.test.mjs && node test/discovery.test.mjs && node test/journal.test.mjs"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "16.2.0"
