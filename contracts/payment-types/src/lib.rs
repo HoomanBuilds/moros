@@ -611,4 +611,42 @@ mod test {
         let attachment = Bytes::from_array(&env, &[7; PAYMENT_ATTACHMENT_LENGTH as usize]);
         assert!(payment_attachment_hash(&env, &attachment).is_ok());
     }
+
+    #[test]
+    fn relay_quote_xdr_matches_javascript_client() {
+        let env = Env::default();
+        let quote = UnsignedRelayQuote {
+            network_domain: BytesN::from_array(&env, &[4; 32]),
+            vault: Address::from_str(
+                &env,
+                "CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526",
+            ),
+            token: Address::from_str(
+                &env,
+                "CABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAFNSZ",
+            ),
+            action_id: BytesN::from_array(&env, &[3; 32]),
+            quote_id: BytesN::from_array(&env, &[9; 32]),
+            signing_key: BytesN::from_array(&env, &[10; 32]),
+            payment_identity: PaymentIdentity {
+                spend_public_key: U256::from_u32(&env, 6),
+                viewing_public_key_x: U256::from_u32(&env, 7),
+                viewing_public_key_y: U256::from_u32(&env, 8),
+            },
+            fee: 0,
+            expiry: 1_780_000_120,
+        };
+        let digest: BytesN<32> = env.crypto().sha256(&relay_quote_message(&env, &quote)).into();
+        assert_eq!(
+            digest,
+            BytesN::from_array(
+                &env,
+                &[
+                    0x08, 0x2b, 0x85, 0x45, 0x2b, 0x08, 0xdc, 0x2d, 0x68, 0x6f, 0x28, 0x0e,
+                    0x41, 0xa3, 0xd8, 0x9a, 0x03, 0xd8, 0x13, 0x90, 0xb2, 0xc2, 0xa2, 0x9a,
+                    0xe5, 0xdd, 0x1f, 0x6d, 0xbf, 0x6d, 0x9a, 0x31,
+                ],
+            ),
+        );
+    }
 }
