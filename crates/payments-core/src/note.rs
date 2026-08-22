@@ -1,6 +1,6 @@
 use crate::{
-    AtomicUsdc, BabyJubPoint, Error, FieldElement, PaymentCode, Result, poseidon::hash_fields,
-    spend_public_key,
+    AtomicUsdc, BabyJubPoint, Error, FieldElement, MAX_ATOMIC_USDC, PaymentCode, Result,
+    poseidon::hash_fields, spend_public_key,
 };
 
 const NOTE_COMMITMENT_TAG: u64 = 1003;
@@ -19,6 +19,9 @@ impl PrivateNoteAmount {
     pub fn new(atomic: i128) -> Result<Self> {
         if atomic < 0 {
             return Err(Error::InvalidAmount);
+        }
+        if atomic > MAX_ATOMIC_USDC {
+            return Err(Error::AmountOverflow);
         }
         Ok(Self(atomic))
     }

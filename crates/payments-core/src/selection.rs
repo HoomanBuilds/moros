@@ -259,8 +259,8 @@ mod tests {
         );
         assert_eq!(
             TransferBudget {
-                recipient: AtomicUsdc::new(i128::MAX).unwrap(),
-                relay_fee: 1,
+                recipient: AtomicUsdc::new(crate::MAX_ATOMIC_USDC).unwrap(),
+                relay_fee: i128::MAX,
                 protocol_fee: 0,
             }
             .total(),

@@ -2,7 +2,7 @@ use core::{fmt, str::FromStr};
 
 use crate::{Error, Result, USDC_DECIMALS};
 
-pub const MAX_ATOMIC_USDC: i128 = i128::MAX;
+pub const MAX_ATOMIC_USDC: i128 = (1_i128 << 120) - 1;
 const SCALE: i128 = 10_i128.pow(USDC_DECIMALS);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -12,6 +12,9 @@ impl AtomicUsdc {
     pub fn new(value: i128) -> Result<Self> {
         if value <= 0 {
             return Err(Error::InvalidAmount);
+        }
+        if value > MAX_ATOMIC_USDC {
+            return Err(Error::AmountOverflow);
         }
         Ok(Self(value))
     }
@@ -145,6 +148,13 @@ mod tests {
             "170141183460469231731687303715884105728".parse::<AtomicUsdc>(),
             Err(Error::AmountOverflow)
         );
-        assert_eq!(AtomicUsdc::new(i128::MAX).unwrap().atomic(), i128::MAX);
+        assert_eq!(
+            AtomicUsdc::new(MAX_ATOMIC_USDC).unwrap().atomic(),
+            MAX_ATOMIC_USDC
+        );
+        assert_eq!(
+            AtomicUsdc::new(MAX_ATOMIC_USDC + 1),
+            Err(Error::AmountOverflow)
+        );
     }
 }
