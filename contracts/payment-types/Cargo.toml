@@ -1,0 +1,17 @@
+[package]
+name = "payment-types"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+doctest = false
+
+[dependencies]
+privacy-types = { path = "../privacy-types" }
+soroban-poseidon = "26.0.0"
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

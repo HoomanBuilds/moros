@@ -5,6 +5,8 @@ members = [
     "lmsr-market",
     "market-factory",
     "market-liquidity-vault",
+    "payment-types",
+    "payment-verifier",
     "pooled-liquidity-vault",
     "privacy-types",
     "resolver",

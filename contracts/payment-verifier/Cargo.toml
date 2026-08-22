@@ -1,0 +1,17 @@
+[package]
+name = "payment-verifier"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+payment-types = { path = "../payment-types" }
+privacy-types = { path = "../privacy-types" }
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
