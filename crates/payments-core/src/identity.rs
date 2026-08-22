@@ -72,6 +72,10 @@ impl MasterEntropy {
             signing_seed,
         })
     }
+
+    pub(crate) fn secret_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 pub struct ChildIdentity {

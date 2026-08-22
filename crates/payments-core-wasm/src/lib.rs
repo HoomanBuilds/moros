@@ -1,15 +1,73 @@
 use core::str::FromStr;
 
 use moros_payments_core::{
-    AtomicUsdc, ChildIdentity, EncryptedAttachment as CoreEncryptedAttachment,
-    EncryptedOutput as CoreEncryptedOutput, FieldElement, MasterEntropy, Network, PaymentCode,
-    PaymentRequest, PaymentRequestPolicy, PrivateNote, PrivateNoteAmount, SignedPaymentRequest,
+    ARCHIVE_PAGE_BYTES, ArchiveIdentity, AtomicUsdc, ChildIdentity, EncryptedArchivePage,
+    EncryptedAttachment as CoreEncryptedAttachment, EncryptedOutput as CoreEncryptedOutput,
+    FieldElement, MasterEntropy, Network, PaymentCode, PaymentRequest, PaymentRequestPolicy,
+    PrivateNote, PrivateNoteAmount, SignedPaymentRequest,
 };
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct PaymentIdentity {
     child: ChildIdentity,
+}
+
+#[wasm_bindgen]
+pub struct PaymentArchiveIdentity {
+    archive: ArchiveIdentity,
+}
+
+#[wasm_bindgen]
+impl PaymentArchiveIdentity {
+    #[wasm_bindgen(getter)]
+    pub fn locator(&self) -> Vec<u8> {
+        self.archive.locator().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn signing_public_key(&self) -> Vec<u8> {
+        self.archive.signing_public_key().to_vec()
+    }
+
+    pub fn sign_challenge(&self, challenge: Vec<u8>, expires_at: u64) -> Result<Vec<u8>, JsError> {
+        Ok(self
+            .archive
+            .sign_challenge(array(&challenge, "sync challenge")?, expires_at)
+            .to_vec())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn encrypt_page(
+        &self,
+        epoch: u64,
+        generation: u64,
+        page: u32,
+        previous_hash: Vec<u8>,
+        nonce: Vec<u8>,
+        content: Vec<u8>,
+    ) -> Result<Vec<u8>, JsError> {
+        self.archive
+            .encrypt_page(
+                epoch,
+                generation,
+                page,
+                array(&previous_hash, "previous page hash")?,
+                array(&nonce, "archive nonce")?,
+                &content,
+            )
+            .map(|encrypted| encrypted.encode().to_vec())
+            .map_err(js_error)
+    }
+
+    pub fn decrypt_page(&self, encoded: Vec<u8>) -> Result<Vec<u8>, JsError> {
+        let encrypted = EncryptedArchivePage::decode(array::<ARCHIVE_PAGE_BYTES>(
+            &encoded,
+            "encrypted archive page",
+        )?)
+        .map_err(js_error)?;
+        self.archive.decrypt_page(&encrypted).map_err(js_error)
+    }
 }
 
 #[wasm_bindgen]
@@ -269,6 +327,32 @@ pub fn payment_identity_from_phrase(
 }
 
 #[wasm_bindgen]
+pub fn payment_archive_from_entropy(
+    entropy: Vec<u8>,
+    network: u8,
+    vault: Vec<u8>,
+) -> Result<PaymentArchiveIdentity, JsError> {
+    derive_archive(
+        MasterEntropy::from_bytes(array(&entropy, "master entropy")?).map_err(js_error)?,
+        network,
+        vault,
+    )
+}
+
+#[wasm_bindgen]
+pub fn payment_archive_from_phrase(
+    recovery_phrase: &str,
+    network: u8,
+    vault: Vec<u8>,
+) -> Result<PaymentArchiveIdentity, JsError> {
+    derive_archive(
+        MasterEntropy::from_recovery_phrase(recovery_phrase).map_err(js_error)?,
+        network,
+        vault,
+    )
+}
+
+#[wasm_bindgen]
 pub fn parse_usdc_amount(display: &str) -> Result<String, JsError> {
     AtomicUsdc::from_str(display)
         .map(|amount| amount.atomic().to_string())
@@ -436,6 +520,20 @@ fn derive_identity(
         )
         .map_err(js_error)?;
     Ok(PaymentIdentity { child })
+}
+
+fn derive_archive(
+    master: MasterEntropy,
+    network: u8,
+    vault: Vec<u8>,
+) -> Result<PaymentArchiveIdentity, JsError> {
+    let archive = ArchiveIdentity::derive(
+        &master,
+        Network::try_from(network).map_err(js_error)?,
+        array(&vault, "vault identifier")?,
+    )
+    .map_err(js_error)?;
+    Ok(PaymentArchiveIdentity { archive })
 }
 
 fn array<const LENGTH: usize>(bytes: &[u8], label: &str) -> Result<[u8; LENGTH], JsError> {
