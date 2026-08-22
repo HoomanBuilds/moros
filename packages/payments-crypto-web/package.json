@@ -1,0 +1,24 @@
+{
+  "name": "@moros/payments-crypto-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./moros_payments_core.js",
+  "types": "./moros_payments_core.d.ts",
+  "exports": {
+    ".": {
+      "types": "./moros_payments_core.d.ts",
+      "import": "./moros_payments_core.js"
+    },
+    "./wasm": "./moros_payments_core_bg.wasm"
+  },
+  "scripts": {
+    "test": "node test.mjs"
+  },
+  "files": [
+    "moros_payments_core.js",
+    "moros_payments_core.d.ts",
+    "moros_payments_core_bg.wasm",
+    "moros_payments_core_bg.wasm.d.ts"
+  ]
+}

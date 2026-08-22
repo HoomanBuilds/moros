@@ -56,6 +56,7 @@ circuits/build/
 # --- Web ZK artifacts (proving keys are public; tracked so Vercel serves them) ---
 !web/public/zk/*.wasm
 !web/public/zk/*.zkey
+!packages/payments-crypto-web/*.wasm
 
 # committee runtime state (registered pools)
 services/pools.json
