@@ -9,7 +9,7 @@
     "ws": "8.21.1"
   },
   "scripts": {
-    "test": "node test-network-config.mjs && node test-rpc-failover.mjs && node test-stellar-rpc-proxy.mjs && node test-soroban-runtime.mjs && node test-key-config.mjs && node test-oracle-config.mjs && node test-deployment-utils.mjs && node test-fetch-release-wasm.mjs && node test-mainnet-preflight.mjs && node test-market-registry.mjs && node test-current-market-targets.mjs && node test-private-market-catalog.mjs && node test-private-protocol.mjs && node test-private-indexer.mjs && node test-private-relayer.mjs && node test-private-batch-coordinator.mjs && node test-private-runtime.mjs && node economics/model.test.mjs && node committee/test-bn254-babyjub.mjs",
+    "test": "node test-network-config.mjs && node test-rpc-failover.mjs && node test-stellar-rpc-proxy.mjs && node test-soroban-runtime.mjs && node test-key-config.mjs && node test-oracle-config.mjs && node test-deployment-utils.mjs && node test-fetch-release-wasm.mjs && node test-mainnet-preflight.mjs && node test-market-registry.mjs && node test-current-market-targets.mjs && node test-private-market-catalog.mjs && node test-private-protocol.mjs && node test-private-indexer.mjs && node test-private-relayer.mjs && node test-private-batch-coordinator.mjs && node test-private-runtime.mjs && node test-payment-relay.mjs && node test-payment-indexer.mjs && node test-payment-sync.mjs && node economics/model.test.mjs && node committee/test-bn254-babyjub.mjs",
     "start:private": "node private-server.mjs",
     "deploy:private-testnet": "node deploy-private-testnet.mjs",
     "deploy:private-mainnet": "node deploy-private-mainnet.mjs",
