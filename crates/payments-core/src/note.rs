@@ -295,7 +295,7 @@ impl EncryptedOutput {
     pub fn envelope_bytes(&self) -> [u8; ENVELOPE_LENGTH * 32] {
         let mut bytes = [0_u8; ENVELOPE_LENGTH * 32];
         for (index, field) in self.envelope.iter().enumerate() {
-            bytes[index * 32..(index + 1) * 32].copy_from_slice(&field.to_le_bytes());
+            bytes[index * 32..(index + 1) * 32].copy_from_slice(&field.to_be_bytes());
         }
         bytes
     }
@@ -306,7 +306,7 @@ impl EncryptedOutput {
         let mut envelope = [FieldElement::from_u64(0); ENVELOPE_LENGTH];
         for (index, chunk) in bytes.chunks_exact(32).enumerate() {
             envelope[index] =
-                FieldElement::from_le_bytes(chunk.try_into().map_err(|_| Error::InvalidEnvelope)?)?;
+                FieldElement::from_be_bytes(chunk.try_into().map_err(|_| Error::InvalidEnvelope)?)?;
         }
         Ok(envelope)
     }
@@ -491,6 +491,8 @@ mod tests {
         .unwrap();
         let bytes = output.envelope_bytes();
         assert_eq!(bytes.len(), 480);
+        assert_eq!(bytes[0], 0);
+        assert_eq!(bytes[31], 1);
         assert_eq!(
             EncryptedOutput::envelope_from_bytes(bytes).unwrap(),
             output.envelope

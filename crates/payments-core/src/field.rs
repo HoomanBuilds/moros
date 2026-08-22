@@ -33,6 +33,17 @@ impl FieldElement {
         field_bytes(self.0)
     }
 
+    pub fn from_be_bytes(mut bytes: [u8; 32]) -> Result<Self> {
+        bytes.reverse();
+        Self::from_le_bytes(bytes)
+    }
+
+    pub fn to_be_bytes(self) -> [u8; 32] {
+        let mut bytes = self.to_le_bytes();
+        bytes.reverse();
+        bytes
+    }
+
     pub fn is_zero(self) -> bool {
         self.0.is_zero()
     }
@@ -73,6 +84,7 @@ mod tests {
             FieldElement::from_le_bytes([255; 32]),
             Err(Error::InvalidFieldElement)
         );
+        assert_eq!(FieldElement::from_be_bytes(field.to_be_bytes()), Ok(field));
     }
 
     #[test]
