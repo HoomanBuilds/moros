@@ -8,6 +8,7 @@ mod identity;
 mod note;
 mod payment_code;
 mod poseidon;
+mod receipt;
 mod request;
 mod selection;
 mod viewing;
@@ -26,6 +27,7 @@ pub use payment_code::{
     Network, PAYMENT_CODE_BYTES, PAYMENT_CODE_PREFIX, PaymentCode, PaymentCodeExpectation,
 };
 pub use poseidon::spend_public_key;
+pub use receipt::{PAYMENT_RECEIPT_PREFIX, PaymentReceipt};
 pub use request::{
     PAYMENT_LINK_PREFIX, PaymentRequest, PaymentRequestPolicy, SignedPaymentRequest,
 };
@@ -106,6 +108,8 @@ pub enum Error {
     InvalidViewingExport,
     #[error("payment viewing export contains too many identities")]
     ViewingExportTooLarge,
+    #[error("invalid private payment receipt")]
+    InvalidReceipt,
     #[error("private note envelope authentication failed")]
     EnvelopeAuthenticationFailed,
     #[error("private note recipient does not match")]

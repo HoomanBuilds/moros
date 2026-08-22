@@ -4,8 +4,8 @@ use moros_payments_core::{
     ARCHIVE_PAGE_BYTES, ActivityViewingKey, ArchiveIdentity, AtomicUsdc, ChildIdentity,
     EncryptedArchivePage, EncryptedAttachment as CoreEncryptedAttachment,
     EncryptedOutput as CoreEncryptedOutput, FieldElement, IncomingViewingExport, MasterEntropy,
-    Network, PaymentCode, PaymentRequest, PaymentRequestPolicy, PrivateNote, PrivateNoteAmount,
-    SignedPaymentRequest,
+    Network, PaymentCode, PaymentReceipt, PaymentRequest, PaymentRequestPolicy, PrivateNote,
+    PrivateNoteAmount, SignedPaymentRequest,
 };
 use wasm_bindgen::prelude::*;
 
@@ -385,6 +385,86 @@ impl VerifiedPaymentRequest {
             .encrypted_context
             .map(|context| context.to_vec())
     }
+
+    #[wasm_bindgen(getter)]
+    pub fn payload_hash(&self) -> Result<Vec<u8>, JsError> {
+        self.signed
+            .payload_hash()
+            .map(|hash| hash.to_be_bytes().to_vec())
+            .map_err(js_error)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_receipt(
+        &self,
+        transaction_hash: Vec<u8>,
+        ledger: u32,
+        output_commitment: Vec<u8>,
+        amount_atomic: &str,
+        confirmed_at: u64,
+    ) -> Result<String, JsError> {
+        let amount = amount_atomic
+            .parse::<i128>()
+            .map_err(|_| JsError::new("invalid atomic USDC amount"))
+            .and_then(|value| AtomicUsdc::new(value).map_err(js_error))?;
+        PaymentReceipt::new(
+            self.signed.clone(),
+            array(&transaction_hash, "transaction hash")?,
+            ledger,
+            field(&output_commitment, "output commitment")?,
+            amount,
+            confirmed_at,
+        )
+        .and_then(|receipt| receipt.encode())
+        .map_err(js_error)
+    }
+}
+
+#[wasm_bindgen]
+pub struct VerifiedPaymentReceipt {
+    receipt: PaymentReceipt,
+}
+
+#[wasm_bindgen]
+impl VerifiedPaymentReceipt {
+    #[wasm_bindgen(getter)]
+    pub fn transaction_hash(&self) -> Vec<u8> {
+        self.receipt.transaction_hash.to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn ledger(&self) -> u32 {
+        self.receipt.ledger
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn output_commitment(&self) -> Vec<u8> {
+        self.receipt.output_commitment.to_be_bytes().to_vec()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn amount_atomic(&self) -> String {
+        self.receipt.amount.atomic().to_string()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn confirmed_at(&self) -> u64 {
+        self.receipt.confirmed_at
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn recipient_fingerprint(&self) -> Result<String, JsError> {
+        self.receipt
+            .request
+            .request
+            .receiver
+            .fingerprint()
+            .map_err(js_error)
+    }
+
+    pub fn verify_note(&self, note: &DecryptedPaymentNote) -> Result<(), JsError> {
+        self.receipt.verify_note(&note.note).map_err(js_error)
+    }
 }
 
 #[wasm_bindgen]
@@ -492,6 +572,13 @@ pub fn decode_incoming_viewing_export(encoded: &str) -> Result<IncomingViewingCa
 pub fn decode_activity_viewing_export(encoded: &str) -> Result<ActivityViewingCapability, JsError> {
     ActivityViewingKey::decode(encoded)
         .map(|viewing| ActivityViewingCapability { viewing })
+        .map_err(js_error)
+}
+
+#[wasm_bindgen]
+pub fn decode_payment_receipt(encoded: &str) -> Result<VerifiedPaymentReceipt, JsError> {
+    PaymentReceipt::decode(encoded)
+        .map(|receipt| VerifiedPaymentReceipt { receipt })
         .map_err(js_error)
 }
 

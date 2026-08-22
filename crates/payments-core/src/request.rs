@@ -1,9 +1,12 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::{Signature, VerifyingKey};
+use sha2::Digest;
 
 use crate::{
-    AtomicUsdc, ChildIdentity, Error, Network, PaymentCode, PaymentCodeExpectation, Result,
+    AtomicUsdc, ChildIdentity, Error, FieldElement, Network, PaymentCode, PaymentCodeExpectation,
+    Result,
     cbor::{Decoder, Encoder},
+    poseidon::hash_fields,
 };
 
 pub const PAYMENT_LINK_PREFIX: &str = "https://pay.moros.fun/pay#";
@@ -16,6 +19,7 @@ const MAX_MERCHANT_LABEL_BYTES: usize = 64;
 const ENCRYPTED_CONTEXT_BYTES: usize = 128;
 const MAX_REQUEST_LIFETIME_SECONDS: u64 = 30 * 24 * 60 * 60;
 const REQUEST_SIGNATURE_DOMAIN: &[u8] = b"moros/payment-request/signature/v1";
+const REQUEST_PAYLOAD_TAG: u64 = 1113;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaymentRequest {
@@ -239,6 +243,17 @@ impl SignedPaymentRequest {
             "{PAYMENT_LINK_PREFIX}{}",
             URL_SAFE_NO_PAD.encode(self.encode()?)
         ))
+    }
+
+    pub fn payload_hash(&self) -> Result<FieldElement> {
+        let digest = sha2::Sha256::digest(self.encode()?);
+        Ok(hash_fields(&[
+            FieldElement::from_u64(REQUEST_PAYLOAD_TAG),
+            FieldElement::from_u64(u64::from_be_bytes(digest[..8].try_into().unwrap())),
+            FieldElement::from_u64(u64::from_be_bytes(digest[8..16].try_into().unwrap())),
+            FieldElement::from_u64(u64::from_be_bytes(digest[16..24].try_into().unwrap())),
+            FieldElement::from_u64(u64::from_be_bytes(digest[24..].try_into().unwrap())),
+        ]))
     }
 
     pub fn from_payment_link(link: &str) -> Result<Self> {
