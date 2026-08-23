@@ -80,12 +80,14 @@ export declare class MorosPaymentClient {
   syncManifest(token: string, options?: object): Promise<any>;
   syncPages(token: string, input?: { generation?: number; fromPage?: number; limit?: number }, options?: object): Promise<any>;
   syncPutPage(token: string, page: Uint8Array | string, options?: object): Promise<any>;
+  syncPutPages(token: string, pages: Array<Uint8Array | string>, options?: object): Promise<any>;
   syncCommit(token: string, input: {
     generation: number;
     pageCount: number;
     headHash: Uint8Array | string;
     expectedParentHash: Uint8Array | string;
   }, options?: object): Promise<any>;
+  syncDeleteGenerationsBefore(token: string, minimumGeneration: number, options?: object): Promise<any>;
 }
 
 export declare class PaymentOutputScanner {

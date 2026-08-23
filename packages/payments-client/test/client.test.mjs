@@ -31,12 +31,14 @@ await client.syncAuthenticate({
 await client.syncManifest("session");
 await client.syncPages("session", { generation: 2, fromPage: 3, limit: 4 });
 await client.syncPutPage("session", Buffer.alloc(4_221));
+await client.syncPutPages("session", [Buffer.alloc(4_221, 1), Buffer.alloc(4_221, 2)]);
 await client.syncCommit("session", {
   generation: 2,
   pageCount: 1,
   headHash: Buffer.alloc(32, 6),
   expectedParentHash: Buffer.alloc(32, 7),
 });
+await client.syncDeleteGenerationsBefore("session", 2);
 
 assert.equal(requests[0].url.endsWith("/v1/relay/quote"), true);
 assert.deepEqual(JSON.parse(requests[0].options.body), {
@@ -48,11 +50,16 @@ assert.equal(requests[2].url.endsWith("/v1/outputs?from=10&limit=20"), true);
 assert.equal(requests[7].options.headers.authorization, "Bearer session");
 assert.equal(requests[8].url.includes("generation=2"), true);
 assert.equal(JSON.parse(requests[9].options.body).page, Buffer.alloc(4_221).toString("base64"));
+assert.equal(JSON.parse(requests[10].options.body).pages.length, 2);
+assert.equal(requests[12].url.endsWith("/v1/sync/generations?before=2"), true);
+assert.equal(requests[12].options.method, "DELETE");
 
 assert.throws(
   () => client.syncChallenge({ locator: "not-canonical", signingKey: Buffer.alloc(32, 3) }),
   /archive locator/,
 );
 assert.throws(() => client.attachment("bad"), /action id/);
+assert.throws(() => client.syncPutPages("session", []), /page batch/);
+assert.throws(() => client.syncDeleteGenerationsBefore("session", 0), /minimum archive generation/);
 
 process.stdout.write("Moros payment client tests passed\n");

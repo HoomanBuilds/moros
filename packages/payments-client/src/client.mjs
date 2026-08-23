@@ -123,6 +123,20 @@ export class MorosPaymentClient {
     });
   }
 
+  syncPutPages(token, pages, options) {
+    if (!Array.isArray(pages) || pages.length === 0 || pages.length > 64) {
+      throw new Error("invalid encrypted archive page batch");
+    }
+    return this.http.request("/v1/sync/pages/batch", {
+      ...options,
+      method: "PUT",
+      token,
+      body: {
+        pages: pages.map((page) => page instanceof Uint8Array ? bytesToBase64(page) : page),
+      },
+    });
+  }
+
   syncCommit(token, commit, options) {
     return this.http.request("/v1/sync/commit", {
       ...options,
@@ -133,6 +147,17 @@ export class MorosPaymentClient {
         headHash: hex(commit.headHash, 32, "archive head hash"),
         expectedParentHash: hex(commit.expectedParentHash, 32, "archive parent hash"),
       },
+    });
+  }
+
+  syncDeleteGenerationsBefore(token, minimumGeneration, options) {
+    if (!Number.isSafeInteger(minimumGeneration) || minimumGeneration < 1) {
+      throw new Error("invalid minimum archive generation");
+    }
+    return this.http.request(`/v1/sync/generations?before=${minimumGeneration}`, {
+      ...options,
+      method: "DELETE",
+      token,
     });
   }
 }
