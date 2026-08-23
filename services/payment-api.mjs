@@ -79,6 +79,20 @@ function json(status, value, origin) {
   });
 }
 
+function errorResponse(error, origin) {
+  const detail = error?.message || "invalid payment request";
+  if (
+    detail.includes("database timed out") ||
+    detail.includes("database is unavailable") ||
+    detail.includes("database failed with HTTP 429") ||
+    detail.includes("database failed with HTTP 5") ||
+    detail.includes("service temporarily unavailable")
+  ) {
+    return json(503, { error: "payment service temporarily unavailable" }, origin);
+  }
+  return json(400, { error: detail }, origin);
+}
+
 async function body(request) {
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     throw new Error("content type must be application/json");
@@ -136,7 +150,7 @@ export class PaymentApi {
     try {
       return await this.route(request, origin);
     } catch (error) {
-      return json(400, { error: error?.message || "invalid payment request" }, origin);
+      return errorResponse(error, origin);
     }
   }
 
@@ -179,7 +193,7 @@ export class PaymentApi {
     }
     if (request.method === "POST" && pathname === "/v1/sync/challenge") {
       const input = strictObject(await body(request), ["locator", "signingKey"], "sync challenge request");
-      const issued = this.sync.issueChallenge({
+      const issued = await this.sync.issueChallenge({
         locator: base64url(input.locator, 32, "archive locator"),
         signingKey: base64url(input.signingKey, 32, "archive signing key"),
       });
@@ -194,7 +208,7 @@ export class PaymentApi {
         ["challenge", "expiresAt", "locator", "signature", "signingKey"],
         "sync authentication request",
       );
-      return json(200, this.sync.authenticate({
+      return json(200, await this.sync.authenticate({
         locator: base64url(input.locator, 32, "archive locator"),
         signingKey: base64url(input.signingKey, 32, "archive signing key"),
         challenge: base64url(input.challenge, 32, "sync challenge"),
@@ -203,13 +217,13 @@ export class PaymentApi {
       }), origin);
     }
     if (request.method === "GET" && pathname === "/v1/sync/manifest") {
-      return json(200, this.sync.manifest(bearer(request)), origin);
+      return json(200, await this.sync.manifest(bearer(request)), origin);
     }
     if (request.method === "GET" && pathname === "/v1/sync/pages") {
       const generation = url.searchParams.has("generation")
         ? integer(url.searchParams.get("generation"), 1, Number.MAX_SAFE_INTEGER, "archive generation")
         : undefined;
-      return json(200, this.sync.pages(bearer(request), {
+      return json(200, await this.sync.pages(bearer(request), {
         generation,
         fromPage: integer(url.searchParams.get("from") || "0", 0, 256, "archive page cursor"),
         limit: integer(url.searchParams.get("limit") || "32", 1, 64, "archive page limit"),
@@ -217,10 +231,25 @@ export class PaymentApi {
     }
     if (request.method === "PUT" && pathname === "/v1/sync/pages") {
       const input = strictObject(await body(request), ["page"], "archive page upload");
-      return json(200, this.sync.putPage(
+      return json(200, await this.sync.putPage(
         bearer(request),
         base64(input.page, MAX_SYNC_PAGE_BASE64, "encrypted archive page"),
       ), origin);
+    }
+    if (request.method === "PUT" && pathname === "/v1/sync/pages/batch") {
+      const input = strictObject(await body(request), ["pages"], "archive page batch upload");
+      if (!Array.isArray(input.pages) || input.pages.length === 0 || input.pages.length > 64) {
+        throw new Error("invalid archive page batch");
+      }
+      const pages = input.pages.map((page) => base64(page, MAX_SYNC_PAGE_BASE64, "encrypted archive page"));
+      const token = bearer(request);
+      const results = [];
+      if (typeof this.sync.putPages === "function") {
+        results.push(...await this.sync.putPages(token, pages));
+      } else {
+        for (const page of pages) results.push(await this.sync.putPage(token, page));
+      }
+      return json(200, { pages: results }, origin);
     }
     if (request.method === "POST" && pathname === "/v1/sync/commit") {
       const input = strictObject(
@@ -228,7 +257,7 @@ export class PaymentApi {
         ["expectedParentHash", "generation", "headHash", "pageCount"],
         "archive commit",
       );
-      return json(200, this.sync.commitGeneration(bearer(request), {
+      return json(200, await this.sync.commitGeneration(bearer(request), {
         generation: integer(input.generation, 1, Number.MAX_SAFE_INTEGER, "archive generation"),
         pageCount: integer(input.pageCount, 1, 256, "archive page count"),
         headHash: hex(input.headHash, 32, "archive head hash"),
@@ -237,7 +266,7 @@ export class PaymentApi {
     }
     if (request.method === "DELETE" && pathname === "/v1/sync/generations") {
       const minimum = integer(url.searchParams.get("before"), 1, Number.MAX_SAFE_INTEGER, "minimum archive generation");
-      return json(200, this.sync.deleteGenerationsBefore(bearer(request), minimum), origin);
+      return json(200, await this.sync.deleteGenerationsBefore(bearer(request), minimum), origin);
     }
     return json(404, { error: "payment route not found" }, origin);
   }

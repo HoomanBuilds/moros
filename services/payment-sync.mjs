@@ -61,11 +61,11 @@ function u64(value) {
   return encoded;
 }
 
-function challengeMessage(locator, challenge, expiresAt) {
+export function challengeMessage(locator, challenge, expiresAt) {
   return Buffer.concat([SYNC_CHALLENGE_DOMAIN, locator, challenge, u64(expiresAt)]);
 }
 
-function publicKeyFromRaw(raw) {
+export function publicKeyFromRaw(raw) {
   return createPublicKey({
     key: Buffer.concat([ED25519_SPKI_PREFIX, raw]),
     format: "der",
@@ -73,7 +73,7 @@ function publicKeyFromRaw(raw) {
   });
 }
 
-function hashToken(token) {
+export function hashToken(token) {
   return createHash("sha256").update(token).digest("hex");
 }
 
@@ -325,6 +325,13 @@ export class PaymentSyncService {
     draft.pages.push(page);
     this.store.save(this.state);
     return { generation: page.generation, page: page.page, hash: page.hash };
+  }
+
+  putPages(token, encodedPages) {
+    if (!Array.isArray(encodedPages) || encodedPages.length === 0 || encodedPages.length > 64) {
+      throw new Error("invalid encrypted archive page batch");
+    }
+    return encodedPages.map((encoded) => this.putPage(token, encoded));
   }
 
   commitGeneration(token, { generation, pageCount, headHash, expectedParentHash }) {

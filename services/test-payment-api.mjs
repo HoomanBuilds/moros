@@ -51,6 +51,10 @@ const sync = {
     calls.push(["page", token, value]);
     return { page: 0 };
   },
+  putPages(token, values) {
+    calls.push(["pages", token, values]);
+    return values.map((_, pageIndex) => ({ page: pageIndex }));
+  },
   commitGeneration(token, input) {
     calls.push(["commit", token, input]);
     return { generation: input.generation };
@@ -126,6 +130,12 @@ assert.equal((await payload(await api.handle(request("/v1/sync/pages", {
   value: { page },
 })))).value.page, 0);
 assert.equal(calls.find((entry) => entry[0] === "page")[2].length, 4_221);
+assert.equal((await payload(await api.handle(request("/v1/sync/pages/batch", {
+  method: "PUT",
+  token: "session",
+  value: { pages: [page, page] },
+})))).value.pages.length, 2);
+assert.equal(calls.find((entry) => entry[0] === "pages")[2][0].length, 4_221);
 assert.equal((await payload(await api.handle(request("/v1/sync/commit", {
   method: "POST",
   token: "session",
@@ -155,5 +165,18 @@ assert.equal((await api.handle(new Request("https://api.moros.fun/v1/relay/quote
   headers: { origin: "https://pay.moros.fun", "content-type": "text/plain" },
   body: "{}",
 }))).status, 400);
+
+const unavailableApi = new PaymentApi({
+  relay,
+  indexer,
+  sync: {
+    ...sync,
+    manifest() {
+      throw new Error("private payment sync database failed with HTTP 503");
+    },
+  },
+  allowedOrigins: ["https://pay.moros.fun"],
+});
+assert.equal((await unavailableApi.handle(request("/v1/sync/manifest", { token: "session" }))).status, 503);
 
 process.stdout.write("payment API tests passed\n");
