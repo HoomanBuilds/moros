@@ -220,6 +220,7 @@ export type PrivateLiquidityExit = {
 
 const PRIVATE_SERVICE =
   process.env.NEXT_PUBLIC_PRIVATE_SERVICE_URL || COMMITTEE_URL;
+const PRIVATE_CONFIG_TIMEOUT_MS = 3_000;
 let privateConfigPromise: Promise<PrivateDeploymentConfig> | null = null;
 let privateCatalogCache: PrivateMarketCatalogSnapshot | null = null;
 let privateCatalogLoadedAt = 0;
@@ -261,6 +262,7 @@ export async function getPrivateConfig(): Promise<PrivateDeploymentConfig> {
 async function loadPrivateConfig(): Promise<PrivateDeploymentConfig> {
   const response = await fetch(privateServiceUrl("/private/config"), {
     cache: "no-store",
+    signal: AbortSignal.timeout(PRIVATE_CONFIG_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(await errorMessage(response));
   const config = await response.json() as PrivateDeploymentConfig;

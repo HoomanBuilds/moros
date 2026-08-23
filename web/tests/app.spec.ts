@@ -45,13 +45,14 @@ test("market creation exposes supported feeds and blocks unsupported events", as
 
   await page.getByRole("button", { name: "FX", exact: true }).click();
   await expect(page.getByRole("button", { name: "EUR", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "THB", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "KES", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "THB", exact: true })).not.toBeVisible();
   await expect(page.getByText("Reflector fiat public feed", { exact: true })).toBeVisible();
 
   await expect(page.getByRole("button", { name: "Event outcomes - Soon", exact: true })).toBeDisabled();
   await expect(page.getByText(/sports, politics, weather, economics, and other event markets stay unavailable/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Sports", exact: true })).not.toBeVisible();
-  await expect(page.getByText(/single-VM testnet coordinator/i)).toBeVisible();
+  await expect(page.getByText(/disclosed Moros coordinator/i)).toBeVisible();
 });
 
 test("market creation accepts an exact local settlement time", async ({ page }) => {

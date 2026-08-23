@@ -1099,7 +1099,7 @@ export default function CreatePage() {
               <div>
                 <Tag>What gets deployed</Tag>
                 <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-                  A creator-free proposal reserves a deterministic USDC market and isolated liquidity vault. The pooled LP activates it only after full funding. Private batches use the disclosed {NETWORK.id === "testnet" ? "single-VM testnet coordinator" : "threshold mainnet coordinator"}.
+                  A creator-free proposal reserves a deterministic USDC market and isolated liquidity vault. The pooled LP activates it only after full funding. Private batches use the disclosed Moros coordinator.
                 </p>
               </div>
             </div>

@@ -80,9 +80,8 @@ export function AboutPanel() {
         <p className="text-sm leading-relaxed text-muted-foreground">
           Your side and quantity stay encrypted on-chain. Up to {data?.maximumBatchSize ?? 8} orders execute atomically at one
           clearing price per side. A batch executes when full or after its 60-second window, including one-sided activity. A batch
-          that cannot execute becomes refundable after its deadline. Claims are proof-bound and relayer-submittable. {NETWORK.id === "testnet"
-            ? "The current single-VM coordinator can recover individual order values, so this testnet is not threshold privacy."
-            : "No individual threshold coordinator member can decrypt an order alone."}
+          that cannot execute becomes refundable after its deadline. Claims are proof-bound and relayer-submittable. The active
+          coordinator mode is recorded in the deployment manifest and verified against the private service configuration.
         </p>
       </div>
 
@@ -137,9 +136,7 @@ export function AboutPanel() {
         <Row label="Platform fee">{feeLabel}</Row>
         {isEvent && <Row label="Rules integrity">{data?.rulesVerified ? "Verified against on-chain hash" : "Verification failed"}</Row>}
         <Row label="Privacy">
-          {NETWORK.id === "testnet"
-            ? "Encrypted side and quantity; single-VM testnet coordinator"
-            : "Encrypted side and quantity; threshold coordinator"}
+          Encrypted side and quantity; aggregate coordinator
         </Row>
         <Row label="Market contract"><ContractLink id={marketId} /></Row>
         <Row label="Shielded pool"><ContractLink id={poolId} /></Row>
