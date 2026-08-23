@@ -1,13 +1,17 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-import { Database, Fingerprint, KeyRound, Moon, ShieldCheck, Smartphone, Sun, SunMoon } from "lucide-react-native";
+import { Database, Fingerprint, KeyRound, Moon, ShieldCheck, Smartphone, Sun, SunMoon, WalletCards } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
+import { ActionButton } from "@/components/action-button";
 import { InfoRow } from "@/components/info-row";
 import { PageHeading } from "@/components/page-heading";
 import { Screen } from "@/components/screen";
 import { TopHeader } from "@/components/top-header";
 import { fonts, type ThemeMode } from "@/constants/theme";
 import { paymentDeployment } from "@/lib/deployment";
+import { shortStellarAccount } from "@/lib/stellar-account";
+import { formatUsdcAtomic, useBalances } from "@/providers/balances-provider";
+import { useStellarWallet } from "@/providers/stellar-wallet-provider";
 import { useMorosTheme } from "@/providers/theme-provider";
 
 const modes: { mode: ThemeMode; label: string; icon: typeof SunMoon }[] = [
@@ -18,6 +22,8 @@ const modes: { mode: ThemeMode; label: string; icon: typeof SunMoon }[] = [
 
 export default function SettingsScreen() {
   const { theme, mode, setMode } = useMorosTheme();
+  const wallet = useStellarWallet();
+  const { publicBalance } = useBalances();
 
   async function replayOnboarding() {
     await AsyncStorage.removeItem("moros_pay_onboarding_complete");
@@ -45,6 +51,21 @@ export default function SettingsScreen() {
             </Pressable>
           );
         })}
+      </View>
+      <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 32, marginBottom: 12 }}>STELLAR WALLET</Text>
+      <View style={{ borderRadius: 26, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, padding: 20, gap: 16 }}>
+        <InfoRow
+          icon={WalletCards}
+          title={wallet.address ? wallet.walletName ?? "Connected wallet" : "Use your existing wallet"}
+          description={wallet.address ? `${shortStellarAccount(wallet.address)} · ${formatUsdcAtomic(publicBalance.balanceAtomic)} public USDC` : "Connect a compatible Stellar wallet for public funding and withdrawals. Moros never receives its private key."}
+          accent={Boolean(wallet.address)}
+        />
+        {wallet.address ? (
+          <ActionButton label="Disconnect wallet" variant="secondary" onPress={() => void wallet.disconnect()} />
+        ) : (
+          <ActionButton label="Connect Stellar wallet" variant="secondary" onPress={() => router.push("/deposit")} disabled={wallet.status === "unavailable"} />
+        )}
+        {wallet.error ? <Text accessibilityRole="alert" style={{ color: theme.danger, fontFamily: fonts.medium, fontSize: 13 }}>{wallet.error}</Text> : null}
       </View>
       <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 32, marginBottom: 12 }}>PRIVATE WALLET</Text>
       <View style={{ borderRadius: 26, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, padding: 20, gap: 20 }}>

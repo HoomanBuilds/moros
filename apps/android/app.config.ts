@@ -67,6 +67,7 @@ const config: ExpoConfig = {
   },
   extra: {
     paymentDeployment: process.env.EXPO_PUBLIC_PAYMENT_DEPLOYMENT ?? "",
+    walletConnectProjectId: process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "",
   },
 };
 

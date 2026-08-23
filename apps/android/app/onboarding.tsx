@@ -28,7 +28,7 @@ const pages = [
   {
     label: "ONE PRIVATE BALANCE",
     title: "Shield once.\nUse it anywhere.",
-    description: "A reusable private USDC balance works across payments, requests, withdrawals, and Moros markets.",
+    description: "Connect the Stellar wallet you already use. Moros adds a separate private identity for payments, requests, withdrawals, and markets.",
     Illustration: ReusableBalanceIllustration,
   },
 ] as const;

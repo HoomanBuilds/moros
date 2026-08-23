@@ -1,3 +1,5 @@
+import "@walletconnect/react-native-compat";
+
 import {
   InstrumentSans_400Regular,
   InstrumentSans_500Medium,
@@ -17,6 +19,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { MorosThemeProvider } from "@/providers/theme-provider";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { BalancesProvider } from "@/providers/balances-provider";
+import { StellarWalletProvider } from "@/providers/stellar-wallet-provider";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -43,15 +46,17 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <MorosThemeProvider>
-          <BalancesProvider><Stack screenOptions={{ headerShown: false, animation: reducedMotion ? "none" : "fade", animationDuration: reducedMotion ? 0 : 220 }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="onboarding" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="payment" options={{ presentation: "modal", animation: reducedMotion ? "none" : "slide_from_bottom" }} />
-            <Stack.Screen name="request" options={{ presentation: "modal", animation: reducedMotion ? "none" : "slide_from_bottom" }} />
-            <Stack.Screen name="deposit" options={{ presentation: "modal", animation: reducedMotion ? "none" : "slide_from_bottom" }} />
-            <Stack.Screen name="withdraw" options={{ presentation: "modal", animation: reducedMotion ? "none" : "slide_from_bottom" }} />
-          </Stack></BalancesProvider>
+          <StellarWalletProvider>
+            <BalancesProvider><Stack screenOptions={{ headerShown: false, animation: reducedMotion ? "none" : "fade", animationDuration: reducedMotion ? 0 : 220 }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen name="onboarding" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="payment" options={{ presentation: "modal", animation: reducedMotion ? "none" : "slide_from_bottom" }} />
+              <Stack.Screen name="request" options={{ presentation: "modal", animation: reducedMotion ? "none" : "slide_from_bottom" }} />
+              <Stack.Screen name="deposit" options={{ presentation: "modal", animation: reducedMotion ? "none" : "slide_from_bottom" }} />
+              <Stack.Screen name="withdraw" options={{ presentation: "modal", animation: reducedMotion ? "none" : "slide_from_bottom" }} />
+            </Stack></BalancesProvider>
+          </StellarWalletProvider>
         </MorosThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
