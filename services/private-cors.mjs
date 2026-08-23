@@ -3,6 +3,25 @@ const ALLOWED_REQUEST_HEADERS =
 const EXPOSED_RESPONSE_HEADERS =
   "retry-after, x-ratelimit-reset";
 
+export const DEFAULT_PRIVATE_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:3010",
+  "https://moros.fun",
+  "https://www.moros.fun",
+  "https://predict.moros.fun",
+  "https://pay.moros.fun",
+  "https://moros-six.vercel.app",
+];
+
+export function privateAllowedOrigins(value) {
+  return new Set(
+    (value ? value.split(",") : DEFAULT_PRIVATE_ORIGINS)
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+      .map((origin) => new URL(origin).origin),
+  );
+}
+
 export function privateResponseHeaders(request, allowedOrigins) {
   const origin = request.headers.origin;
   return origin && allowedOrigins.has(origin)

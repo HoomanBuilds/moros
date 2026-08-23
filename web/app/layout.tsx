@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Providers } from '@/components/providers'
+import { productUrls } from '@/lib/product-urls'
 import './globals.css'
 
 const instrumentSans = Instrument_Sans({ 
@@ -22,7 +23,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://moros.fun'),
+  metadataBase: new URL(productUrls.predict),
   title: 'Moros - Private prediction markets on Stellar',
   description: 'Create and trade private prediction markets with Circle USDC on Stellar. Encrypted positions, adaptive batch pricing, and proof-bound settlement.',
   alternates: {

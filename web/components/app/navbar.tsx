@@ -7,6 +7,7 @@ import { MobileNav } from "@/components/app/mobile-nav";
 import { navGroups, isActive } from "@/components/app/nav-links";
 import { NETWORK } from "@/lib/network";
 import { cn } from "@/lib/utils";
+import { BRAND } from "@/lib/brand";
 
 export function Navbar() {
   const pathname = usePathname();
@@ -46,6 +47,7 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-4 lg:gap-6">
+          <a className="hidden text-xs text-muted-foreground transition-colors hover:text-foreground md:block" href={BRAND.payHref}>Moros Pay</a>
           <span className="hidden items-center gap-2 sm:flex">
             <span className="h-2 w-2 rounded-full bg-[#eca8d6]" />
             <span className="font-mono text-xs text-muted-foreground">{NETWORK.name}</span>

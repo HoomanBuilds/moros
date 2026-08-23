@@ -31,7 +31,10 @@ import {
   FixedWindowRateLimiter,
   decodeRelayRequest,
 } from "./private-relayer.mjs";
-import { privateResponseHeaders } from "./private-cors.mjs";
+import {
+  privateAllowedOrigins,
+  privateResponseHeaders,
+} from "./private-cors.mjs";
 import {
   invocationResultValue,
   jsonValue,
@@ -84,15 +87,7 @@ const PRIVACY_SECRET = configuredSecret({
   identity: network.privacyIdentity,
   label: `${network.id} privacy identity`,
 });
-const ALLOWED_ORIGINS = new Set(
-  (
-    process.env.PUBLIC_ORIGINS ||
-    "http://localhost:3000,https://moros.fun,https://www.moros.fun,https://moros-six.vercel.app"
-  )
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean),
-);
+const ALLOWED_ORIGINS = privateAllowedOrigins(process.env.PUBLIC_ORIGINS);
 
 function hash(value) {
   return createHash("sha256").update(value).digest("hex");

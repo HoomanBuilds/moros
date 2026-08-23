@@ -11,7 +11,11 @@ import {
   parseRange,
   PrivateArtifactStore,
 } from "./private-artifacts.mjs";
-import { privateResponseHeaders } from "./private-cors.mjs";
+import {
+  DEFAULT_PRIVATE_ORIGINS,
+  privateAllowedOrigins,
+  privateResponseHeaders,
+} from "./private-cors.mjs";
 import { PrivateAllocationRegistry } from "./private-allocation-registry.mjs";
 import { PrivateExitRegistry } from "./private-exit-registry.mjs";
 import { PrivateMarketRegistry } from "./private-market-registry.mjs";
@@ -43,6 +47,21 @@ assert.deepEqual(
     new Set(["https://moros-six.vercel.app"]),
   ),
   {},
+);
+
+const productionOrigins = privateAllowedOrigins();
+for (const origin of [
+  "https://moros.fun",
+  "https://predict.moros.fun",
+  "https://pay.moros.fun",
+  "https://moros-six.vercel.app",
+]) {
+  assert.equal(productionOrigins.has(origin), true);
+}
+assert.equal(productionOrigins.size, DEFAULT_PRIVATE_ORIGINS.length);
+assert.deepEqual(
+  [...privateAllowedOrigins("https://predict.moros.fun/, https://pay.moros.fun/path")],
+  ["https://predict.moros.fun", "https://pay.moros.fun"],
 );
 
 assert.deepEqual(

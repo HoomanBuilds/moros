@@ -13,6 +13,7 @@ interface FooterLink {
 
 const footerLinks: Record<string, FooterLink[]> = {
   Product: [
+    { name: "Private payments", href: BRAND.payHref, newTab: true },
     { name: "Features", href: "#features" },
     { name: "How it works", href: "#how-it-works" },
     { name: "Ecosystem", href: "#integrations" },

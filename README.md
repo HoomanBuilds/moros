@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://moros.fun">Live App</a> |
-  <a href="https://moros.fun/app/create">Create a Market</a> |
-  <a href="https://moros.fun/app/portfolio">Portfolio</a> |
-  <a href="https://moros.fun/whitepaper.pdf">Whitepaper</a> |
+  <a href="https://predict.moros.fun">Live App</a> |
+  <a href="https://predict.moros.fun/app/create">Create a Market</a> |
+  <a href="https://predict.moros.fun/app/portfolio">Portfolio</a> |
+  <a href="https://predict.moros.fun/whitepaper.pdf">Whitepaper</a> |
   <a href="https://github.com/HoomanBuilds/moros">GitHub</a> |
   <a href="https://x.com/morosxyz">X</a>
 </p>
@@ -60,9 +60,9 @@ Moros is deployed on Stellar Mainnet and settles markets in real Circle USDC. Th
 
 | Item | Link or value |
 | --- | --- |
-| Live product | [moros.fun](https://moros.fun) |
-| Market application | [moros.fun/app](https://moros.fun/app) |
-| Technical whitepaper | [moros.fun/whitepaper.pdf](https://moros.fun/whitepaper.pdf) |
+| Live product | [predict.moros.fun](https://predict.moros.fun) |
+| Market application | [predict.moros.fun/app](https://predict.moros.fun/app) |
+| Technical whitepaper | [predict.moros.fun/whitepaper.pdf](https://predict.moros.fun/whitepaper.pdf) |
 | Source code | [github.com/HoomanBuilds/moros](https://github.com/HoomanBuilds/moros) |
 | Network | Stellar Mainnet |
 | Settlement asset | Circle USDC |
@@ -91,10 +91,10 @@ Moros is deployed on Stellar Mainnet and settles markets in real Circle USDC. Th
 
 ### Recommended review path
 
-1. Open the [market application](https://moros.fun/app) and inspect active and resolved markets.
+1. Open the [market application](https://predict.moros.fun/app) and inspect active and resolved markets.
 2. Open a market to review its oracle route, liquidity, encrypted activity, batch pricing, and resolution state.
-3. Open [Portfolio](https://moros.fun/app/portfolio) to inspect the reusable private USDC wallet, encrypted recovery, positions, claims, and refunds.
-4. Open [Liquidity](https://moros.fun/app/liquidity) to inspect pooled LP shares, automatic market allocation, and private exits.
+3. Open [Portfolio](https://predict.moros.fun/app/portfolio) to inspect the reusable private USDC wallet, encrypted recovery, positions, claims, and refunds.
+4. Open [Liquidity](https://predict.moros.fun/app/liquidity) to inspect pooled LP shares, automatic market allocation, and private exits.
 5. Compare the live contract graph with the [canonical deployment manifest](./deployments/private-mainnet.json).
 
 ### What is technically distinct
@@ -481,10 +481,10 @@ All listed core contract instances, Circle USDC SAC, and Reflector dependencies 
 
 | Route | Purpose |
 | --- | --- |
-| [App](https://moros.fun/app) | Browse active and resolved markets |
-| [Create](https://moros.fun/app/create) | Propose a supported price market |
-| [Portfolio](https://moros.fun/app/portfolio) | Manage private USDC, positions, claims, refunds, and history |
-| [Liquidity](https://moros.fun/app/liquidity) | Deposit into the pooled LP vault and manage private shares |
+| [App](https://predict.moros.fun/app) | Browse active and resolved markets |
+| [Create](https://predict.moros.fun/app/create) | Propose a supported price market |
+| [Portfolio](https://predict.moros.fun/app/portfolio) | Manage private USDC, positions, claims, refunds, and history |
+| [Liquidity](https://predict.moros.fun/app/liquidity) | Deposit into the pooled LP vault and manage private shares |
 | `/app/market/[id]` | View a market, place an encrypted order, and join its wallet-authenticated discussion |
 
 ## Repository structure

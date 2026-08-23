@@ -17,6 +17,7 @@ const navLinks: LandingNavLink[] = [
   { name: "Features", href: "#features" },
   { name: "How it works", href: "#how-it-works" },
   { name: "Whitepaper", href: BRAND.whitepaperHref, newTab: true },
+  { name: "Payments", href: BRAND.payHref, newTab: true },
   { name: "Ecosystem", href: "#integrations" },
   { name: "Security", href: "#security" },
 ];
