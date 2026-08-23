@@ -24,6 +24,6 @@ moros-market.duckdns.org {
 }
 
 pay.moros.fun {
-  encode gzip
-  reverse_proxy localhost:3001
+	encode gzip
+	reverse_proxy localhost:3001
 }

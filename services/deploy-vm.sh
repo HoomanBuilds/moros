@@ -153,6 +153,7 @@ Environment=PORT=3001
 ExecStart=$node_bin $pay_web/server.js
 Restart=on-failure
 RestartSec=5
+SuccessExitStatus=143
 User=$USER
 
 [Install]
