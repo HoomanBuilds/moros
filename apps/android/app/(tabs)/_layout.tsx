@@ -1,6 +1,7 @@
 import { Clock3, Home, QrCode, ScanLine, Settings } from "lucide-react-native";
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fonts } from "@/constants/theme";
 import { useMorosTheme } from "@/providers/theme-provider";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
@@ -8,6 +9,8 @@ import { useReducedMotion } from "@/hooks/use-reduced-motion";
 export default function TabsLayout() {
   const { theme } = useMorosTheme();
   const reducedMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 10 : 8);
   return (
     <Tabs
       screenOptions={{
@@ -24,10 +27,10 @@ export default function TabsLayout() {
           position: "absolute",
           left: 12,
           right: 12,
-          bottom: Platform.OS === "android" ? 14 : 10,
-          height: 76,
+          bottom: 8,
+          height: 66 + bottomInset,
           paddingTop: 10,
-          paddingBottom: 10,
+          paddingBottom: bottomInset,
           borderRadius: 26,
           borderTopWidth: 1,
           borderWidth: 1,

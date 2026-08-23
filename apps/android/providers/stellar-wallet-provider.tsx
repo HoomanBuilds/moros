@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { InteractionManager } from "react-native";
 import type SignClient from "@walletconnect/sign-client";
 import { paymentDeployment } from "@/lib/deployment";
+import { productUrls } from "@/lib/product-urls";
 import {
   freighterPairingUrl,
   pairingTopicFromUri,
@@ -59,11 +60,11 @@ async function loadClient(): Promise<SignClient> {
         metadata: {
           name: "Moros Pay",
           description: "Private Circle USDC payments on Stellar",
-          url: "https://pay.moros.fun",
-          icons: ["https://moros.fun/logo.png"],
+          url: productUrls.pay,
+          icons: [`${productUrls.pay}/icon.png`],
           redirect: {
             native: "moros://deposit",
-            universal: "https://pay.moros.fun",
+            universal: productUrls.pay,
           },
         },
       }))

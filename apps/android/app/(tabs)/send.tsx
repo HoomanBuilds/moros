@@ -54,7 +54,7 @@ export default function SendScreen() {
   return (
     <Screen scroll={!scanner}>
       <TopHeader />
-      <PageHeading label="Private transfer" title="Scan to send" description="Verify a Moros payment code locally before creating any proof." />
+      <PageHeading label="Private transfer" title="Scan to send" description="Recognize a Moros payment code locally before opening its payment review." />
       {scanner ? (
         <View style={{ flex: 1 }}>
           <View style={{ height: 390, borderRadius: 30, overflow: "hidden", backgroundColor: theme.inverse }}>

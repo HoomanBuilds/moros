@@ -10,6 +10,8 @@ export type MorosTheme = {
   subtle: string;
   border: string;
   accent: string;
+  accentText: string;
+  accentOnInverse: string;
   accentSoft: string;
   onAccent: string;
   success: string;
@@ -29,6 +31,8 @@ export const lightTheme: MorosTheme = {
   subtle: "#9D9890",
   border: "#D7D2CA",
   accent: "#D978B7",
+  accentText: "#A63E83",
+  accentOnInverse: "#ECA8D6",
   accentSoft: "#F5DEEC",
   onAccent: "#170F14",
   success: "#167A55",
@@ -48,6 +52,8 @@ export const darkTheme: MorosTheme = {
   subtle: "#706C67",
   border: "#2B2A2F",
   accent: "#ECA8D6",
+  accentText: "#ECA8D6",
+  accentOnInverse: "#A63E83",
   accentSoft: "#392432",
   onAccent: "#160D13",
   success: "#65D6AA",

@@ -34,7 +34,7 @@ export default function SettingsScreen() {
     <Screen>
       <TopHeader />
       <PageHeading label="Local control" title="Wallet settings" description="Control appearance, recovery, device access, and payment-network status." />
-      <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginBottom: 12 }}>APPEARANCE</Text>
+      <Text style={{ color: theme.accentText, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginBottom: 12 }}>APPEARANCE</Text>
       <View accessibilityRole="radiogroup" style={{ flexDirection: "row", gap: 8, padding: 6, borderRadius: 22, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border }}>
         {modes.map(({ mode: itemMode, label, icon: Icon }) => {
           const active = mode === itemMode;
@@ -52,7 +52,7 @@ export default function SettingsScreen() {
           );
         })}
       </View>
-      <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 32, marginBottom: 12 }}>STELLAR WALLET</Text>
+      <Text style={{ color: theme.accentText, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 32, marginBottom: 12 }}>STELLAR WALLET</Text>
       <View style={{ borderRadius: 26, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, padding: 20, gap: 16 }}>
         <InfoRow
           icon={WalletCards}
@@ -67,15 +67,15 @@ export default function SettingsScreen() {
         )}
         {wallet.error ? <Text accessibilityRole="alert" style={{ color: theme.danger, fontFamily: fonts.medium, fontSize: 13 }}>{wallet.error}</Text> : null}
       </View>
-      <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 32, marginBottom: 12 }}>PRIVATE WALLET</Text>
+      <Text style={{ color: theme.accentText, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 32, marginBottom: 12 }}>PRIVATE WALLET</Text>
       <View style={{ borderRadius: 26, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, padding: 20, gap: 20 }}>
-        <InfoRow icon={Fingerprint} title="Payment identity" description={paymentDeployment.ready ? "Ready for local identity derivation." : "Waiting for a verified payment deployment."} accent />
+        <InfoRow icon={Fingerprint} title="Payment identity" description={paymentDeployment.ready ? "Network recognized. Native private identity derivation is not connected in this build." : "Waiting for a verified payment deployment."} accent />
         <View style={{ height: 1, backgroundColor: theme.border }} />
-        <InfoRow icon={KeyRound} title="Recovery phrase" description="Spending and viewing keys stay protected by this device and your recovery words." />
+        <InfoRow icon={KeyRound} title="Recovery phrase" description="Native secure storage and private-key recovery are not connected in this build." />
         <View style={{ height: 1, backgroundColor: theme.border }} />
-        <InfoRow icon={Database} title="Encrypted sync" description="Only padded ciphertext archives are accepted by the recovery service." />
+        <InfoRow icon={Database} title="Encrypted sync" description="The encrypted recovery service exists, but this mobile client is not connected to it yet." />
       </View>
-      <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 32, marginBottom: 12 }}>APP</Text>
+      <Text style={{ color: theme.accentText, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 32, marginBottom: 12 }}>APP</Text>
       <Pressable onPress={() => void replayOnboarding()} style={({ pressed }) => ({ minHeight: 64, borderRadius: 20, borderWidth: 1, borderColor: theme.border, backgroundColor: pressed ? theme.accentSoft : theme.surface, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", gap: 12 })}>
         <Smartphone size={19} color={theme.text} />
         <Text style={{ color: theme.text, fontFamily: fonts.semibold, fontSize: 14, flex: 1 }}>Replay welcome screens</Text>

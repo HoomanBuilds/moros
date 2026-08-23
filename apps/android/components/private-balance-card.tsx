@@ -8,6 +8,7 @@ import { formatUsdcAtomic, useBalances } from "@/providers/balances-provider";
 export function PrivateBalanceCard({ onDeposit }: { onDeposit(): void }) {
   const { theme } = useMorosTheme();
   const { privateBalance } = useBalances();
+  const ready = privateBalance.status === "ready";
   return (
     <View style={{ backgroundColor: theme.inverse, borderRadius: 30, minHeight: 310, overflow: "hidden", padding: 24 }}>
       <View pointerEvents="none" style={{ position: "absolute", right: -72, bottom: -95, width: 280, height: 280, borderRadius: 140, borderWidth: 1, borderColor: theme.accent }}>
@@ -21,12 +22,12 @@ export function PrivateBalanceCard({ onDeposit }: { onDeposit(): void }) {
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: theme.accent, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 99 }}>
           <ShieldCheck size={13} color={theme.accent} />
-          <Text style={{ color: theme.accent, fontFamily: fonts.medium, fontSize: 9, letterSpacing: 1 }}>ENCRYPTED</Text>
+          <Text style={{ color: theme.accentOnInverse, fontFamily: fonts.medium, fontSize: 9, letterSpacing: 1 }}>{ready ? "ENCRYPTED" : "LOCKED"}</Text>
         </View>
       </View>
       <View style={{ marginTop: 56 }}>
         <Text style={{ color: theme.onInverse, fontFamily: fonts.serif, fontSize: 66, lineHeight: 70, letterSpacing: -2.5 }}>{formatUsdcAtomic(privateBalance.spendableAtomic)}</Text>
-        <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 4 }}>AVAILABLE PRIVATELY</Text>
+        <Text style={{ color: theme.accentOnInverse, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2, marginTop: 4 }}>{ready ? "AVAILABLE PRIVATELY" : "PRIVATE WALLET UNAVAILABLE"}</Text>
       </View>
       <View style={{ marginTop: "auto", maxWidth: 180 }}>
         <ActionButton label="Add USDC" icon={ArrowDownToLine} onPress={onDeposit} />

@@ -12,9 +12,9 @@ export function BalanceStrip() {
     <View style={{ marginTop: 14, borderWidth: 1, borderColor: theme.border, borderRadius: 24, backgroundColor: theme.surface, overflow: "hidden" }}>
       <View style={{ flexDirection: "row" }}>
         <View style={{ flex: 1, minHeight: 92, padding: 16, borderRightWidth: 1, borderColor: theme.border }}>
-          <Text style={{ color: theme.muted, fontFamily: fonts.semibold, fontSize: 9, letterSpacing: 1.3 }}>PENDING</Text>
-          <Text style={{ color: theme.text, fontFamily: fonts.serif, fontSize: 29, marginTop: 8 }}>{formatUsdcAtomic(privateBalance.pendingAtomic)}</Text>
-          <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 11, marginTop: 3 }}>private USDC</Text>
+          <Text style={{ color: theme.muted, fontFamily: fonts.semibold, fontSize: 9, letterSpacing: 1.3 }}>PRIVATE WALLET</Text>
+          <Text style={{ color: theme.text, fontFamily: fonts.serif, fontSize: 25, marginTop: 10 }}>{privateBalance.status === "ready" ? "Ready" : "Unavailable"}</Text>
+          <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 11, marginTop: 3 }}>native wallet state</Text>
         </View>
         <View style={{ flex: 1.35, minHeight: 92, padding: 16 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>

@@ -18,7 +18,7 @@ export function ActionButton({ label, onPress, icon: Icon, variant = "primary", 
   const primary = variant === "primary";
   const quiet = variant === "quiet";
   return (
-    <PressableScale haptic={primary && !disabled} onPress={onPress} disabled={disabled} accessibilityLabel={label} accessibilityHint={accessibilityHint}>
+    <PressableScale haptic={primary && !disabled} onPress={onPress} disabled={disabled} accessibilityLabel={label} accessibilityHint={accessibilityHint} accessibilityState={{ disabled: Boolean(disabled) }}>
       <View style={{
         minHeight: 56,
         borderRadius: 18,

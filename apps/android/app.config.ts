@@ -1,5 +1,7 @@
 import type { ExpoConfig } from "expo/config";
 
+const paymentHost = "pay.moros.fun";
+
 const config: ExpoConfig = {
   name: "Moros",
   slug: "moros-pay",
@@ -12,7 +14,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "fun.moros.pay",
-    associatedDomains: ["applinks:pay.moros.fun"],
+    associatedDomains: [`applinks:${paymentHost}`],
   },
   android: {
     package: "fun.moros.pay",
@@ -30,7 +32,7 @@ const config: ExpoConfig = {
         data: [
           {
             scheme: "https",
-            host: "pay.moros.fun",
+            host: paymentHost,
             pathPrefix: "/pay",
           },
         ],

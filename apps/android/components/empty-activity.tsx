@@ -10,8 +10,8 @@ export function EmptyActivity({ compact = false }: { compact?: boolean }) {
       <View style={{ width: 52, height: 52, borderRadius: 18, backgroundColor: theme.accentSoft, alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
         <ReceiptText size={23} color={theme.accent} strokeWidth={1.7} />
       </View>
-      <Text style={{ color: theme.text, fontFamily: fonts.semibold, fontSize: 16 }}>No private payments yet</Text>
-      <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 14, lineHeight: 21, textAlign: "center", marginTop: 6 }}>Confirmed transfers will appear here after local decryption.</Text>
+      <Text style={{ color: theme.text, fontFamily: fonts.semibold, fontSize: 16 }}>Private activity unavailable</Text>
+      <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 14, lineHeight: 21, textAlign: "center", marginTop: 6 }}>Native identity recovery and encrypted activity sync must be connected before this device can show payment history.</Text>
     </View>
   );
 }

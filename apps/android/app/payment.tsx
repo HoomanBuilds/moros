@@ -3,6 +3,7 @@ import { CheckCircle2, Clock3, Fingerprint, ShieldCheck } from "lucide-react-nat
 import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { ActionButton } from "@/components/action-button";
+import { AvailabilityNotice } from "@/components/availability-notice";
 import { FormField } from "@/components/form-field";
 import { InfoRow } from "@/components/info-row";
 import { ModalHeader } from "@/components/modal-header";
@@ -10,12 +11,15 @@ import { Screen } from "@/components/screen";
 import { fonts } from "@/constants/theme";
 import { paymentDeployment } from "@/lib/deployment";
 import { parsePaymentTarget } from "@/lib/payment-links";
+import { parseUsdcAtomic } from "@/lib/usdc";
 import { useMorosTheme } from "@/providers/theme-provider";
 
 export default function PaymentReview() {
   const { theme } = useMorosTheme();
   const params = useLocalSearchParams<{ target?: string }>();
   const [amount, setAmount] = useState("");
+  const [reviewed, setReviewed] = useState(false);
+  const [amountError, setAmountError] = useState("");
   const target = typeof params.target === "string" ? params.target : "";
   const result = useMemo(() => {
     try {
@@ -24,6 +28,17 @@ export default function PaymentReview() {
       return { value: null, error: cause instanceof Error ? cause.message : "Invalid payment request." };
     }
   }, [target]);
+
+  function review() {
+    setAmountError("");
+    setReviewed(false);
+    try {
+      parseUsdcAtomic(amount);
+      setReviewed(true);
+    } catch (cause) {
+      setAmountError(cause instanceof Error ? cause.message : "Could not review this amount.");
+    }
+  }
 
   return (
     <Screen>
@@ -36,15 +51,15 @@ export default function PaymentReview() {
       ) : (
         <View style={{ gap: 20 }}>
           <View style={{ backgroundColor: theme.inverse, borderRadius: 30, padding: 24 }}>
-            <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2 }}>PRIVATE USDC</Text>
+            <Text style={{ color: theme.accentOnInverse, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2 }}>PRIVATE USDC</Text>
             <Text style={{ color: theme.onInverse, fontFamily: fonts.serif, fontSize: 44, lineHeight: 48, marginTop: 12 }}>{result.value?.kind === "request" ? "Signed request" : "Direct payment"}</Text>
-            <Text style={{ color: theme.onInverse, opacity: 0.65, fontFamily: fonts.sans, fontSize: 14, lineHeight: 21, marginTop: 10 }}>The full request is checked on this device before proof preparation.</Text>
+            <Text style={{ color: theme.onInverse, opacity: 0.65, fontFamily: fonts.sans, fontSize: 14, lineHeight: 21, marginTop: 10 }}>The app recognized this Moros payment format. Cryptographic request verification is required before submission.</Text>
           </View>
-          <FormField label="Amount" value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" suffix="USDC" helper="The final amount and relay fee are shown before approval." />
+          <FormField label="Amount" value={amount} onChangeText={(value) => { setAmount(value); setReviewed(false); setAmountError(""); }} placeholder="0.00" keyboardType="decimal-pad" suffix="USDC" helper="The final amount and relay fee must be shown before approval." />
           <View style={{ borderRadius: 26, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, padding: 20, gap: 20 }}>
-            <InfoRow icon={CheckCircle2} title="Request format verified" description="The code belongs to the approved Moros payment format." accent />
+            <InfoRow icon={CheckCircle2} title="Moros format recognized" description="The scanner accepted the code structure and approved Moros domain." accent />
             <View style={{ height: 1, backgroundColor: theme.border }} />
-            <InfoRow icon={Fingerprint} title="Recipient protected" description="The recipient is represented by an encrypted note key, not a public wallet address." />
+            <InfoRow icon={Fingerprint} title="Private payload present" description="Recipient details remain inside the encoded request until native verification is connected." />
             <View style={{ height: 1, backgroundColor: theme.border }} />
             <InfoRow icon={Clock3} title="Expiry checked locally" description="Expired signed requests are rejected before submission." />
           </View>
@@ -54,7 +69,15 @@ export default function PaymentReview() {
               <Text style={{ color: theme.muted, fontFamily: fonts.medium, fontSize: 13, lineHeight: 19, flex: 1 }}>{paymentDeployment.reason}. No transaction can be prepared in this build.</Text>
             </View>
           ) : null}
-          <ActionButton label="Continue privately" onPress={() => {}} disabled={!paymentDeployment.ready || !amount} />
+          {amountError ? <Text accessibilityRole="alert" style={{ color: theme.danger, fontFamily: fonts.medium, fontSize: 13, lineHeight: 19 }}>{amountError}</Text> : null}
+          {!reviewed ? (
+            <ActionButton label="Review amount" onPress={review} disabled={!paymentDeployment.ready || !amount} />
+          ) : (
+            <View style={{ gap: 12 }}>
+              <AvailabilityNotice title="Private transfer not connected" description="The amount passed local checks. Native request verification, proof creation, and relay submission are not connected in this mobile build." />
+              <ActionButton label="Private transfer unavailable" onPress={() => undefined} disabled />
+            </View>
+          )}
         </View>
       )}
     </Screen>

@@ -8,7 +8,7 @@
     "android": "expo run:android",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --experimental-strip-types lib/stellar-walletconnect.test.mjs",
+    "test": "node --experimental-strip-types lib/stellar-walletconnect.test.mjs && node --experimental-strip-types lib/payment-links.test.mjs && node --experimental-strip-types lib/usdc.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

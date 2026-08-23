@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, FlatList, Text, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { Animated, FlatList, ScrollView, Text, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ActionButton } from "@/components/action-button";
 import { Brand } from "@/components/brand";
@@ -16,13 +16,13 @@ const pages = [
   {
     label: "PRIVATE PAYMENTS",
     title: "Move money.\nKeep it yours.",
-    description: "Send Circle USDC through encrypted notes without publishing the recipient, amount, or payment history.",
+    description: "Use a reusable private balance for protected Circle USDC payments on Stellar.",
     Illustration: PrivatePaymentIllustration,
   },
   {
     label: "SCAN AND VERIFY",
     title: "Point. Verify.\nPay privately.",
-    description: "Scan a Moros code or open a payment link. The app verifies every signed request locally before you approve it.",
+    description: "Scan a Moros code or open a payment link, then review its recipient and amount before approval.",
     Illustration: ScanPaymentIllustration,
   },
   {
@@ -34,11 +34,12 @@ const pages = [
 ] as const;
 
 export default function Onboarding() {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const { theme } = useMorosTheme();
   const list = useRef<FlatList<(typeof pages)[number]>>(null);
   const [page, setPage] = useState(0);
   const reducedMotion = useReducedMotion();
+  const compact = height < 700 || width < 360;
   const progress = useRef(pages.map((_, index) => new Animated.Value(index === 0 ? 1 : 0))).current;
 
   const finish = useCallback(async () => {
@@ -60,7 +61,7 @@ export default function Onboarding() {
   }
 
   useEffect(() => {
-    const animation = Animated.parallel(progress.map((value, index) => Animated.timing(value, { toValue: index === page ? 1 : 0, duration: reducedMotion ? 0 : 220, useNativeDriver: false })));
+    const animation = Animated.parallel(progress.map((value, index) => Animated.timing(value, { toValue: index === page ? 1 : 0, duration: reducedMotion ? 0 : 220, useNativeDriver: true })));
     animation.start();
     return () => animation.stop();
   }, [page, progress, reducedMotion]);
@@ -83,20 +84,25 @@ export default function Onboarding() {
         onMomentumScrollEnd={onScrollEnd}
         keyExtractor={(item) => item.label}
         renderItem={({ item }) => (
-          <View style={{ width, paddingHorizontal: 28, justifyContent: "center", alignItems: "center" }}>
-            <View style={{ marginTop: 6, marginBottom: 30 }}>
-              <item.Illustration />
+          <ScrollView
+            style={{ width }}
+            contentContainerStyle={{ minHeight: "100%", paddingHorizontal: compact ? 22 : 28, paddingVertical: 18, justifyContent: "center", alignItems: "center" }}
+            showsVerticalScrollIndicator={false}
+            directionalLockEnabled
+          >
+            <View style={{ width: 260, height: compact ? 204 : 252, marginBottom: compact ? 14 : 30, alignItems: "center", justifyContent: "center" }}>
+              <View style={{ transform: [{ scale: compact ? 0.8 : 1 }] }}><item.Illustration /></View>
             </View>
-            <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2.4, marginBottom: 14 }}>{item.label}</Text>
-            <Text style={{ color: theme.text, fontFamily: fonts.serif, fontSize: 48, lineHeight: 49, letterSpacing: -1.3, textAlign: "center" }}>{item.title}</Text>
-            <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 16, lineHeight: 24, textAlign: "center", marginTop: 18, maxWidth: 340 }}>{item.description}</Text>
-          </View>
+            <Text style={{ color: theme.accentText, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2.4, marginBottom: 14 }}>{item.label}</Text>
+            <Text style={{ color: theme.text, fontFamily: fonts.serif, fontSize: compact ? 40 : 48, lineHeight: compact ? 41 : 49, letterSpacing: -1.3, textAlign: "center" }}>{item.title}</Text>
+            <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: compact ? 14 : 16, lineHeight: compact ? 21 : 24, textAlign: "center", marginTop: compact ? 13 : 18, maxWidth: 340 }}>{item.description}</Text>
+          </ScrollView>
         )}
       />
       <View style={{ paddingHorizontal: 20, paddingBottom: 18 }}>
         <View accessibilityLabel={`Page ${page + 1} of ${pages.length}`} style={{ flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: 22 }}>
           {pages.map((item, index) => (
-            <Animated.View key={item.label} style={{ width: progress[index].interpolate({ inputRange: [0, 1], outputRange: [8, 28] }), height: 8, borderRadius: 4, backgroundColor: progress[index].interpolate({ inputRange: [0, 1], outputRange: [theme.border, theme.accent] }) }} />
+            <Animated.View key={item.label} style={{ width: 28, height: 8, borderRadius: 4, backgroundColor: theme.accent, opacity: progress[index].interpolate({ inputRange: [0, 1], outputRange: [0.22, 1] }), transform: [{ scaleX: progress[index].interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) }] }} />
           ))}
         </View>
         <View style={{ flexDirection: "row", gap: 12 }}>

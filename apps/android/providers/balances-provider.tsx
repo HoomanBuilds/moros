@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { paymentDeployment } from "@/lib/deployment";
 import { useStellarWallet } from "@/providers/stellar-wallet-provider";
+import { formatUsdcAtomic, USDC_SCALE } from "@/lib/usdc";
 
-const USDC_SCALE = 10_000_000n;
+export { formatUsdcAtomic } from "@/lib/usdc";
 
 type PublicBalanceStatus = "disconnected" | "loading" | "ready" | "error";
 
@@ -29,13 +30,6 @@ function parseAtomic(value: unknown): bigint {
   if (typeof value !== "string" || !/^\d+(?:\.\d{1,7})?$/.test(value)) throw new Error("Stellar returned an invalid USDC balance.");
   const [whole, fraction = ""] = value.split(".");
   return BigInt(whole) * USDC_SCALE + BigInt(fraction.padEnd(7, "0"));
-}
-
-export function formatUsdcAtomic(value: bigint | null): string {
-  if (value === null) return "--";
-  const whole = value / USDC_SCALE;
-  const fraction = (value % USDC_SCALE).toString().padStart(7, "0").replace(/0+$/, "");
-  return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
 export function BalancesProvider({ children }: { children: React.ReactNode }) {

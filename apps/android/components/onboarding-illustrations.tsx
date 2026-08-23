@@ -53,7 +53,7 @@ export function ReusableBalanceIllustration() {
         <View style={{ position: "absolute", width: 112, height: 112, borderRadius: 56, right: -20, bottom: -38, backgroundColor: theme.accent }} />
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <ShieldCheck size={17} color={theme.accent} strokeWidth={1.7} />
-          <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 1.5 }}>PRIVATE USDC</Text>
+          <Text style={{ color: theme.accentOnInverse, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 1.5 }}>PRIVATE USDC</Text>
         </View>
         <Text style={{ color: theme.onInverse, fontFamily: fonts.serif, fontSize: 58, letterSpacing: -2, marginTop: 26 }}>0.00</Text>
         <Text style={{ color: theme.onInverse, opacity: 0.58, fontFamily: fonts.medium, fontSize: 9, letterSpacing: 1.4, marginTop: 2 }}>REUSABLE BALANCE</Text>

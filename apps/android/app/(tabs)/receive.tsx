@@ -1,7 +1,7 @@
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import { Copy, Fingerprint, QrCode, Share2, WalletCards } from "lucide-react-native";
-import { Text, View } from "react-native";
+import { Share, Text, View } from "react-native";
 import { ActionButton } from "@/components/action-button";
 import { InfoRow } from "@/components/info-row";
 import { PageHeading } from "@/components/page-heading";
@@ -19,6 +19,10 @@ export default function ReceiveScreen() {
     if (code) await Clipboard.setStringAsync(code);
   }
 
+  async function share() {
+    if (code) await Share.share({ message: code, title: "Moros payment code" });
+  }
+
   return (
     <Screen>
       <TopHeader />
@@ -29,12 +33,12 @@ export default function ReceiveScreen() {
           <View style={{ width: 106, height: 106, borderRadius: 30, backgroundColor: theme.accentSoft, alignItems: "center", justifyContent: "center" }}>
             <QrCode size={48} color={theme.accent} strokeWidth={1.3} />
           </View>
-          <Text style={{ color: theme.text, fontFamily: fonts.semibold, fontSize: 14, marginTop: 18 }}>{paymentDeployment.ready ? "Unlock payment identity" : "Network setup required"}</Text>
-          <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 12, marginTop: 5, textAlign: "center", maxWidth: 240 }}>{paymentDeployment.ready ? "Unlock locally to reveal this receive code." : "A verified deployment must be connected first."}</Text>
+          <Text style={{ color: theme.text, fontFamily: fonts.semibold, fontSize: 14, marginTop: 18 }}>{paymentDeployment.ready ? "Mobile identity unavailable" : "Network setup required"}</Text>
+          <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 12, marginTop: 5, textAlign: "center", maxWidth: 240 }}>{paymentDeployment.ready ? "Native identity derivation and secure storage are not connected in this build." : "A verified deployment must be connected first."}</Text>
         </View>
         <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
           <View style={{ flex: 1 }}><ActionButton label="Copy" icon={Copy} variant="secondary" onPress={() => void copy()} disabled={!code} /></View>
-          <View style={{ flex: 1 }}><ActionButton label="Share" icon={Share2} onPress={() => {}} disabled={!code} /></View>
+          <View style={{ flex: 1 }}><ActionButton label="Share" icon={Share2} onPress={() => void share()} disabled={!code} /></View>
         </View>
       </View>
       <View style={{ marginTop: 26, gap: 20, borderRadius: 26, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, padding: 20 }}>

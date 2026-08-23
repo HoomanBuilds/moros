@@ -20,7 +20,7 @@ export default function PaymentLinkEntry() {
         <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: theme.accent }} />
       </View>
       <Text style={{ color: theme.text, fontFamily: fonts.serif, fontSize: 34, marginTop: 20 }}>Opening request</Text>
-      <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 14, marginTop: 8 }}>Verifying the Moros payment link locally.</Text>
+      <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 14, marginTop: 8 }}>Checking the Moros payment-link format locally.</Text>
     </Screen>
   );
 }

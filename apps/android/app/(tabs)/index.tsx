@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpRight, CircleGauge, QrCode, ShieldCheck, WalletCards } from "lucide-react-native";
+import { ArrowDownToLine, ArrowUpRight, QrCode, ShieldCheck, WalletCards } from "lucide-react-native";
 import { router } from "expo-router";
 import { Text, View } from "react-native";
 import { EmptyActivity } from "@/components/empty-activity";
@@ -10,30 +10,28 @@ import { fonts } from "@/constants/theme";
 import { paymentDeployment } from "@/lib/deployment";
 import { useMorosTheme } from "@/providers/theme-provider";
 import { BalanceStrip } from "@/components/balance-strip";
+import { AvailabilityNotice } from "@/components/availability-notice";
 
 export default function HomeScreen() {
   const { theme } = useMorosTheme();
   return (
     <Screen>
-      <TopHeader showLock />
+      <TopHeader />
       <View style={{ marginBottom: 24 }}>
         <Text style={{ color: theme.muted, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2.2 }}>PRIVATE BALANCE</Text>
         <Text style={{ color: theme.text, fontFamily: fonts.serif, fontSize: 45, lineHeight: 48, letterSpacing: -1.2, marginTop: 10 }}>Your money, without the map.</Text>
       </View>
       <PrivateBalanceCard onDeposit={() => router.push("/deposit")} />
       <BalanceStrip />
-      {!paymentDeployment.ready ? (
-        <View style={{ marginTop: 14, borderRadius: 20, backgroundColor: theme.accentSoft, padding: 16, flexDirection: "row", gap: 12 }}>
-          <CircleGauge size={20} color={theme.accent} strokeWidth={1.8} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: theme.text, fontFamily: fonts.semibold, fontSize: 13 }}>{paymentDeployment.reason}</Text>
-            <Text style={{ color: theme.muted, fontFamily: fonts.sans, fontSize: 12, lineHeight: 18, marginTop: 3 }}>Private actions remain locked until this build has a verified deployment manifest.</Text>
-          </View>
-        </View>
-      ) : null}
+      <View style={{ marginTop: 14 }}>
+        <AvailabilityNotice
+          title={paymentDeployment.ready ? "Mobile private wallet not connected" : paymentDeployment.reason}
+          description={paymentDeployment.ready ? "The interface is ready, but native identity storage, proving, encrypted sync, and submission are not connected in this build." : "Private actions remain locked until this build has a verified deployment manifest."}
+        />
+      </View>
       <View style={{ marginTop: 34, marginBottom: 15, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
         <View>
-          <Text style={{ color: theme.accent, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2 }}>MOVE PRIVATELY</Text>
+          <Text style={{ color: theme.accentText, fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 2 }}>MOVE PRIVATELY</Text>
           <Text style={{ color: theme.text, fontFamily: fonts.serif, fontSize: 29, marginTop: 4 }}>What do you need?</Text>
         </View>
       </View>
