@@ -7,7 +7,7 @@
     "https://soroban-testnet.stellar.org"
   ],
   "apiUrls": [
-    "https://pay-testnet.moros.fun"
+    "https://moros-market.duckdns.org/payments-testnet"
   ],
   "horizonUrl": "https://horizon-testnet.stellar.org",
   "vault": "CCC5ZSQ46ACU2R2HY7IBDUY6TJNNYLUCRNOU3CV75ZNRQT2JBJ2KRRP5",
@@ -22,50 +22,50 @@
   "circuits": [
     {
       "name": "deposit",
-      "wasmUrl": "https://pay.moros.fun/zk/payments/deposit.wasm",
-      "provingKeyUrl": "https://pay.moros.fun/zk/payments/deposit.zkey",
+      "wasmUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/deposit.wasm",
+      "provingKeyUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/deposit.zkey",
       "schemaHash": "f7597a3b338a3af0edda6611764c8e6a1d4c6f8c5315b3d4af532e6dc2a3d179",
       "verificationKeyHash": "e50abdf87ce16e38f760bc0cc77881d7b5c12122e5dd1c307357a6ae981f3359"
     },
     {
       "name": "transfer_one",
-      "wasmUrl": "https://pay.moros.fun/zk/payments/transfer_one.wasm",
-      "provingKeyUrl": "https://pay.moros.fun/zk/payments/transfer_one.zkey",
+      "wasmUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/transfer_one.wasm",
+      "provingKeyUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/transfer_one.zkey",
       "schemaHash": "485ecebf7d24743f3d3835c0841ac9079bf71e3b24ba65b691215ec41b043cb6",
       "verificationKeyHash": "83f6f44cab873502c602575757e31d9f73770e37d8e75fc3b3059d7b0d21c479"
     },
     {
       "name": "transfer_two",
-      "wasmUrl": "https://pay.moros.fun/zk/payments/transfer_two.wasm",
-      "provingKeyUrl": "https://pay.moros.fun/zk/payments/transfer_two.zkey",
+      "wasmUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/transfer_two.wasm",
+      "provingKeyUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/transfer_two.zkey",
       "schemaHash": "06be08dbffa5ad409232b55ac304b4961e1d0ce14b266cb2c8c1c4303e78bbdf",
       "verificationKeyHash": "bbd01b900889507f63367506112313b7c678aea806c84c73fc479d6fbd250d5b"
     },
     {
       "name": "transfer_four",
-      "wasmUrl": "https://pay.moros.fun/zk/payments/transfer_four.wasm",
-      "provingKeyUrl": "https://pay.moros.fun/zk/payments/transfer_four.zkey",
+      "wasmUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/transfer_four.wasm",
+      "provingKeyUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/transfer_four.zkey",
       "schemaHash": "7a41be00a02e31159d8ba349bd4799884ce7c986f516920225ab844e30f5187b",
       "verificationKeyHash": "0de106633162fb0f96982fe51ed34cd7c654c2b3264fac55cd08b9f12bbe9505"
     },
     {
       "name": "withdraw_one",
-      "wasmUrl": "https://pay.moros.fun/zk/payments/withdraw_one.wasm",
-      "provingKeyUrl": "https://pay.moros.fun/zk/payments/withdraw_one.zkey",
+      "wasmUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/withdraw_one.wasm",
+      "provingKeyUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/withdraw_one.zkey",
       "schemaHash": "ab46be9c81a904f0f9083aa26721c23e3e885956832f3c9a8078e89b3f6e208e",
       "verificationKeyHash": "49e8ef19387e867fb01146b18ce84e5df3bd5a8516d1bb8eba37cbb03791c7e2"
     },
     {
       "name": "withdraw_two",
-      "wasmUrl": "https://pay.moros.fun/zk/payments/withdraw_two.wasm",
-      "provingKeyUrl": "https://pay.moros.fun/zk/payments/withdraw_two.zkey",
+      "wasmUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/withdraw_two.wasm",
+      "provingKeyUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/withdraw_two.zkey",
       "schemaHash": "2fa632144c53937ca326623f60c65ea36aa036300acb4784402d0628dae7c3be",
       "verificationKeyHash": "bd92127d42e4a37fef6f357d021f389af46ca70dd883282918e453e9e85a1ad4"
     },
     {
       "name": "withdraw_four",
-      "wasmUrl": "https://pay.moros.fun/zk/payments/withdraw_four.wasm",
-      "provingKeyUrl": "https://pay.moros.fun/zk/payments/withdraw_four.zkey",
+      "wasmUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/withdraw_four.wasm",
+      "provingKeyUrl": "https://moros-market.duckdns.org/payments-testnet/zk/payments/withdraw_four.zkey",
       "schemaHash": "348179719a7a3bba4be01f1ec9bdce4ab11c02505f518ff9c1dbe1cf1ed13371",
       "verificationKeyHash": "57a2aefec1eb4850ff28df0f3c99090493e147898d81f952bd618fcb8364e456"
     }

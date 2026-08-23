@@ -180,6 +180,7 @@ export interface VerifiedPaymentLink {
   merchantLabel?: string;
   createdAt: number;
   expiresAt: number;
+  payloadHash: Uint8Array;
 }
 
 export async function verifyPaymentRequest(
@@ -206,6 +207,7 @@ export async function verifyPaymentRequest(
       merchantLabel: request.merchant_label,
       createdAt: Number(request.created_at),
       expiresAt: Number(request.expires_at),
+      payloadHash: request.payload_hash,
     };
   } finally {
     request.free();

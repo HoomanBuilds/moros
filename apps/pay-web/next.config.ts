@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   agentRules: false,
   reactStrictMode: true,
   output: "standalone",
+  outputFileTracingRoot: path.resolve(process.cwd(), "../.."),
   transpilePackages: ["@moros/payments-client", "@moros/payments-crypto-web"],
   turbopack: {
     root: path.resolve(process.cwd(), "../.."),

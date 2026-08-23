@@ -8,12 +8,18 @@ import { UsdcIcon } from "@/components/payment-icons";
 import { paymentDeployment } from "@/lib/deployment";
 import { useStellarWallet } from "@/components/stellar-wallet-provider";
 import { formatUsdcAtomic } from "@/lib/public-usdc";
+import { usePaymentWallet } from "@/components/wallet-provider";
+import { paymentProgressLabel } from "@/lib/payment-status";
+import type { PaymentActionProgress } from "@/lib/payment-actions";
 
 export default function DepositPage() {
   const [amount, setAmount] = useState("");
   const [reviewed, setReviewed] = useState(false);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState<PaymentActionProgress | null>(null);
+  const [transactionHash, setTransactionHash] = useState("");
   const wallet = useStellarWallet();
+  const privateWallet = usePaymentWallet();
   const busy = wallet.status === "connecting" || wallet.status === "loading";
   async function review() {
     setError("");
@@ -26,6 +32,24 @@ export default function DepositPage() {
       setReviewed(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not review this deposit.");
+    }
+  }
+  async function submit() {
+    if (!wallet.address) return;
+    setError("");
+    setTransactionHash("");
+    try {
+      const core = await import("@moros/payments-crypto-web");
+      await core.default();
+      const hash = await privateWallet.deposit(wallet.address, BigInt(core.parse_usdc_amount(amount)), setProgress);
+      setTransactionHash(hash);
+      setReviewed(false);
+      setAmount("");
+      await wallet.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not deposit private USDC.");
+    } finally {
+      setProgress(null);
     }
   }
   return (
@@ -51,9 +75,10 @@ export default function DepositPage() {
           {!reviewed ? (
             <button className="button primary" type="button" onClick={() => void review()} disabled={!paymentDeployment.ready || !wallet.address || wallet.status !== "ready" || wallet.accountActive !== true || wallet.hasTrustline !== true || !amount}><ArrowDownToLine size={18} />Review deposit</button>
           ) : (
-            <div className="preparedTransfer"><div className="reviewLine"><span>From public wallet</span><strong>{amount} USDC</strong></div><div className="reviewLine"><span>Into private balance</span><strong>{amount} USDC</strong></div><button className="button primary" type="button" disabled>Deposit proving unavailable</button></div>
+            <div className="preparedTransfer"><div className="reviewLine"><span>From public wallet</span><strong>{amount} USDC</strong></div><div className="reviewLine"><span>Into private balance</span><strong>{amount} USDC</strong></div><button className="button primary" type="button" onClick={() => void submit()} disabled={progress !== null}>{progress ? paymentProgressLabel(progress) : "Add to private balance"}</button></div>
           )}
-          <p className="finePrint">Review is local. No Stellar transaction is created until deposit proving and submission are connected.</p>
+          {transactionHash && <p className="successText" role="status">Deposit confirmed. Transaction {transactionHash.slice(0, 8)}...{transactionHash.slice(-8)}</p>}
+          <p className="finePrint">The proof is generated in this browser. Freighter asks for one approval before the deposit is submitted.</p>
         </section>
         <aside className="transactionAside"><p className="eyebrow">Entry boundary</p><div className="asideMetric"><span>Asset</span><strong>Circle USDC</strong></div><div className="asideMetric"><span>Source</span><strong>Connected Stellar wallet</strong></div><div className="asideMetric"><span>After deposit</span><strong>Reusable private notes</strong></div><p className="finePrint">One deposit can fund future payments without reconnecting the public wallet each time.</p></aside>
         </div>

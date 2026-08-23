@@ -1,4 +1,5 @@
 import { validatePaymentDeployment, type PaymentDeployment } from "@moros/payments-client";
+import testnetDeployment from "../../../deployments/payments-testnet.json";
 
 export type DeploymentState =
   | { ready: true; deployment: Readonly<PaymentDeployment> }
@@ -15,4 +16,8 @@ export function parsePaymentDeployment(raw: string | undefined): DeploymentState
   }
 }
 
-export const paymentDeployment = parsePaymentDeployment(process.env.NEXT_PUBLIC_PAYMENT_DEPLOYMENT);
+const configuredDeployment = process.env.NEXT_PUBLIC_PAYMENT_DEPLOYMENT?.trim();
+
+export const paymentDeployment = parsePaymentDeployment(
+  configuredDeployment || JSON.stringify(testnetDeployment),
+);

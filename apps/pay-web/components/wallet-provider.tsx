@@ -10,6 +10,7 @@ import {
   loadPrivateProfile,
   updatePrivateProfile,
   withContact,
+  withPaymentActivity,
   withPaymentRequest,
   withPaymentRequestStatus,
   withoutContact,
@@ -23,6 +24,12 @@ import {
   createPrivateProfileSyncSession,
   type PrivateProfileSyncSession,
 } from "@/lib/private-profile-sync";
+import {
+  depositPrivateUsdc,
+  transferPrivateUsdc,
+  withdrawPrivateUsdc,
+  type PaymentActionProgress,
+} from "@/lib/payment-actions";
 
 type WalletStatus = "loading" | "empty" | "locked" | "backup" | "unlocked";
 
@@ -53,6 +60,15 @@ interface PaymentWalletContext {
   lock(): void;
   erase(): Promise<void>;
   refreshBalance(): Promise<void>;
+  deposit(source: string, amountAtomic: bigint, progress?: (value: PaymentActionProgress) => void): Promise<string>;
+  transfer(input: {
+    recipientCode: string;
+    recipientFingerprint: string;
+    amountAtomic: bigint;
+    memo: string;
+    payloadHash?: bigint;
+  }, progress?: (value: PaymentActionProgress) => void): Promise<string>;
+  withdraw(destination: string, amountAtomic: bigint, progress?: (value: PaymentActionProgress) => void): Promise<string>;
   rotateReceiveIdentity(): Promise<void>;
   reserveRequestIdentity(): Promise<number>;
   saveContact(recipient: PrivateRecipient): Promise<void>;
@@ -98,6 +114,7 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
   const balancePendingRef = useRef<Promise<void> | null>(null);
   const lastBalanceRefreshRef = useRef(0);
   const refreshBalanceRef = useRef<(() => Promise<void>) | null>(null);
+  const operationRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -456,6 +473,105 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
     await changeProfile((current) => withPaymentRequestStatus(current, requestId, requestStatus));
   }, [changeProfile]);
 
+  const runOperation = useCallback(async (operation: () => Promise<string>) => {
+    if (operationRef.current) throw new Error("Another private payment is already in progress.");
+    operationRef.current = true;
+    try {
+      const hash = await operation();
+      await refreshBalance();
+      window.setTimeout(() => void refreshBalance(), 5_000);
+      return hash;
+    } finally {
+      operationRef.current = false;
+    }
+  }, [refreshBalance]);
+
+  const deposit = useCallback(async (
+    source: string,
+    amountAtomic: bigint,
+    progress?: (value: PaymentActionProgress) => void,
+  ) => {
+    if (!paymentDeployment.ready || !identity) throw new Error("Unlock the private wallet first.");
+    const deployment = paymentDeployment.deployment;
+    const hash = await runOperation(() => depositPrivateUsdc({
+      deployment,
+      source,
+      recipientCode: identity.paymentCode,
+      amountAtomic,
+      progress,
+    }));
+    try {
+      await changeProfile((current) => withPaymentActivity(current, {
+        transactionHash: hash,
+        kind: "deposit",
+        amountAtomic: amountAtomic.toString(),
+        createdAt: Date.now(),
+      }));
+    } catch {}
+    return hash;
+  }, [changeProfile, identity, runOperation]);
+
+  const transfer = useCallback(async (
+    input: { recipientCode: string; recipientFingerprint: string; amountAtomic: bigint; memo: string; payloadHash?: bigint },
+    progress?: (value: PaymentActionProgress) => void,
+  ) => {
+    if (!paymentDeployment.ready || !identity || !balanceSessionRef.current) {
+      throw new Error("Unlock the private wallet first.");
+    }
+    const deployment = paymentDeployment.deployment;
+    const session = balanceSessionRef.current;
+    const hash = await runOperation(() => transferPrivateUsdc({
+      deployment,
+      senderCode: identity.paymentCode,
+      recipientCode: input.recipientCode,
+      amountAtomic: input.amountAtomic,
+      memo: input.memo,
+      payloadHash: input.payloadHash,
+      prepareSpend: (requiredAtomic, signal) => session.prepareSpend(requiredAtomic, signal),
+      progress,
+    }));
+    try {
+      await changeProfile((current) => withPaymentActivity(current, {
+        transactionHash: hash,
+        kind: "send",
+        amountAtomic: input.amountAtomic.toString(),
+        recipientFingerprint: input.recipientFingerprint,
+        createdAt: Date.now(),
+      }));
+    } catch {}
+    return hash;
+  }, [changeProfile, identity, runOperation]);
+
+  const withdraw = useCallback(async (
+    destination: string,
+    amountAtomic: bigint,
+    progress?: (value: PaymentActionProgress) => void,
+  ) => {
+    if (!paymentDeployment.ready || !identity || !balanceSessionRef.current) {
+      throw new Error("Unlock the private wallet first.");
+    }
+    const deployment = paymentDeployment.deployment;
+    const session = balanceSessionRef.current;
+    const hash = await runOperation(() => withdrawPrivateUsdc({
+      deployment,
+      senderCode: identity.paymentCode,
+      destination,
+      amountAtomic,
+      prepareSpend: (requiredAtomic, signal) => session.prepareSpend(requiredAtomic, signal),
+      progress,
+    }));
+    try {
+      await changeProfile((current) => withPaymentActivity(current, {
+        transactionHash: hash,
+        kind: "withdraw",
+        amountAtomic: amountAtomic.toString(),
+        publicAccount: destination,
+        createdAt: Date.now(),
+      }));
+    } catch {}
+    return hash;
+  }, [changeProfile, identity, runOperation]);
+
   const value = useMemo<PaymentWalletContext>(() => ({
     status,
     identity,
@@ -471,6 +587,9 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
     lock,
     erase,
     refreshBalance,
+    deposit,
+    transfer,
+    withdraw,
     rotateReceiveIdentity,
     reserveRequestIdentity,
     saveContact,
@@ -479,7 +598,7 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
     savePaymentRequest,
     updatePaymentRequestStatus,
     clearError: () => setError(null),
-  }), [status, identity, recoveryPhrase, error, balance, profile, recoverySync, create, activate, restore, unlock, lock, erase, refreshBalance, rotateReceiveIdentity, reserveRequestIdentity, saveContact, removeContact, rememberRecipient, savePaymentRequest, updatePaymentRequestStatus]);
+  }), [status, identity, recoveryPhrase, error, balance, profile, recoverySync, create, activate, restore, unlock, lock, erase, refreshBalance, deposit, transfer, withdraw, rotateReceiveIdentity, reserveRequestIdentity, saveContact, removeContact, rememberRecipient, savePaymentRequest, updatePaymentRequestStatus]);
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
 }

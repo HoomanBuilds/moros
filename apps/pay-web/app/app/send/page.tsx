@@ -13,11 +13,15 @@ import {
   type PaymentIdentityView,
 } from "@/lib/payment-identity";
 import { formatUsdcAtomic } from "@/lib/public-usdc";
+import { bigIntFromBytes } from "@/lib/payment-protocol";
+import { paymentProgressLabel } from "@/lib/payment-status";
+import type { PaymentActionProgress } from "@/lib/payment-actions";
 
 type PreparedRecipient = PaymentIdentityView & {
   label?: string;
   fixedAmount: boolean;
   amountAtomic: string;
+  payloadHash?: bigint;
 };
 
 export default function SendPage() {
@@ -28,6 +32,8 @@ export default function SendPage() {
   const [prepared, setPrepared] = useState<PreparedRecipient | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState<PaymentActionProgress | null>(null);
+  const [transactionHash, setTransactionHash] = useState("");
   const contacts = wallet.profile.value?.contacts ?? [];
   const recents = wallet.profile.value?.recentRecipients ?? [];
   const suggestions = [...contacts, ...recents.filter((recent) => (
@@ -64,6 +70,7 @@ export default function SendPage() {
           label: request.merchantLabel,
           fixedAmount: Boolean(request.amountAtomic),
           amountAtomic,
+          payloadHash: bigIntFromBytes(request.payloadHash),
         });
       } else {
         const amountAtomic = core.parse_usdc_amount(amount);
@@ -80,6 +87,36 @@ export default function SendPage() {
       setError(cause instanceof Error ? cause.message : "Could not verify this private transfer.");
     } finally {
       setPending(false);
+    }
+  }
+
+  async function submit() {
+    if (!prepared) return;
+    setError("");
+    setTransactionHash("");
+    try {
+      const hash = await wallet.transfer({
+        recipientCode: prepared.paymentCode,
+        recipientFingerprint: prepared.recipientFingerprint,
+        amountAtomic: BigInt(prepared.amountAtomic),
+        memo,
+        payloadHash: prepared.payloadHash,
+      }, setProgress);
+      setTransactionHash(hash);
+      await wallet.rememberRecipient({
+        paymentCode: prepared.paymentCode,
+        recipientFingerprint: prepared.recipientFingerprint,
+        label: prepared.label || prepared.recipientFingerprint,
+        updatedAt: Date.now(),
+      });
+      setPrepared(null);
+      setRecipient("");
+      setAmount("");
+      setMemo("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not submit this private transfer.");
+    } finally {
+      setProgress(null);
     }
   }
 
@@ -113,10 +150,11 @@ export default function SendPage() {
           {prepared && (
             <div className="preparedTransfer">
               <div className="privacyItem"><span><CheckCircle2 size={18} /></span><div><strong>{prepared.label || "Recipient verified"}</strong><small>{prepared.recipientFingerprint}</small></div></div>
-              <button className="button primary" type="button" disabled>Proof and relay unavailable</button>
-              <p className="finePrint">Transfer submission remains disabled until the browser proving worker and payment relay are connected. No funds have moved.</p>
+              <button className="button primary" type="button" onClick={() => void submit()} disabled={progress !== null}>{progress ? paymentProgressLabel(progress) : "Send private USDC"}</button>
+              <p className="finePrint">The proof is generated locally. A relay submits the encrypted payment without learning its recipient or amount.</p>
             </div>
           )}
+          {transactionHash && <p className="successText" role="status">Payment confirmed. Transaction {transactionHash.slice(0, 8)}...{transactionHash.slice(-8)}</p>}
         </form>
         <aside className="transactionAside">
           <p className="eyebrow">Private balance</p>

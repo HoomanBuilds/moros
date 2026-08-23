@@ -10,6 +10,11 @@ import {
   derivePaymentIdentityMaterial,
   type PaymentIdentityMaterial,
 } from "./payment-identity";
+import {
+  noteNullifier,
+  selectPaymentNotes,
+  type PaymentNote,
+} from "./payment-protocol";
 
 const FIELD =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n;
@@ -28,16 +33,19 @@ type IndexedPaymentOutput = {
   actionId: string;
 };
 
-type RecoveredPaymentNote = {
-  amountAtomic: bigint;
-  nullifier: bigint;
-};
+type RecoveredPaymentNote = PaymentNote;
 
 export type PrivateBalanceSnapshot = {
   spendableAtomic: bigint;
   scannedOutputs: number;
   ownedNotes: number;
   spendableNotes: number;
+};
+
+export type PreparedPrivateSpend = {
+  commitments: bigint[];
+  notes: PaymentNote[];
+  totalAtomic: bigint;
 };
 
 type ContractMethodResult<T> = { result: T };
@@ -189,6 +197,7 @@ export async function nullifierSpent(
 
 export interface PrivateBalanceSession {
   refresh(signal?: AbortSignal): Promise<PrivateBalanceSnapshot>;
+  prepareSpend(requiredAtomic: bigint, signal?: AbortSignal): Promise<PreparedPrivateSpend>;
   expand(maximumChildIndex: number): Promise<void>;
   dispose(): void;
 }
@@ -210,6 +219,8 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
   private readonly readSpent: (nullifier: bigint) => Promise<boolean>;
   private readonly recovered = new Map<string, RecoveredPaymentNote>();
   private readonly unowned = new Map<string, ReturnType<typeof indexedOutput>>();
+  private readonly commitments: bigint[] = [];
+  private spendable: RecoveredPaymentNote[] = [];
   private disposed = false;
   private refreshPending: Promise<PrivateBalanceSnapshot> | null = null;
   private operationQueue: Promise<void> = Promise.resolve();
@@ -267,6 +278,18 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
     return this.refreshPending;
   }
 
+  async prepareSpend(requiredAtomic: bigint, signal?: AbortSignal): Promise<PreparedPrivateSpend> {
+    return this.enqueue(async () => {
+      await this.refreshCurrent(signal);
+      const notes = selectPaymentNotes(this.spendable, requiredAtomic);
+      return {
+        commitments: [...this.commitments],
+        notes,
+        totalAtomic: notes.reduce((total, note) => total + note.amount, 0n),
+      };
+    });
+  }
+
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.operationQueue.then(operation, operation);
     this.operationQueue = result.then(() => undefined, () => undefined);
@@ -279,6 +302,11 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
       pageSize: 100,
       decrypt: async (raw): Promise<RecoveredPaymentNote | null> => {
         const output = indexedOutput(raw);
+        const commitment = BigInt(output.commitment);
+        if (this.commitments[output.leafIndex] !== undefined && this.commitments[output.leafIndex] !== commitment) {
+          throw new Error("Payment commitment history changed unexpectedly.");
+        }
+        this.commitments[output.leafIndex] = commitment;
         const recovered = await this.recoverOutput(output, this.identities);
         if (recovered === undefined) {
           this.unowned.set(output.commitment, output);
@@ -302,8 +330,9 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
       batch.forEach((note, index) => spent.set(note.nullifier, states[index]));
     }
     const spendable = recovered.filter((note) => !spent.get(note.nullifier));
+    this.spendable = spendable;
     return {
-      spendableAtomic: spendable.reduce((total, note) => total + note.amountAtomic, 0n),
+      spendableAtomic: spendable.reduce((total, note) => total + note.amount, 0n),
       scannedOutputs: result.checkpoint,
       ownedNotes: recovered.length,
       spendableNotes: spendable.length,
@@ -330,18 +359,33 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
       }
       try {
         if (note.purpose !== PAYMENT_NOTE_PURPOSE) throw new Error("Payment note has an unsupported purpose.");
-        const amountAtomic = BigInt(note.amount_atomic);
-        if (amountAtomic < 0n) throw new Error("Payment note amount is invalid.");
-        if (amountAtomic === 0n) return null;
-        return {
-          amountAtomic,
-          nullifier: paymentNoteNullifier({
-            noteDomain: this.domain,
-            commitment: note.commitment,
-            noteId: note.note_id,
-            spendSecret: identity.spendSecret,
-          }),
+        const amount = BigInt(note.amount_atomic);
+        if (amount < 0n) throw new Error("Payment note amount is invalid.");
+        if (amount === 0n) return null;
+        const privateData = note.private_data;
+        const viewingPublicKey = note.viewing_public_key;
+        const spendSecret = bigIntFromBytes(identity.spendSecret, "le");
+        const recoveredNote: PaymentNote = {
+          purpose: BigInt(note.purpose),
+          amount,
+          spendSecret,
+          viewingPublicKey: [
+            bigIntFromBytes(viewingPublicKey.slice(0, 32)),
+            bigIntFromBytes(viewingPublicKey.slice(32, 64)),
+          ],
+          noteId: bigIntFromBytes(note.note_id),
+          payloadHash: bigIntFromBytes(note.payload_hash),
+          privateData: [
+            bigIntFromBytes(privateData.slice(0, 32)),
+            bigIntFromBytes(privateData.slice(32, 64)),
+          ],
+          blinding: bigIntFromBytes(note.blinding),
+          commitment: BigInt(output.commitment),
+          nullifier: 0n,
+          leafIndex: output.leafIndex,
         };
+        recoveredNote.nullifier = noteNullifier(recoveredNote, this.domain);
+        return recoveredNote;
       } finally {
         note.free();
       }
@@ -359,6 +403,8 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
     this.identities.length = 0;
     this.recovered.clear();
     this.unowned.clear();
+    this.commitments.length = 0;
+    this.spendable = [];
   }
 }
 

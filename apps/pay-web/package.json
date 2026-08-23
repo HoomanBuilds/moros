@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "overrides": {
+    "bfj": "7.0.2"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsx lib/wallet-crypto.test.ts && tsx lib/deployment.test.ts && tsx lib/product-urls.test.ts && tsx lib/browser-share.test.ts && tsx lib/payment-link.test.ts && tsx lib/payment-request.test.ts && tsx lib/private-profile.test.ts && tsx lib/private-profile-sync.test.ts && tsx lib/public-usdc.test.ts && tsx lib/private-balance.test.ts"
+    "verify:proof": "tsx scripts/verify-payment-proof.ts",
+    "test": "tsx lib/wallet-crypto.test.ts && tsx lib/deployment.test.ts && tsx lib/product-urls.test.ts && tsx lib/browser-share.test.ts && tsx lib/payment-link.test.ts && tsx lib/payment-request.test.ts && tsx lib/private-profile.test.ts && tsx lib/private-profile-sync.test.ts && tsx lib/public-usdc.test.ts && tsx lib/private-balance.test.ts && tsx lib/payment-protocol.test.ts"
   },
   "dependencies": {
     "@moros/payments-client": "file:../../packages/payments-client",
@@ -22,7 +26,8 @@
     "next": "16.3.2",
     "qrcode": "1.5.4",
     "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "react-dom": "19.1.1",
+    "snarkjs": "^0.7.6"
   },
   "devDependencies": {
     "@types/node": "22.18.6",

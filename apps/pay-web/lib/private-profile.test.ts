@@ -10,6 +10,7 @@ import {
   withContact,
   withPaymentRequest,
   withPaymentRequestStatus,
+  withPaymentActivity,
   mergePrivateProfiles,
   withRecentRecipient,
   withoutContact,
@@ -61,6 +62,19 @@ assert.equal(withRequest.paymentRequests.length, 1);
 assert.equal(withPaymentRequestStatus(withRequest, request.requestId, "cancelled").paymentRequests[0].status, "cancelled");
 assert.throws(() => withPaymentRequestStatus(withRequest, "missing", "cancelled"), /not found/);
 assert.deepEqual(validatePrivateProfile({ ...profile, paymentRequests: undefined }).paymentRequests, []);
+
+const activity = {
+  transactionHash: "ab".repeat(32),
+  kind: "send" as const,
+  amountAtomic: "25000000",
+  recipientFingerprint: recipient.recipientFingerprint,
+  createdAt: 1_780_000_100_000,
+};
+const withActivity = withPaymentActivity(profile, activity);
+assert.deepEqual(withActivity.paymentActivities, [activity]);
+assert.equal(withPaymentActivity(withActivity, activity).paymentActivities.length, 1);
+assert.deepEqual(validatePrivateProfile({ ...profile, paymentActivities: undefined }).paymentActivities, []);
+assert.throws(() => withPaymentActivity(profile, { ...activity, amountAtomic: "0" }), /activity/);
 
 const removed = withoutContact(profile, recipient.paymentCode, recipient.updatedAt + 1);
 assert.equal(mergePrivateProfiles(profile, removed).contacts.length, 0);

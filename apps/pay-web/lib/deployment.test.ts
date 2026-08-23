@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parsePaymentDeployment } from "./deployment";
+import { parsePaymentDeployment, paymentDeployment } from "./deployment";
 import { testDeployment } from "./test-deployment";
 
 assert.deepEqual(parsePaymentDeployment(undefined), {
@@ -19,5 +19,9 @@ assert.equal(parsePaymentDeployment("{").ready, false);
 assert.equal(parsePaymentDeployment(JSON.stringify({ ...deployment, network: "stellar:pubnet" })).ready, false);
 assert.equal(parsePaymentDeployment(JSON.stringify({ ...deployment, extra: true })).ready, false);
 assert.equal(parsePaymentDeployment(JSON.stringify({ ...deployment, rpcUrls: ["http://rpc.example.com"] })).ready, false);
+assert.equal(paymentDeployment.ready, true);
+if (paymentDeployment.ready) {
+  assert.equal(paymentDeployment.deployment.vault, "CCC5ZSQ46ACU2R2HY7IBDUY6TJNNYLUCRNOU3CV75ZNRQT2JBJ2KRRP5");
+}
 
 console.log("payment deployment tests passed");

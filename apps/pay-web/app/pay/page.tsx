@@ -9,6 +9,9 @@ import { paymentDeployment } from "@/lib/deployment";
 import { verifyPaymentRequest, type VerifiedPaymentLink } from "@/lib/payment-identity";
 import { formatUsdcAtomic } from "@/lib/public-usdc";
 import { productUrls } from "@/lib/product-urls";
+import { bigIntFromBytes } from "@/lib/payment-protocol";
+import { paymentProgressLabel } from "@/lib/payment-status";
+import type { PaymentActionProgress } from "@/lib/payment-actions";
 
 type RequestState = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; request: VerifiedPaymentLink };
 
@@ -57,6 +60,8 @@ function VerifiedRequest({ request }: { request: VerifiedPaymentLink }) {
   const [amount, setAmount] = useState("");
   const [reviewed, setReviewed] = useState(false);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState<PaymentActionProgress | null>(null);
+  const [transactionHash, setTransactionHash] = useState("");
   useEffect(() => {
     if (!request.amountAtomic) return;
     import("@moros/payments-crypto-web").then(async (core) => {
@@ -81,6 +86,28 @@ function VerifiedRequest({ request }: { request: VerifiedPaymentLink }) {
       setError(cause instanceof Error ? cause.message : "Could not review this private payment.");
     }
   }
+  async function submit() {
+    setError("");
+    setTransactionHash("");
+    try {
+      const core = await import("@moros/payments-crypto-web");
+      await core.default();
+      const amountAtomic = BigInt(request.amountAtomic ?? core.parse_usdc_amount(amount));
+      const hash = await wallet.transfer({
+        recipientCode: request.paymentCode,
+        recipientFingerprint: request.recipientFingerprint,
+        amountAtomic,
+        memo: request.merchantLabel ? `Payment to ${request.merchantLabel}` : "Moros payment request",
+        payloadHash: bigIntFromBytes(request.payloadHash),
+      }, setProgress);
+      setTransactionHash(hash);
+      setReviewed(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not submit this private payment.");
+    } finally {
+      setProgress(null);
+    }
+  }
   return (
     <div className="transactionLayout">
     <section className="panel formStack transactionForm">
@@ -91,8 +118,9 @@ function VerifiedRequest({ request }: { request: VerifiedPaymentLink }) {
       <div className="privacyItem"><span><Clock3 size={18} /></span><div><strong>Expires {new Date(request.expiresAt * 1000).toLocaleString()}</strong><small>Expired requests cannot be submitted.</small></div></div>
       <div className="privacyItem"><span><ShieldCheck size={18} /></span><div><strong>Private payment</strong><small>The recipient and amount are encrypted inside the Moros payment flow.</small></div></div>
       {error && <p className="errorText" role="alert">{error}</p>}
-      {!reviewed ? <button className="button primary" type="button" onClick={() => void review()} disabled={!amount}>Review private payment</button> : <div className="preparedTransfer"><div className="reviewLine"><span>Recipient</span><strong>{request.recipientFingerprint}</strong></div><div className="reviewLine"><span>Private amount</span><strong>{amount} USDC</strong></div><button className="button primary" type="button" disabled>Proof and relay unavailable</button></div>}
-      <p className="finePrint">Review verifies the amount and available private balance locally. No payment is submitted yet.</p>
+      {!reviewed ? <button className="button primary" type="button" onClick={() => void review()} disabled={!amount}>Review private payment</button> : <div className="preparedTransfer"><div className="reviewLine"><span>Recipient</span><strong>{request.recipientFingerprint}</strong></div><div className="reviewLine"><span>Private amount</span><strong>{amount} USDC</strong></div><button className="button primary" type="button" onClick={() => void submit()} disabled={progress !== null}>{progress ? paymentProgressLabel(progress) : "Pay privately"}</button></div>}
+      {transactionHash && <p className="successText" role="status">Payment confirmed. Transaction {transactionHash.slice(0, 8)}...{transactionHash.slice(-8)}</p>}
+      <p className="finePrint">The browser verifies the request and generates the payment proof locally.</p>
     </section>
     <aside className="transactionAside"><p className="eyebrow">Verified request</p><div className="asideBalance"><span>Available privately</span><strong>{formatUsdcAtomic(wallet.balance.spendableAtomic)}</strong><small>USDC</small></div><div className="asideMetric"><span>Signature</span><strong>Verified locally</strong></div><div className="asideMetric"><span>Expiry</span><strong>{new Date(request.expiresAt * 1000).toLocaleDateString()}</strong></div><p className="finePrint">The request controls its recipient, asset, amount, and expiration without exposing a public Stellar address.</p></aside>
     </div>

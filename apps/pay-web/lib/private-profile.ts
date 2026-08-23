@@ -13,6 +13,7 @@ const MAX_CONTACTS = 20;
 const MAX_RECENT_RECIPIENTS = 8;
 const MAX_CONTACT_TOMBSTONES = 40;
 const MAX_PAYMENT_REQUESTS = 12;
+const MAX_PAYMENT_ACTIVITIES = 50;
 
 let initialized: Promise<typeof import("@moros/payments-crypto-web")> | null = null;
 let profileQueue: Promise<void> = Promise.resolve();
@@ -93,6 +94,18 @@ export interface PrivateProfile {
   contactTombstones: PrivateContactTombstone[];
   recentRecipients: PrivateRecipient[];
   paymentRequests: PrivatePaymentRequest[];
+  paymentActivities: PrivatePaymentActivity[];
+}
+
+export type PrivatePaymentActivityKind = "deposit" | "send" | "withdraw";
+
+export interface PrivatePaymentActivity {
+  transactionHash: string;
+  kind: PrivatePaymentActivityKind;
+  amountAtomic: string;
+  recipientFingerprint?: string;
+  publicAccount?: string;
+  createdAt: number;
 }
 
 export type PrivatePaymentRequestStatus = "active" | "cancelled" | "paid";
@@ -134,6 +147,37 @@ export function emptyPrivateProfile(): PrivateProfile {
     contactTombstones: [],
     recentRecipients: [],
     paymentRequests: [],
+    paymentActivities: [],
+  };
+}
+
+function normalizePaymentActivity(value: unknown): PrivatePaymentActivity {
+  if (!value || typeof value !== "object") throw new Error("Private payment activity is invalid.");
+  const activity = value as Record<string, unknown>;
+  if (activity.kind !== "deposit" && activity.kind !== "send" && activity.kind !== "withdraw") {
+    throw new Error("Private payment activity kind is invalid.");
+  }
+  const transactionHash = safeText(activity.transactionHash, 64, "transaction hash").toLowerCase();
+  const amountAtomic = safeText(activity.amountAtomic, 40, "activity amount");
+  if (!/^[0-9a-f]{64}$/u.test(transactionHash) || !/^\d+$/u.test(amountAtomic) || BigInt(amountAtomic) <= 0n) {
+    throw new Error("Private payment activity is invalid.");
+  }
+  const recipientFingerprint = activity.recipientFingerprint === undefined
+    ? undefined
+    : safeText(activity.recipientFingerprint, 32, "activity recipient fingerprint");
+  const publicAccount = activity.publicAccount === undefined
+    ? undefined
+    : safeText(activity.publicAccount, 128, "activity public account");
+  if (publicAccount && !StrKey.isValidEd25519PublicKey(publicAccount)) {
+    throw new Error("Private payment activity account is invalid.");
+  }
+  return {
+    transactionHash,
+    kind: activity.kind,
+    amountAtomic,
+    recipientFingerprint,
+    publicAccount,
+    createdAt: safeTimestamp(activity.createdAt),
   };
 }
 
@@ -196,10 +240,15 @@ export function validatePrivateProfile(value: unknown): PrivateProfile {
   if (!Array.isArray(rawPaymentRequests) || rawPaymentRequests.length > MAX_PAYMENT_REQUESTS) {
     throw new Error("Private payment request list is invalid.");
   }
+  const rawPaymentActivities = profile.paymentActivities ?? [];
+  if (!Array.isArray(rawPaymentActivities) || rawPaymentActivities.length > MAX_PAYMENT_ACTIVITIES) {
+    throw new Error("Private payment activity list is invalid.");
+  }
   const contacts = profile.contacts.map(normalizeRecipient);
   const contactTombstones = rawTombstones.map(normalizeTombstone);
   const recentRecipients = profile.recentRecipients.map(normalizeRecipient);
   const paymentRequests = rawPaymentRequests.map(normalizePaymentRequest);
+  const paymentActivities = rawPaymentActivities.map(normalizePaymentActivity);
   if (new Set(contacts.map((contact) => contact.paymentCode)).size !== contacts.length) {
     throw new Error("Private contact list contains duplicates.");
   }
@@ -212,6 +261,9 @@ export function validatePrivateProfile(value: unknown): PrivateProfile {
   if (new Set(paymentRequests.map((request) => request.requestId)).size !== paymentRequests.length) {
     throw new Error("Private payment request list contains duplicates.");
   }
+  if (new Set(paymentActivities.map((activity) => activity.transactionHash)).size !== paymentActivities.length) {
+    throw new Error("Private payment activity list contains duplicates.");
+  }
   const removedAt = new Map(contactTombstones.map((entry) => [entry.paymentCode, entry.deletedAt]));
   const liveContacts = contacts.filter((contact) => (removedAt.get(contact.paymentCode) ?? -1) < contact.updatedAt);
   return {
@@ -222,6 +274,7 @@ export function validatePrivateProfile(value: unknown): PrivateProfile {
     contactTombstones,
     recentRecipients,
     paymentRequests,
+    paymentActivities,
   };
 }
 
@@ -483,6 +536,20 @@ export function withPaymentRequestStatus(
   });
 }
 
+export function withPaymentActivity(
+  profile: PrivateProfile,
+  activity: PrivatePaymentActivity,
+): PrivateProfile {
+  const normalized = normalizePaymentActivity(activity);
+  return validatePrivateProfile({
+    ...profile,
+    paymentActivities: [
+      normalized,
+      ...profile.paymentActivities.filter((current) => current.transactionHash !== normalized.transactionHash),
+    ].slice(0, MAX_PAYMENT_ACTIVITIES),
+  });
+}
+
 export function mergePrivateProfiles(left: PrivateProfile, right: PrivateProfile): PrivateProfile {
   const first = validatePrivateProfile(left);
   const second = validatePrivateProfile(right);
@@ -520,6 +587,13 @@ export function mergePrivateProfiles(left: PrivateProfile, right: PrivateProfile
     const current = paymentRequests.get(request.requestId);
     if (!current || request.updatedAt > current.updatedAt) paymentRequests.set(request.requestId, request);
   }
+  const paymentActivities = new Map<string, PrivatePaymentActivity>();
+  for (const activity of [...first.paymentActivities, ...second.paymentActivities]) {
+    const current = paymentActivities.get(activity.transactionHash);
+    if (!current || activity.createdAt > current.createdAt) {
+      paymentActivities.set(activity.transactionHash, activity);
+    }
+  }
   return validatePrivateProfile({
     format: PROFILE_FORMAT,
     activeReceiveIndex,
@@ -534,5 +608,8 @@ export function mergePrivateProfiles(left: PrivateProfile, right: PrivateProfile
     paymentRequests: [...paymentRequests.values()]
       .sort((leftRequest, rightRequest) => rightRequest.createdAt - leftRequest.createdAt)
       .slice(0, MAX_PAYMENT_REQUESTS),
+    paymentActivities: [...paymentActivities.values()]
+      .sort((leftActivity, rightActivity) => rightActivity.createdAt - leftActivity.createdAt)
+      .slice(0, MAX_PAYMENT_ACTIVITIES),
   });
 }
