@@ -2,6 +2,10 @@ import { productUrls } from "./product-urls";
 
 const legacyHosts = new Set(["moros.fun", "www.moros.fun"]);
 
+export function legacyPredictRedirectEnabled(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === "true";
+}
+
 function requestHostname(value: string | null | undefined, fallback: string): string {
   if (!value) return fallback;
   try {

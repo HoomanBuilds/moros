@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { legacyPredictDestination } from "./legacy-predict-redirect";
+import {
+  legacyPredictDestination,
+  legacyPredictRedirectEnabled,
+} from "./legacy-predict-redirect";
+
+assert.equal(legacyPredictRedirectEnabled(undefined), false);
+assert.equal(legacyPredictRedirectEnabled("false"), false);
+assert.equal(legacyPredictRedirectEnabled(" TRUE "), true);
 
 assert.equal(
   legacyPredictDestination("https://moros.fun/app/market/ABC?tab=comments"),
