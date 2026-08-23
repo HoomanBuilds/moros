@@ -18,5 +18,3 @@ moros-market.duckdns.org {
 		reverse_proxy localhost:8788
 	}
 }
-
-import /etc/caddy/nortia.caddy
