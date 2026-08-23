@@ -22,6 +22,9 @@ yarn-error.log*
 .pnp.*
 web/node_modules/
 web/.next/
+**/.next/
+**/.expo/
+**/dist/
 
 # --- Circom / snarkjs artifacts ---
 *.ptau
