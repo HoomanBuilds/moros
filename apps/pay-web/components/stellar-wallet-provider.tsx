@@ -38,6 +38,8 @@ export function StellarWalletProvider({ children }: { children: React.ReactNode 
   const [error, setError] = useState<string | null>(null);
   const addressRef = useRef<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const lastRefreshRef = useRef(0);
+  const refreshPendingRef = useRef<Promise<void> | null>(null);
 
   const clearBalance = useCallback(() => {
     setBalanceAtomic(null);
@@ -75,6 +77,7 @@ export function StellarWalletProvider({ children }: { children: React.ReactNode 
     setBalanceAtomic(balance.balanceAtomic);
     setAccountActive(balance.accountActive);
     setHasTrustline(balance.hasTrustline);
+    lastRefreshRef.current = Date.now();
     setStatus("ready");
   }, [clearBalance]);
 
@@ -118,14 +121,23 @@ export function StellarWalletProvider({ children }: { children: React.ReactNode 
   const refresh = useCallback(async () => {
     const current = addressRef.current;
     if (!current) return;
+    if (refreshPendingRef.current) return refreshPendingRef.current;
+    const pending = (async () => {
+      try {
+        const selected = await getAddress();
+        if (selected.error) throw selected.error;
+        await applyAddress(selected.address || current);
+      } catch (cause) {
+        setStatus("error");
+        setError(errorMessage(cause));
+        clearBalance();
+      }
+    })();
+    refreshPendingRef.current = pending;
     try {
-      const selected = await getAddress();
-      if (selected.error) throw selected.error;
-      await applyAddress(selected.address || current);
-    } catch (cause) {
-      setStatus("error");
-      setError(errorMessage(cause));
-      clearBalance();
+      await pending;
+    } finally {
+      if (refreshPendingRef.current === pending) refreshPendingRef.current = null;
     }
   }, [applyAddress, clearBalance]);
 
@@ -145,7 +157,7 @@ export function StellarWalletProvider({ children }: { children: React.ReactNode 
     }
     void restoreConnection();
     const onFocus = () => {
-      if (addressRef.current) void refresh();
+      if (addressRef.current && Date.now() - lastRefreshRef.current >= 15_000) void refresh();
     };
     window.addEventListener("focus", onFocus);
     return () => {

@@ -8,6 +8,7 @@ import {
 import {
   decryptPaymentOutput,
   derivePaymentIdentityMaterial,
+  type PaymentIdentityMaterial,
 } from "./payment-identity";
 
 const FIELD =
@@ -186,82 +187,221 @@ export async function nullifierSpent(
   );
 }
 
-export async function scanPrivatePaymentBalance(input: {
+export interface PrivateBalanceSession {
+  refresh(signal?: AbortSignal): Promise<PrivateBalanceSnapshot>;
+  expand(maximumChildIndex: number): Promise<void>;
+  dispose(): void;
+}
+
+type BalanceSessionInput = {
   phrase: string;
   deployment: PaymentDeployment;
-  signal?: AbortSignal;
+  maximumChildIndex?: number;
   readSpent?: (nullifier: bigint) => Promise<boolean>;
   client?: Pick<MorosPaymentClient, "outputs">;
-}): Promise<PrivateBalanceSnapshot> {
-  const identity = await derivePaymentIdentityMaterial(input.phrase, input.deployment);
+};
+
+class BrowserPrivateBalanceSession implements PrivateBalanceSession {
+  private readonly phrase: string;
+  private readonly deployment: PaymentDeployment;
+  private readonly domain: bigint;
+  private readonly identities: PaymentIdentityMaterial[];
+  private readonly scanner: PaymentOutputScanner;
+  private readonly readSpent: (nullifier: bigint) => Promise<boolean>;
+  private readonly recovered = new Map<string, RecoveredPaymentNote>();
+  private readonly unowned = new Map<string, ReturnType<typeof indexedOutput>>();
+  private disposed = false;
+  private refreshPending: Promise<PrivateBalanceSnapshot> | null = null;
+  private operationQueue: Promise<void> = Promise.resolve();
+
+  constructor(input: {
+    phrase: string;
+    deployment: PaymentDeployment;
+    domain: bigint;
+    identities: PaymentIdentityMaterial[];
+    scanner: PaymentOutputScanner;
+    readSpent: (nullifier: bigint) => Promise<boolean>;
+  }) {
+    this.phrase = input.phrase;
+    this.deployment = input.deployment;
+    this.domain = input.domain;
+    this.identities = input.identities;
+    this.scanner = input.scanner;
+    this.readSpent = input.readSpent;
+  }
+
+  async expand(maximumChildIndex: number): Promise<void> {
+    return this.enqueue(() => this.expandCurrent(maximumChildIndex));
+  }
+
+  private async expandCurrent(maximumChildIndex: number): Promise<void> {
+    if (this.disposed) throw new Error("Private balance session is closed.");
+    if (!Number.isSafeInteger(maximumChildIndex) || maximumChildIndex < 0 || maximumChildIndex > 999) {
+      throw new Error("Private receive identity range is invalid.");
+    }
+    const added: PaymentIdentityMaterial[] = [];
+    for (let childIndex = this.identities.length; childIndex <= maximumChildIndex; childIndex += 1) {
+      const identity = await derivePaymentIdentityMaterial(
+        this.phrase,
+        this.deployment,
+        BigInt(childIndex),
+      );
+      this.identities.push(identity);
+      added.push(identity);
+    }
+    for (const [commitment, output] of this.unowned) {
+      const recovered = await this.recoverOutput(output, added);
+      if (recovered === undefined) continue;
+      this.unowned.delete(commitment);
+      if (recovered) this.recovered.set(recovered.nullifier.toString(), recovered);
+    }
+  }
+
+  refresh(signal?: AbortSignal): Promise<PrivateBalanceSnapshot> {
+    if (this.disposed) return Promise.reject(new Error("Private balance session is closed."));
+    if (!this.refreshPending) {
+      this.refreshPending = this.enqueue(() => this.refreshCurrent(signal)).finally(() => {
+        this.refreshPending = null;
+      });
+    }
+    return this.refreshPending;
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operationQueue.then(operation, operation);
+    this.operationQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  private async refreshCurrent(signal?: AbortSignal): Promise<PrivateBalanceSnapshot> {
+    const result = await this.scanner.scan({
+      signal,
+      pageSize: 100,
+      decrypt: async (raw): Promise<RecoveredPaymentNote | null> => {
+        const output = indexedOutput(raw);
+        const recovered = await this.recoverOutput(output, this.identities);
+        if (recovered === undefined) {
+          this.unowned.set(output.commitment, output);
+          return null;
+        }
+        this.unowned.delete(output.commitment);
+        return recovered;
+      },
+    });
+    if (result.scanned > MAX_SCAN_OUTPUTS) throw new Error("Payment output scan limit exceeded.");
+    for (const { note } of result.notes) {
+      const recovered = note as RecoveredPaymentNote;
+      this.recovered.set(recovered.nullifier.toString(), recovered);
+    }
+    const recovered = [...this.recovered.values()];
+    const spent = new Map<bigint, boolean>();
+    for (let offset = 0; offset < recovered.length; offset += 8) {
+      if (signal?.aborted) throw signal.reason || new Error("Payment balance refresh aborted.");
+      const batch = recovered.slice(offset, offset + 8);
+      const states = await Promise.all(batch.map((note) => this.readSpent(note.nullifier)));
+      batch.forEach((note, index) => spent.set(note.nullifier, states[index]));
+    }
+    const spendable = recovered.filter((note) => !spent.get(note.nullifier));
+    return {
+      spendableAtomic: spendable.reduce((total, note) => total + note.amountAtomic, 0n),
+      scannedOutputs: result.checkpoint,
+      ownedNotes: recovered.length,
+      spendableNotes: spendable.length,
+    };
+  }
+
+  private async recoverOutput(
+    output: ReturnType<typeof indexedOutput>,
+    identities: PaymentIdentityMaterial[],
+  ): Promise<RecoveredPaymentNote | null | undefined> {
+    for (const identity of identities) {
+      let note;
+      try {
+        note = await decryptPaymentOutput({
+          envelope: hexToBytes(output.encryptedOutput, PAYMENT_ENVELOPE_BYTES, "envelope"),
+          viewingSecret: identity.viewingSecret,
+          paymentCode: identity.paymentCode,
+          noteDomain: fieldToBytes(this.domain),
+          expectedCommitment: fieldToBytes(BigInt(output.commitment)),
+        });
+      } catch (error) {
+        if (isUnownedOutput(error)) continue;
+        throw error;
+      }
+      try {
+        if (note.purpose !== PAYMENT_NOTE_PURPOSE) throw new Error("Payment note has an unsupported purpose.");
+        const amountAtomic = BigInt(note.amount_atomic);
+        if (amountAtomic < 0n) throw new Error("Payment note amount is invalid.");
+        if (amountAtomic === 0n) return null;
+        return {
+          amountAtomic,
+          nullifier: paymentNoteNullifier({
+            noteDomain: this.domain,
+            commitment: note.commitment,
+            noteId: note.note_id,
+            spendSecret: identity.spendSecret,
+          }),
+        };
+      } finally {
+        note.free();
+      }
+    }
+    return undefined;
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const identity of this.identities) {
+      identity.spendSecret.fill(0);
+      identity.viewingSecret.fill(0);
+    }
+    this.identities.length = 0;
+    this.recovered.clear();
+    this.unowned.clear();
+  }
+}
+
+export async function createPrivateBalanceSession(input: BalanceSessionInput): Promise<PrivateBalanceSession> {
+  const maximumChildIndex = input.maximumChildIndex ?? 0;
+  if (!Number.isSafeInteger(maximumChildIndex) || maximumChildIndex < 0 || maximumChildIndex > 999) {
+    throw new Error("Private receive identity range is invalid.");
+  }
+  const identities: PaymentIdentityMaterial[] = [];
+  try {
+    for (let childIndex = 0; childIndex <= maximumChildIndex; childIndex += 1) {
+      identities.push(await derivePaymentIdentityMaterial(input.phrase, input.deployment, BigInt(childIndex)));
+    }
+  } catch (error) {
+    for (const identity of identities) {
+      identity.spendSecret.fill(0);
+      identity.viewingSecret.fill(0);
+    }
+    throw error;
+  }
   const domain = await paymentNoteDomain(input.deployment);
   const client = input.client ?? new MorosPaymentClient({ deployment: input.deployment });
   const scanner = new PaymentOutputScanner({
     client,
     deployment: input.deployment,
   });
+  return new BrowserPrivateBalanceSession({
+    phrase: input.phrase,
+    deployment: input.deployment,
+    domain,
+    identities,
+    scanner,
+    readSpent: input.readSpent ?? ((value) => nullifierSpent(input.deployment, value)),
+  });
+}
+
+export async function scanPrivatePaymentBalance(input: BalanceSessionInput & {
+  signal?: AbortSignal;
+}): Promise<PrivateBalanceSnapshot> {
+  const session = await createPrivateBalanceSession(input);
   try {
-    const result = await scanner.scan({
-      signal: input.signal,
-      pageSize: 100,
-      decrypt: async (raw): Promise<RecoveredPaymentNote | null> => {
-        const output = indexedOutput(raw);
-        let note;
-        try {
-          note = await decryptPaymentOutput({
-            envelope: hexToBytes(output.encryptedOutput, PAYMENT_ENVELOPE_BYTES, "envelope"),
-            viewingSecret: identity.viewingSecret,
-            paymentCode: identity.paymentCode,
-            noteDomain: fieldToBytes(domain),
-            expectedCommitment: fieldToBytes(BigInt(output.commitment)),
-          });
-        } catch (error) {
-          if (isUnownedOutput(error)) return null;
-          throw error;
-        }
-        try {
-          if (note.purpose !== PAYMENT_NOTE_PURPOSE) throw new Error("Payment note has an unsupported purpose.");
-          const amountAtomic = BigInt(note.amount_atomic);
-          if (amountAtomic < 0n) throw new Error("Payment note amount is invalid.");
-          if (amountAtomic === 0n) return null;
-          return {
-            amountAtomic,
-            nullifier: paymentNoteNullifier({
-              noteDomain: domain,
-              commitment: note.commitment,
-              noteId: note.note_id,
-              spendSecret: identity.spendSecret,
-            }),
-          };
-        } finally {
-          note.free();
-        }
-      },
-    });
-    if (result.scanned > MAX_SCAN_OUTPUTS) throw new Error("Payment output scan limit exceeded.");
-    const recovered = result.notes.map(({ note }) => note as RecoveredPaymentNote);
-    const readSpent = input.readSpent ?? ((value) => nullifierSpent(input.deployment, value));
-    const spent = new Map<bigint, boolean>();
-    for (let offset = 0; offset < recovered.length; offset += 8) {
-      const batch = recovered.slice(offset, offset + 8);
-      const states = await Promise.all(batch.map(async (note) => {
-        const known = spent.get(note.nullifier);
-        if (known !== undefined) return known;
-        const value = await readSpent(note.nullifier);
-        spent.set(note.nullifier, value);
-        return value;
-      }));
-      batch.forEach((note, index) => spent.set(note.nullifier, states[index]));
-    }
-    const spendable = recovered.filter((note) => !spent.get(note.nullifier));
-    return {
-      spendableAtomic: spendable.reduce((total, note) => total + note.amountAtomic, 0n),
-      scannedOutputs: result.scanned,
-      ownedNotes: recovered.length,
-      spendableNotes: spendable.length,
-    };
+    return await session.refresh(input.signal);
   } finally {
-    identity.spendSecret.fill(0);
-    identity.viewingSecret.fill(0);
+    session.dispose();
   }
 }

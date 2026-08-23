@@ -2,11 +2,19 @@ import type { NextConfig } from "next";
 import path from "node:path";
 
 const nextConfig: NextConfig = {
+  agentRules: false,
   reactStrictMode: true,
   output: "standalone",
   transpilePackages: ["@moros/payments-client", "@moros/payments-crypto-web"],
   turbopack: {
     root: path.resolve(process.cwd(), "../.."),
+  },
+  async redirects() {
+    return ["send", "receive", "request", "activity", "contacts", "deposit", "withdraw", "settings"].map((route) => ({
+      source: `/${route}`,
+      destination: `/app/${route}`,
+      permanent: false,
+    }));
   },
   async headers() {
     return [

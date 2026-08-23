@@ -1,15 +1,18 @@
 import type { EncryptedWalletRecord } from "./wallet-crypto";
 
 const DATABASE = "moros-payments";
-const STORE = "encrypted-wallet";
+const DATABASE_VERSION = 2;
+export const WALLET_STORE = "encrypted-wallet";
+export const PRIVATE_PROFILE_STORE = "private-profile";
 const KEY = "primary";
 
-function openDatabase(): Promise<IDBDatabase> {
+export function openPaymentDatabase(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") throw new Error("secure browser storage is unavailable");
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE, 1);
+    const request = indexedDB.open(DATABASE, DATABASE_VERSION);
     request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE);
+      if (!request.result.objectStoreNames.contains(WALLET_STORE)) request.result.createObjectStore(WALLET_STORE);
+      if (!request.result.objectStoreNames.contains(PRIVATE_PROFILE_STORE)) request.result.createObjectStore(PRIVATE_PROFILE_STORE);
     };
     request.onerror = () => reject(new Error("could not open secure browser storage"));
     request.onblocked = () => reject(new Error("secure browser storage is blocked by another tab"));
@@ -17,12 +20,16 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-async function transact<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const database = await openDatabase();
+export async function transactPaymentStore<T>(
+  storeName: string,
+  mode: IDBTransactionMode,
+  run: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  const database = await openPaymentDatabase();
   try {
     return await new Promise<T>((resolve, reject) => {
-      const transaction = database.transaction(STORE, mode);
-      const request = run(transaction.objectStore(STORE));
+      const transaction = database.transaction(storeName, mode);
+      const request = run(transaction.objectStore(storeName));
       request.onerror = () => reject(new Error("secure browser storage operation failed"));
       transaction.onabort = () => reject(new Error("secure browser storage operation was cancelled"));
       transaction.onerror = () => reject(new Error("secure browser storage operation failed"));
@@ -34,14 +41,26 @@ async function transact<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore
 }
 
 export async function loadEncryptedWallet(): Promise<EncryptedWalletRecord | null> {
-  const record = await transact<EncryptedWalletRecord | undefined>("readonly", (store) => store.get(KEY));
+  const record = await transactPaymentStore<EncryptedWalletRecord | undefined>(WALLET_STORE, "readonly", (store) => store.get(KEY));
   return record ?? null;
 }
 
 export async function saveEncryptedWallet(record: EncryptedWalletRecord): Promise<void> {
-  await transact<IDBValidKey>("readwrite", (store) => store.put(record, KEY));
+  await transactPaymentStore<IDBValidKey>(WALLET_STORE, "readwrite", (store) => store.put(record, KEY));
 }
 
 export async function deleteEncryptedWallet(): Promise<void> {
-  await transact<undefined>("readwrite", (store) => store.delete(KEY));
+  const database = await openPaymentDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction([WALLET_STORE, PRIVATE_PROFILE_STORE], "readwrite");
+      transaction.objectStore(WALLET_STORE).delete(KEY);
+      transaction.objectStore(PRIVATE_PROFILE_STORE).delete(KEY);
+      transaction.onabort = () => reject(new Error("secure browser storage operation was cancelled"));
+      transaction.onerror = () => reject(new Error("secure browser storage operation failed"));
+      transaction.oncomplete = () => resolve();
+    });
+  } finally {
+    database.close();
+  }
 }

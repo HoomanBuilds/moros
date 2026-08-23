@@ -1,5 +1,5 @@
 import { StrKey } from "@stellar/stellar-sdk";
-import type { PaymentDeployment } from "@moros/payments-client";
+import { base64UrlToBytes, bytesToBase64Url, type PaymentDeployment } from "@moros/payments-client";
 
 let initialized: Promise<typeof import("@moros/payments-crypto-web")> | null = null;
 
@@ -84,6 +84,23 @@ export async function derivePaymentIdentityMaterial(
   }
 }
 
+export async function createIncomingViewingExport(
+  phrase: string,
+  deployment: PaymentDeployment,
+  maximumChildIndex: number,
+): Promise<string> {
+  if (!Number.isSafeInteger(maximumChildIndex) || maximumChildIndex < 0 || maximumChildIndex > 1_000) {
+    throw new Error("The viewing export identity range is invalid.");
+  }
+  const core = await cryptoCore();
+  return core.incoming_viewing_export_from_phrase(
+    phrase,
+    networkId(deployment),
+    contractBytes(deployment.vault),
+    BigInt(maximumChildIndex),
+  );
+}
+
 export async function decryptPaymentOutput(input: {
   envelope: Uint8Array;
   viewingSecret: Uint8Array;
@@ -104,6 +121,7 @@ export async function decryptPaymentOutput(input: {
 export interface PaymentRequestInput {
   phrase: string;
   deployment: PaymentDeployment;
+  childIndex?: bigint;
   amountAtomic?: string;
   merchantLabel?: string;
   expiresAt: number;
@@ -117,7 +135,7 @@ export async function createPaymentRequest(input: PaymentRequestInput): Promise<
     input.phrase,
     networkId(input.deployment),
     contractBytes(input.deployment.vault),
-    0n,
+    input.childIndex ?? 0n,
   );
   try {
     return identity.create_payment_link(
@@ -133,11 +151,34 @@ export async function createPaymentRequest(input: PaymentRequestInput): Promise<
   }
 }
 
+export async function verifyDirectPaymentCode(
+  encoded: string,
+  deployment: PaymentDeployment,
+): Promise<PaymentIdentityView> {
+  const paymentCode = encoded.trim();
+  const prefix = "moros_pay_";
+  if (!paymentCode.startsWith(prefix) || paymentCode.length > 320) throw new Error("This is not a Moros payment code.");
+  const core = await cryptoCore();
+  const recipientFingerprint = core.payment_code_fingerprint(paymentCode);
+  const bytes = base64UrlToBytes(paymentCode.slice(prefix.length));
+  if (bytes.length !== 216) throw new Error("This Moros payment code is invalid.");
+  if (bytes[1] !== networkId(deployment)) throw new Error("This payment code belongs to another Stellar network.");
+  const expectedVault = contractBytes(deployment.vault);
+  let vaultMatches = true;
+  for (let index = 0; index < expectedVault.length; index += 1) {
+    vaultMatches = vaultMatches && bytes[index + 4] === expectedVault[index];
+  }
+  if (!vaultMatches) throw new Error("This payment code belongs to another private vault.");
+  return { paymentCode, recipientFingerprint };
+}
+
 export interface VerifiedPaymentLink {
+  requestId: string;
   paymentCode: string;
   recipientFingerprint: string;
   amountAtomic?: string;
   merchantLabel?: string;
+  createdAt: number;
   expiresAt: number;
 }
 
@@ -158,10 +199,12 @@ export async function verifyPaymentRequest(
   );
   try {
     return {
+      requestId: bytesToBase64Url(request.request_id),
       paymentCode: request.payment_code,
       recipientFingerprint: request.recipient_fingerprint,
       amountAtomic: request.amount,
       merchantLabel: request.merchant_label,
+      createdAt: Number(request.created_at),
       expiresAt: Number(request.expires_at),
     };
   } finally {

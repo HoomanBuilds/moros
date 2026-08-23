@@ -4,6 +4,7 @@ import { StrKey } from "@stellar/stellar-sdk";
 import type { PaymentDeployment } from "@moros/payments-client";
 import {
   fieldToBytes,
+  createPrivateBalanceSession,
   paymentNoteDomain,
   scanPrivatePaymentBalance,
 } from "./private-balance";
@@ -122,6 +123,102 @@ const unowned = await scanPrivatePaymentBalance({
 assert.equal(unowned.spendableAtomic, 0n);
 assert.equal(unowned.ownedNotes, 0);
 
+const secondOutput = core.create_payment_output(
+  identity.payment_code,
+  0,
+  fieldToBytes(domain),
+  "200000000",
+  fieldToBytes(8n),
+  fieldToBytes(0n),
+  new Uint8Array(64),
+  fieldToBytes(10n),
+  littleEndianSecret,
+  fieldToBytes(12n),
+);
+const indexedSecond = {
+  outputIndex: 0,
+  leafIndex: 1,
+  commitment: decimal(secondOutput.commitment),
+  encryptedOutput: Buffer.from(secondOutput.envelope).toString("hex"),
+  actionId: "cd".repeat(32),
+};
+const available = [indexedOutput];
+const spentNullifiers = new Set<string>();
+const checkedNullifiers: bigint[] = [];
+const incrementalClient = {
+  async outputs({ fromLeafIndex = 0, limit = 100 } = {}) {
+    const outputs = available.slice(fromLeafIndex, fromLeafIndex + limit);
+    return {
+      network: deployment.network,
+      vault: deployment.vault,
+      fromLeafIndex,
+      nextLeafIndex: fromLeafIndex + outputs.length,
+      hasMore: fromLeafIndex + outputs.length < available.length,
+      outputs,
+    };
+  },
+};
+const session = await createPrivateBalanceSession({
+  phrase,
+  deployment,
+  client: incrementalClient,
+  readSpent: async (nullifier) => {
+    checkedNullifiers.push(nullifier);
+    return spentNullifiers.has(nullifier.toString());
+  },
+});
+const firstScan = await session.refresh();
+assert.equal(firstScan.scannedOutputs, 1);
+assert.equal(firstScan.spendableAtomic, 123456789n);
+spentNullifiers.add(checkedNullifiers[0].toString());
+available.push(indexedSecond);
+const secondScan = await session.refresh();
+assert.equal(secondScan.scannedOutputs, 2);
+assert.equal(secondScan.ownedNotes, 2);
+assert.equal(secondScan.spendableNotes, 1);
+assert.equal(secondScan.spendableAtomic, 200000000n);
+session.dispose();
+
+const childIdentity = core.payment_identity_from_phrase(
+  phrase,
+  1,
+  StrKey.decodeContract(deployment.vault),
+  1n,
+);
+const childOutput = core.create_payment_output(
+  childIdentity.payment_code,
+  0,
+  fieldToBytes(domain),
+  "300000000",
+  fieldToBytes(13n),
+  fieldToBytes(0n),
+  new Uint8Array(64),
+  fieldToBytes(14n),
+  littleEndianSecret,
+  fieldToBytes(15n),
+);
+const childSession = await createPrivateBalanceSession({
+  phrase,
+  deployment,
+  client: client({
+    outputIndex: 0,
+    leafIndex: 0,
+    commitment: decimal(childOutput.commitment),
+    encryptedOutput: Buffer.from(childOutput.envelope).toString("hex"),
+    actionId: "ef".repeat(32),
+  }),
+  readSpent: async () => false,
+});
+assert.equal((await childSession.refresh()).ownedNotes, 0);
+await childSession.expand(1);
+const expanded = await childSession.refresh();
+assert.equal(expanded.ownedNotes, 1);
+assert.equal(expanded.spendableAtomic, 300000000n);
+childSession.dispose();
+
+childOutput.free();
+childIdentity.free();
+secondOutput.free();
 output.free();
 identity.free();
 

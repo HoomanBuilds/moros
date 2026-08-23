@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, Copy, Eye, EyeOff, KeyRound, LockKeyhole } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Fingerprint, KeyRound, LockKeyhole, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
 import { FormEvent, useState } from "react";
-import { Brand } from "./brand";
-import { ThemeToggle } from "./theme-toggle";
+import { formatUsdcAtomic } from "@/lib/public-usdc";
+import { copyBrowserText } from "@/lib/browser-share";
+import { useStellarWallet } from "./stellar-wallet-provider";
 import { usePaymentWallet } from "./wallet-provider";
 
 function PasswordField({ value, onChange, label = "Wallet password", autoComplete = "current-password" }: {
@@ -36,13 +37,19 @@ function PasswordField({ value, onChange, label = "Wallet password", autoComplet
 
 function RecoveryBackup({ phrase, onDone }: { phrase: string; onDone(): void }) {
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
   const [checks, setChecks] = useState(["", "", ""]);
   const words = phrase.split(" ");
   const positions = [3, 11, 20];
   const confirmed = positions.every((position, index) => checks[index].trim().toLowerCase() === words[position]);
   async function copy() {
-    await navigator.clipboard.writeText(phrase);
-    setCopied(true);
+    setCopyError("");
+    try {
+      await copyBrowserText(phrase);
+      setCopied(true);
+    } catch (cause) {
+      setCopyError(cause instanceof Error ? cause.message : "Could not copy the recovery phrase.");
+    }
   }
   return (
     <div className="gateCard wide">
@@ -56,6 +63,7 @@ function RecoveryBackup({ phrase, onDone }: { phrase: string; onDone(): void }) 
       <button className="button secondary" type="button" onClick={copy}>
         {copied ? <Check size={18} /> : <Copy size={18} />} {copied ? "Copied" : "Copy words"}
       </button>
+      {copyError && <p className="errorText" role="alert">{copyError}</p>}
       <div className="recoveryChecks">
         {positions.map((position, index) => (
           <label className="field" key={position}>
@@ -75,7 +83,52 @@ function RecoveryBackup({ phrase, onDone }: { phrase: string; onDone(): void }) 
   );
 }
 
-function CreateWallet() {
+function WalletStart({ onCreate, onRestore, compact }: { onCreate(): void; onRestore(): void; compact: boolean }) {
+  const stellar = useStellarWallet();
+  const busy = stellar.status === "connecting" || stellar.status === "loading";
+  const publicStatus = stellar.address
+    ? `${stellar.address.slice(0, 6)}...${stellar.address.slice(-6)}`
+    : "Use the Stellar account you already have.";
+
+  return (
+    <section className={compact ? "walletAccess compact" : "walletAccess"}>
+      <header className="walletAccessIntro">
+        <p className="sectionLabel"><span />Choose your access</p>
+        <h2>{compact ? "Connect or create when you are ready." : "Enter Moros your way."}</h2>
+        <p>Browse the app first. Connect Freighter for public Circle USDC, then create or restore a private identity for protected payments.</p>
+      </header>
+      <div className="walletAccessGrid">
+        <article className="walletAccessCard">
+          <div className="walletAccessCardTop"><span>01</span><WalletCards size={23} /></div>
+          <div><p className="eyebrow">Public Stellar wallet</p><h3>Connect Freighter</h3><p>{publicStatus}</p></div>
+          {stellar.address ? (
+            <div className="walletAccessConnected">
+              <div><span>Circle USDC</span><strong>{formatUsdcAtomic(stellar.balanceAtomic)}</strong></div>
+              <button className="button secondary" type="button" onClick={() => void stellar.refresh()} disabled={busy}><RefreshCw size={17} />{busy ? "Refreshing" : "Refresh balance"}</button>
+            </div>
+          ) : (
+            <button className="button secondary" type="button" onClick={() => void stellar.connect()} disabled={busy}><WalletCards size={17} />{busy ? "Connecting Freighter" : "Connect Freighter"}</button>
+          )}
+          {stellar.error && <p className="errorText" role="alert">{stellar.error}</p>}
+        </article>
+        <article className="walletAccessCard private">
+          <div className="walletAccessCardTop"><span>02</span><Fingerprint size={23} /></div>
+          <div><p className="eyebrow">Private payment identity</p><h3>Create locally</h3><p>Generate encrypted payment keys on this device, or restore an identity you already control.</p></div>
+          <div className="walletAccessActions">
+            <button className="button primary" type="button" onClick={onCreate}>Create private identity</button>
+            <button className="button secondary" type="button" onClick={onRestore}>Restore existing identity</button>
+          </div>
+        </article>
+      </div>
+      <footer className="walletAccessFoot">
+        <span><ShieldCheck size={15} />No automatic wallet prompts</span>
+        <span><KeyRound size={15} />Self-custodied recovery</span>
+      </footer>
+    </section>
+  );
+}
+
+function CreateWallet({ compact = false }: { compact?: boolean }) {
   const wallet = usePaymentWallet();
   const [mode, setMode] = useState<"choose" | "create" | "restore">("choose");
   const [password, setPassword] = useState("");
@@ -109,42 +162,14 @@ function CreateWallet() {
   if (backup) return <RecoveryBackup phrase={backup} onDone={() => wallet.activate(backup)} />;
 
   if (mode === "choose") {
-    return (
-      <div className="onboardingShell">
-        <header className="onboardingTop"><Brand /><ThemeToggle /></header>
-        <section className="onboardingStory">
-          <p className="sectionLabel"><span />Private USDC on Stellar</p>
-          <h1>Move money.<br /><em>Leave no trail.</em></h1>
-          <p>Shield once, then send, receive, and request Circle USDC through encrypted notes and local proofs.</p>
-          <div className="privacyLedger">
-            <div><span>Recipient</span><strong>Encrypted</strong></div>
-            <div><span>Amount</span><strong>Encrypted</strong></div>
-            <div><span>Settlement</span><strong>Verifiable</strong></div>
-          </div>
-        </section>
-        <aside className="onboardingAction">
-          <div className="actionNumber">01</div>
-          <div>
-            <p className="eyebrow">Your private wallet</p>
-            <h2>Start with keys only you control.</h2>
-            <p className="muted">No public Stellar account is needed to receive inside Moros.</p>
-          </div>
-          <div className="actionButtons">
-            <button className="button primary" type="button" onClick={() => setMode("create")}>Create private wallet</button>
-            <button className="button secondary" type="button" onClick={() => setMode("restore")}>Restore 24 words</button>
-          </div>
-          <p className="finePrint">Keys are created and encrypted on this device. Moros never receives your recovery phrase.</p>
-        </aside>
-      </div>
-    );
+    return <WalletStart compact={compact} onCreate={() => setMode("create")} onRestore={() => setMode("restore")} />;
   }
 
   return (
-    <form className="gateCard authCard" onSubmit={mode === "create" ? create : restore}>
+    <form className="gateCard authCard walletAccessForm" onSubmit={mode === "create" ? create : restore}>
       <input className="srOnly" name="username" value="moros-private-wallet" autoComplete="username" readOnly tabIndex={-1} aria-hidden="true" />
-      <div className="authTop"><Brand /><ThemeToggle /></div>
-      <button className="textButton backButton" type="button" onClick={() => setMode("choose")}>Back to introduction</button>
-      <p className="eyebrow">{mode === "create" ? "Create wallet" : "Restore wallet"}</p>
+      <button className="textButton backButton" type="button" onClick={() => setMode("choose")}>Back to wallet choices</button>
+      <p className="eyebrow">{mode === "create" ? "Create private identity" : "Restore private identity"}</p>
       <h1>{mode === "create" ? "Protect this device" : "Recover private funds"}</h1>
       {mode === "restore" && (
         <label className="field">
@@ -157,7 +182,7 @@ function CreateWallet() {
       {confirm && password !== confirm && <p className="errorText">Passwords do not match.</p>}
       {wallet.error && <p className="errorText" role="alert">{wallet.error}</p>}
       <button className="button primary" disabled={pending || password !== confirm}>
-        {pending ? "Securing wallet..." : mode === "create" ? "Create wallet" : "Restore wallet"}
+        {pending ? "Securing identity..." : mode === "create" ? "Create private identity" : "Restore private identity"}
       </button>
     </form>
   );
@@ -179,7 +204,6 @@ function UnlockWallet() {
   return (
     <form className="gateCard authCard" onSubmit={submit}>
       <input className="srOnly" name="username" value="moros-private-wallet" autoComplete="username" readOnly tabIndex={-1} aria-hidden="true" />
-      <div className="authTop"><Brand /><ThemeToggle /></div>
       <div className="gateIcon"><LockKeyhole size={24} /></div>
       <p className="eyebrow">Private wallet locked</p>
       <h1>Welcome back</h1>
@@ -194,12 +218,21 @@ function UnlockWallet() {
 export function WalletGate({ children }: { children: React.ReactNode }) {
   const wallet = usePaymentWallet();
   if (wallet.status === "loading") {
-    return <div className="gate"><div className="loadingMark" aria-label="Loading private wallet" /></div>;
+    return <div className="walletAccessLoading"><div className="loadingMark" aria-label="Loading private wallet" /><span>Checking this device</span></div>;
   }
-  if (wallet.status === "empty") return <div className="gate"><CreateWallet /></div>;
-  if (wallet.status === "locked") return <div className="gate"><UnlockWallet /></div>;
+  if (wallet.status === "empty") return <CreateWallet />;
+  if (wallet.status === "locked") return <div className="walletAccessShell"><UnlockWallet /></div>;
   if (wallet.status === "backup" && wallet.recoveryPhrase) {
-    return <div className="gate"><RecoveryBackup phrase={wallet.recoveryPhrase} onDone={() => wallet.activate(wallet.recoveryPhrase as string)} /></div>;
+    return <div className="walletAccessShell"><RecoveryBackup phrase={wallet.recoveryPhrase} onDone={() => wallet.activate(wallet.recoveryPhrase as string)} /></div>;
   }
   return <>{children}</>;
+}
+
+export function WalletAccess({ compact = false }: { compact?: boolean }) {
+  const wallet = usePaymentWallet();
+  if (wallet.status === "loading") return <div className="walletAccessLoading compact"><div className="loadingMark" aria-label="Loading private wallet" /><span>Checking this device</span></div>;
+  if (wallet.status === "empty") return <CreateWallet compact={compact} />;
+  if (wallet.status === "locked") return <div className="walletAccessShell compact"><UnlockWallet /></div>;
+  if (wallet.status === "backup" && wallet.recoveryPhrase) return <div className="walletAccessShell"><RecoveryBackup phrase={wallet.recoveryPhrase} onDone={() => wallet.activate(wallet.recoveryPhrase as string)} /></div>;
+  return null;
 }

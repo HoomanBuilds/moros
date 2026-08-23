@@ -44,9 +44,9 @@ export function BalanceOverview() {
         <small>{privateWallet.balance.status === "syncing" ? "Syncing encrypted notes" : "Shielded USDC"}</small>
       </div>
       <div className="balanceMetric">
-        <span>Pending</span>
-        <strong>{formatUsdcAtomic(privateWallet.balance.pendingAtomic)}</strong>
-        <small>Awaiting final confirmation</small>
+        <span>Encrypted recovery</span>
+        <strong>{privateWallet.recoverySync.status === "synced" ? "Synced" : privateWallet.status === "unlocked" ? "Local" : "Locked"}</strong>
+        <small>{privateWallet.recoverySync.status === "error" ? "Sync needs attention" : "Private profile state"}</small>
       </div>
       <div className="balanceMetric publicBalanceMetric">
         <span>Public Stellar wallet</span>
