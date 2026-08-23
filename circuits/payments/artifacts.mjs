@@ -22,14 +22,18 @@ export const PAYMENT_PUBLIC_SIGNALS = [
 ];
 
 export const PAYMENT_CIRCUITS = [
-  { name: "deposit", code: 0, action: 0, inputCount: 0, outputCount: 2 },
-  { name: "transfer_one", code: 1, action: 1, inputCount: 1, outputCount: 4 },
-  { name: "transfer_two", code: 2, action: 1, inputCount: 2, outputCount: 4 },
-  { name: "transfer_four", code: 3, action: 1, inputCount: 4, outputCount: 4 },
-  { name: "withdraw_one", code: 4, action: 2, inputCount: 1, outputCount: 3 },
-  { name: "withdraw_two", code: 5, action: 2, inputCount: 2, outputCount: 3 },
-  { name: "withdraw_four", code: 6, action: 2, inputCount: 4, outputCount: 3 },
-];
+  { name: "deposit", code: 0, variant: "Deposit", action: 0, inputCount: 0, outputCount: 2 },
+  { name: "transfer_one", code: 1, variant: "TransferOne", action: 1, inputCount: 1, outputCount: 4 },
+  { name: "transfer_two", code: 2, variant: "TransferTwo", action: 1, inputCount: 2, outputCount: 4 },
+  { name: "transfer_four", code: 3, variant: "TransferFour", action: 1, inputCount: 4, outputCount: 4 },
+  { name: "withdraw_one", code: 4, variant: "WithdrawOne", action: 2, inputCount: 1, outputCount: 3 },
+  { name: "withdraw_two", code: 5, variant: "WithdrawTwo", action: 2, inputCount: 2, outputCount: 3 },
+  { name: "withdraw_four", code: 6, variant: "WithdrawFour", action: 2, inputCount: 4, outputCount: 3 },
+].map((circuit) => ({
+  ...circuit,
+  publicSignals: PAYMENT_PUBLIC_SIGNALS,
+  prover: "browser",
+}));
 
 export const PAYMENT_CONTEXT_FIELDS = [
   "version",

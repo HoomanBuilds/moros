@@ -54,15 +54,15 @@ function multiplyPoint(point, scalar) {
   return result;
 }
 
-function spendPublicKey(secret) {
+export function spendPublicKey(secret) {
   return poseidon2Hash([1002n, secret]);
 }
 
-function viewingPublicKey(secret) {
+export function viewingPublicKey(secret) {
   return multiplyPoint(BASE8, secret);
 }
 
-function paymentNoteDomain(context) {
+export function paymentNoteDomain(context) {
   return poseidon2Hash([
     1101n,
     context[3],
@@ -75,7 +75,7 @@ function paymentNoteDomain(context) {
   ]);
 }
 
-function noteCommitment(note) {
+export function noteCommitment(note) {
   return poseidon2Hash([
     1003n,
     note.noteDomain,
@@ -92,7 +92,7 @@ function noteCommitment(note) {
   ]);
 }
 
-function noteNullifier(note, spendSecret) {
+export function noteNullifier(note, spendSecret) {
   return poseidon2Hash([
     1004n,
     note.noteDomain,
@@ -103,7 +103,7 @@ function noteNullifier(note, spendSecret) {
   ]);
 }
 
-function outputNote({
+export function outputNote({
   outputIndex,
   noteDomain,
   amount,
@@ -179,11 +179,11 @@ function outputNote({
   };
 }
 
-function merkleNode(left, right) {
+export function merkleNode(left, right) {
   return poseidon2Hash([1005n, left, right]);
 }
 
-function merkleTree(notes) {
+export function merkleTree(notes) {
   const zeros = [0n];
   for (let level = 0; level < TREE_LEVELS; level++) {
     zeros.push(merkleNode(zeros[level], zeros[level]));
@@ -212,7 +212,7 @@ function merkleTree(notes) {
   };
 }
 
-function identity(spendSecret, viewingSecret) {
+export function identity(spendSecret, viewingSecret) {
   return [spendPublicKey(spendSecret), ...viewingPublicKey(viewingSecret)];
 }
 
@@ -288,7 +288,7 @@ function makeInputs(context, inputCount) {
   return { notes, spendSecrets, tree };
 }
 
-function noteWitness(inputs) {
+export function noteWitness(inputs) {
   return {
     inPurpose: inputs.notes.map((note) => note.purpose),
     inAmount: inputs.notes.map((note) => note.amount),
@@ -298,12 +298,14 @@ function noteWitness(inputs) {
     inPayloadHash: inputs.notes.map((note) => note.payloadHash),
     inPrivateData: inputs.notes.map((note) => note.privateData),
     inBlinding: inputs.notes.map((note) => note.blinding),
-    inLeafIndex: inputs.notes.map((_, index) => BigInt(index)),
-    inSiblings: inputs.notes.map((_, index) => inputs.tree.path(index)),
+    inLeafIndex: inputs.notes.map((_, index) => BigInt(inputs.leafIndexes?.[index] ?? index)),
+    inSiblings: inputs.notes.map((_, index) =>
+      inputs.tree.path(inputs.leafIndexes?.[index] ?? index),
+    ),
   };
 }
 
-function outputWitness(outputs) {
+export function outputWitness(outputs) {
   return {
     outPurpose: outputs.map((output) => output.purpose),
     outAmount: outputs.map((output) => output.amount),
@@ -319,7 +321,7 @@ function outputWitness(outputs) {
   };
 }
 
-function publicFields({
+export function publicFields({
   action,
   context,
   membershipRoot,

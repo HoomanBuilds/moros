@@ -38,8 +38,11 @@ output/
 proofgen/
 /circuits/private-build/
 /circuits/private-mainnet-build/
+/circuits/payments-build/
 /circuits/ptau/
 /web/public/zk/private/
+/web/public/zk/payments/
+/apps/pay-web/public/zk/payments/
 
 # --- Env / secrets / local deploy state ---
 .env
