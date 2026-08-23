@@ -6,6 +6,10 @@
 moros-market.duckdns.org {
 	encode gzip
 
+	handle_path /payments-testnet/* {
+		reverse_proxy localhost:8790
+	}
+
 	handle /private/* {
 		reverse_proxy localhost:8788
 	}
@@ -17,4 +21,9 @@ moros-market.duckdns.org {
 	handle {
 		reverse_proxy localhost:8788
 	}
+}
+
+pay.moros.fun {
+  encode gzip
+  reverse_proxy localhost:3001
 }
