@@ -18,6 +18,20 @@ assert.equal(formatUsdcAtomic(10_000_001n), "1.0000001");
 assert.equal(formatUsdcAtomic(120_000_000n), "12");
 assert.throws(() => formatUsdcAtomic(-1n), /negative/);
 
+const originalFetch = globalThis.fetch;
+let defaultFetchCalled = false;
+globalThis.fetch = function () {
+  assert.equal(this, globalThis);
+  defaultFetchCalled = true;
+  return Promise.resolve(response(404, { status: 404 }));
+};
+try {
+  await loadPublicUsdcBalance({ horizonUrl: "https://horizon.example", address: account, issuer });
+  assert.equal(defaultFetchCalled, true);
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
 const inactive = await loadPublicUsdcBalance({
   horizonUrl: "https://horizon.example",
   address: account,

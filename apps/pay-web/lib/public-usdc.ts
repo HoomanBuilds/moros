@@ -2,6 +2,10 @@ import { StrKey } from "@stellar/stellar-sdk";
 
 const USDC_SCALE = 10_000_000n;
 
+function browserFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return globalThis.fetch(input, init);
+}
+
 export interface PublicUsdcBalance {
   accountActive: boolean;
   hasTrustline: boolean;
@@ -27,7 +31,7 @@ export async function loadPublicUsdcBalance({
   horizonUrl,
   address,
   issuer,
-  fetchImpl = fetch,
+  fetchImpl = browserFetch,
   signal,
 }: {
   horizonUrl: string;
