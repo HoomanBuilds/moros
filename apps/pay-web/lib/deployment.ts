@@ -1,5 +1,5 @@
 import { validatePaymentDeployment, type PaymentDeployment } from "@moros/payments-client";
-import testnetDeployment from "../../../deployments/payments-testnet.json";
+import testnetDeployment from "../config/payments-testnet.json";
 
 export type DeploymentState =
   | { ready: true; deployment: Readonly<PaymentDeployment> }
