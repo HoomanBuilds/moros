@@ -131,7 +131,7 @@ Moros provides the privacy layer needed to move Circle USDC without turning each
 - A payment vault that holds Circle USDC and validates commitment and nullifier transitions.
 - A Groth16 verifier that checks the registered payment circuit shapes through Stellar host cryptography.
 - Seven Circom circuits for deposits, private transfers, change outputs, and public withdrawals.
-- A Rust payment core shared by browser and mobile integrations.
+- A Rust payment core designed for browser and mobile integrations.
 - A browser WebAssembly package for private identities, notes, payment requests, receipts, and encrypted recovery.
 - A payment API for proof relay, encrypted output discovery, attachments, action status, and sync authentication.
 - A private indexer that follows vault events without becoming the source of truth for note ownership.
@@ -142,7 +142,7 @@ The payment layer is designed so new Moros applications can reuse the same ident
 
 ## Moros Pay
 
-Moros Pay is the end-user payment application for the Moros private infrastructure. It is available as a web application, with an Android client in this repository.
+Moros Pay is the live web application for the Moros private payment infrastructure. It turns the underlying vault, proof, relay, indexing, identity, and encrypted recovery systems into a focused Circle USDC payment experience. An Android client is under active development in this repository.
 
 Users can:
 
@@ -172,7 +172,7 @@ The user connects an existing Stellar wallet and authorizes a deposit into the M
 
 ### 3. Verify the destination
 
-The sender pastes a payment code, opens a signed request, or scans its QR code on Android. The client checks the checksum, network, vault, asset, request signature, amount policy, and expiry before proof generation.
+The sender pastes a payment code or opens a signed request. The client checks the checksum, network, vault, asset, request signature, amount policy, and expiry before proof generation.
 
 ### 4. Prove and relay
 
@@ -192,7 +192,7 @@ The owner proves control of private input notes and directs Circle USDC to a val
 flowchart TB
     subgraph clients["User clients"]
         webPay["Moros Pay web"]
-        android["Moros Pay Android"]
+        android["Android client under development"]
         core["Rust payment core and WebAssembly"]
         webPay --> core
         android --> core
@@ -656,7 +656,7 @@ All listed core contract instances, Circle USDC SAC, and Reflector dependencies 
 ```text
 moros/
 ├── apps/
-│   ├── android/                      Moros Pay Android application
+│   ├── android/                      Moros Pay Android client under development
 │   └── pay-web/                      Moros Pay web application
 ├── circuits/                         Prediction Circom sources and proving manifests
 ├── contracts/
@@ -705,7 +705,7 @@ The repository also contains an event resolver foundation. It is not part of the
 | Prediction proofs | Fifteen Circom circuits, Groth16, BN254 Stellar host functions |
 | Shared payment core | Rust, WebAssembly, Baby Jubjub, Poseidon2, canonical CBOR |
 | Payment web | Next.js, React, TypeScript, Stellar SDK, Freighter |
-| Payment mobile | Expo, React Native, WalletConnect, Stellar wallet deep links |
+| Payment mobile development | Expo, React Native, WalletConnect, Stellar wallet deep links |
 | Prediction web | Next.js, React, TypeScript, Stellar SDK, Stellar Wallets Kit, Tailwind CSS |
 | Private state | Commitment and nullifier notes, encrypted outputs, AES-256-GCM archive encryption |
 | Services | Node.js, Stellar SDK, payment relay and indexer, Reflector, optional Pyth Lazer Pro adapter |
@@ -735,7 +735,9 @@ npm run dev
 
 The payment web application starts at `http://localhost:3000` by default.
 
-### Moros Pay Android
+### Moros Pay Android development
+
+The Android client is under development and is not presented as a released product.
 
 ```bash
 cd apps/android
@@ -788,7 +790,7 @@ Moros keeps mainnet and testnet configuration in separate profiles. A network sw
 
 ### Moros Pay
 
-The web and Android applications receive one complete, validated payment deployment object. Do not mix individual mainnet and testnet fields.
+Every payment client receives one complete, validated payment deployment object. Do not mix individual mainnet and testnet fields.
 
 ```bash
 NEXT_PUBLIC_PAYMENT_DEPLOYMENT="$(jq -c . ../../deployments/payments-mainnet.json)"
