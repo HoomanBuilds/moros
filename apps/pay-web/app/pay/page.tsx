@@ -16,6 +16,10 @@ import type { PaymentActionProgress } from "@/lib/payment-actions";
 type RequestState = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; request: VerifiedPaymentLink };
 
 export default function PayPage() {
+  return <ProtectedPage><PaymentRequestPage /></ProtectedPage>;
+}
+
+function PaymentRequestPage() {
   const [state, setState] = useState<RequestState>({ status: "loading" });
 
   useEffect(() => {
@@ -43,14 +47,12 @@ export default function PayPage() {
   }, []);
 
   return (
-    <ProtectedPage>
-      <div className="page transactionPage">
-        <header className="pageHeader"><p className="eyebrow">Payment request</p><h1>Review before paying</h1><p className="muted">Moros verifies the request signature, network, asset, and expiration locally.</p></header>
-        {state.status === "loading" && <div className="emptyState"><div><div className="loadingMark" /><h2>Verifying request</h2></div></div>}
-        {state.status === "error" && <div className="notice"><strong><AlertTriangle size={16} /> Request cannot be trusted</strong><p>{state.message}</p></div>}
-        {state.status === "ready" && <VerifiedRequest request={state.request} />}
-      </div>
-    </ProtectedPage>
+    <div className="page transactionPage">
+      <header className="pageHeader"><p className="eyebrow">Payment request</p><h1>Review before paying</h1><p className="muted">Moros verifies the request signature, network, asset, and expiration locally.</p></header>
+      {state.status === "loading" && <div className="emptyState"><div><div className="loadingMark" /><h2>Verifying request</h2></div></div>}
+      {state.status === "error" && <div className="notice"><strong><AlertTriangle size={16} /> Request cannot be trusted</strong><p>{state.message}</p></div>}
+      {state.status === "ready" && <VerifiedRequest request={state.request} />}
+    </div>
   );
 }
 

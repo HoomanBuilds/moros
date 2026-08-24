@@ -55,36 +55,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <a className="skipLink" href="#payment-main">Skip to main content</a>
       <header className="topbar">
         <Link href="/app" className="brandLink"><Brand /></Link>
-        <nav className="desktopNav" aria-label="Primary navigation">
-          {navigation.map(({ href, label, icon: Icon }) => (
-            <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined} className={pathname === href ? "navItem active" : "navItem"}>
-              <Icon size={19} strokeWidth={1.8} />
-              <span>{label}</span>
-            </Link>
-          ))}
-        </nav>
+        {wallet.status === "unlocked" && (
+          <nav className="desktopNav" aria-label="Primary navigation">
+            {navigation.map(({ href, label, icon: Icon }) => (
+              <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined} className={pathname === href ? "navItem active" : "navItem"}>
+                <Icon size={19} strokeWidth={1.8} />
+                <span>{label}</span>
+              </Link>
+            ))}
+          </nav>
+        )}
         <div className="topbarActions">
           <a className="productSwitch desktopOnly" href={productUrls.predict}>Predict</a>
           <ThemeToggle />
-          <Link href="/app/settings" aria-current={pathname === "/app/settings" ? "page" : undefined} className={pathname === "/app/settings" ? "navItem active" : "navItem"}>
-            <Settings size={18} /><span className="desktopOnly">Settings</span>
-          </Link>
           {wallet.status === "unlocked" && (
-            <button className="lockButton" type="button" onClick={wallet.lock}>
-              <LockKeyhole size={17} /><span className="desktopOnly">Lock</span>
-            </button>
+            <>
+              <Link href="/app/settings" aria-current={pathname === "/app/settings" ? "page" : undefined} className={pathname === "/app/settings" ? "navItem active" : "navItem"}>
+                <Settings size={18} /><span className="desktopOnly">Settings</span>
+              </Link>
+              <button className="lockButton" type="button" onClick={wallet.lock}>
+                <LockKeyhole size={17} /><span className="desktopOnly">Lock</span>
+              </button>
+            </>
           )}
         </div>
       </header>
       <main className="main" id="payment-main" ref={mainRef} tabIndex={-1}>{children}</main>
-      <nav className="bottomNav" aria-label="Primary navigation">
-        {mobileNavigation.map(({ href, label, icon: Icon }) => (
-          <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined} className={pathname === href ? "bottomNavItem active" : "bottomNavItem"}>
-            <Icon size={21} strokeWidth={1.8} />
-            <span>{label}</span>
-          </Link>
-        ))}
-      </nav>
+      {wallet.status === "unlocked" && (
+        <nav className="bottomNav" aria-label="Primary navigation">
+          {mobileNavigation.map(({ href, label, icon: Icon }) => (
+            <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined} className={pathname === href ? "bottomNavItem active" : "bottomNavItem"}>
+              <Icon size={21} strokeWidth={1.8} />
+              <span>{label}</span>
+            </Link>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }

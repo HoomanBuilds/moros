@@ -83,7 +83,7 @@ function RecoveryBackup({ phrase, onDone }: { phrase: string; onDone(): void }) 
   );
 }
 
-function WalletStart({ onCreate, onRestore, compact }: { onCreate(): void; onRestore(): void; compact: boolean }) {
+function WalletStart({ onCreate, onRestore }: { onCreate(): void; onRestore(): void }) {
   const stellar = useStellarWallet();
   const busy = stellar.status === "connecting" || stellar.status === "loading";
   const publicStatus = stellar.address
@@ -91,16 +91,24 @@ function WalletStart({ onCreate, onRestore, compact }: { onCreate(): void; onRes
     : "Use the Stellar account you already have.";
 
   return (
-    <section className={compact ? "walletAccess compact" : "walletAccess"}>
+    <section className="walletAccess">
       <header className="walletAccessIntro">
-        <p className="sectionLabel"><span />Choose your access</p>
-        <h2>{compact ? "Connect or create when you are ready." : "Enter Moros your way."}</h2>
-        <p>Browse the app first. Connect Freighter for public Circle USDC, then create or restore a private identity for protected payments.</p>
+        <p className="sectionLabel"><span />Private wallet setup</p>
+        <h2>Create or restore your private wallet.</h2>
+        <p>Your private identity is created locally. Connect Freighter only when you want to add Circle USDC.</p>
       </header>
       <div className="walletAccessGrid">
+        <article className="walletAccessCard private">
+          <div className="walletAccessCardTop"><span>01</span><Fingerprint size={23} /></div>
+          <div><p className="eyebrow">Private payment identity</p><h3>Create locally</h3><p>Generate encrypted payment keys on this device, or restore an identity you already control.</p></div>
+          <div className="walletAccessActions">
+            <button className="button primary" type="button" onClick={onCreate}>Create private identity</button>
+            <button className="button secondary" type="button" onClick={onRestore}>Restore existing identity</button>
+          </div>
+        </article>
         <article className="walletAccessCard">
-          <div className="walletAccessCardTop"><span>01</span><WalletCards size={23} /></div>
-          <div><p className="eyebrow">Public Stellar wallet</p><h3>Connect Freighter</h3><p>{publicStatus}</p></div>
+          <div className="walletAccessCardTop"><span>02</span><WalletCards size={23} /></div>
+          <div><p className="eyebrow">Optional funding wallet</p><h3>Connect Freighter</h3><p>{publicStatus}</p></div>
           {stellar.address ? (
             <div className="walletAccessConnected">
               <div><span>Circle USDC</span><strong>{formatUsdcAtomic(stellar.balanceAtomic)}</strong></div>
@@ -111,14 +119,6 @@ function WalletStart({ onCreate, onRestore, compact }: { onCreate(): void; onRes
           )}
           {stellar.error && <p className="errorText" role="alert">{stellar.error}</p>}
         </article>
-        <article className="walletAccessCard private">
-          <div className="walletAccessCardTop"><span>02</span><Fingerprint size={23} /></div>
-          <div><p className="eyebrow">Private payment identity</p><h3>Create locally</h3><p>Generate encrypted payment keys on this device, or restore an identity you already control.</p></div>
-          <div className="walletAccessActions">
-            <button className="button primary" type="button" onClick={onCreate}>Create private identity</button>
-            <button className="button secondary" type="button" onClick={onRestore}>Restore existing identity</button>
-          </div>
-        </article>
       </div>
       <footer className="walletAccessFoot">
         <span><ShieldCheck size={15} />No automatic wallet prompts</span>
@@ -128,7 +128,7 @@ function WalletStart({ onCreate, onRestore, compact }: { onCreate(): void; onRes
   );
 }
 
-function CreateWallet({ compact = false }: { compact?: boolean }) {
+function CreateWallet() {
   const wallet = usePaymentWallet();
   const [mode, setMode] = useState<"choose" | "create" | "restore">("choose");
   const [password, setPassword] = useState("");
@@ -162,7 +162,7 @@ function CreateWallet({ compact = false }: { compact?: boolean }) {
   if (backup) return <RecoveryBackup phrase={backup} onDone={() => wallet.activate(backup)} />;
 
   if (mode === "choose") {
-    return <WalletStart compact={compact} onCreate={() => setMode("create")} onRestore={() => setMode("restore")} />;
+    return <WalletStart onCreate={() => setMode("create")} onRestore={() => setMode("restore")} />;
   }
 
   return (
@@ -226,13 +226,4 @@ export function WalletGate({ children }: { children: React.ReactNode }) {
     return <div className="walletAccessShell"><RecoveryBackup phrase={wallet.recoveryPhrase} onDone={() => wallet.activate(wallet.recoveryPhrase as string)} /></div>;
   }
   return <>{children}</>;
-}
-
-export function WalletAccess({ compact = false }: { compact?: boolean }) {
-  const wallet = usePaymentWallet();
-  if (wallet.status === "loading") return <div className="walletAccessLoading compact"><div className="loadingMark" aria-label="Loading private wallet" /><span>Checking this device</span></div>;
-  if (wallet.status === "empty") return <CreateWallet compact={compact} />;
-  if (wallet.status === "locked") return <div className="walletAccessShell compact"><UnlockWallet /></div>;
-  if (wallet.status === "backup" && wallet.recoveryPhrase) return <div className="walletAccessShell"><RecoveryBackup phrase={wallet.recoveryPhrase} onDone={() => wallet.activate(wallet.recoveryPhrase as string)} /></div>;
-  return null;
 }

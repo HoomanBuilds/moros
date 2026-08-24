@@ -227,8 +227,6 @@ a { color: inherit; text-decoration: none; }
 .walletAccessIntro { display: grid; gap: 18px; padding: clamp(30px, 5vw, 64px); border-bottom: 1px solid var(--line); }
 .walletAccessIntro h2 { max-width: 800px; margin: 0; font: 400 clamp(52px, 8vw, 92px)/.86 var(--font-display), Georgia, serif; letter-spacing: -.05em; }
 .walletAccessIntro > p:last-child { max-width: 620px; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
-.walletAccess.compact .walletAccessIntro { padding: 28px; }
-.walletAccess.compact .walletAccessIntro h2 { font-size: clamp(38px, 6vw, 58px); line-height: .92; }
 .walletAccessGrid { display: grid; }
 .walletAccessCard { min-width: 0; min-height: 330px; display: flex; flex-direction: column; gap: 28px; padding: clamp(24px, 4vw, 42px); border-bottom: 1px solid var(--line); }
 .walletAccessCard:last-child { border-bottom: 0; }
@@ -253,10 +251,8 @@ a { color: inherit; text-decoration: none; }
 .walletAccessFoot span { display: inline-flex; align-items: center; gap: 8px; }
 .walletAccessFoot svg { color: var(--accent); }
 .walletAccessShell { min-height: calc(100dvh - 216px); display: grid; place-items: center; }
-.walletAccessShell.compact { min-height: 0; margin-bottom: 24px; }
 .walletAccessForm { margin: 0 auto; }
 .walletAccessLoading { min-height: calc(100dvh - 216px); display: grid; place-items: center; align-content: center; gap: 14px; color: var(--muted); font: 500 10px/1 var(--font-mono), monospace; text-transform: uppercase; letter-spacing: .08em; }
-.walletAccessLoading.compact { min-height: 180px; margin-bottom: 24px; border: 1px solid var(--line); }
 .emptyState { min-height: 240px; display: grid; place-items: center; text-align: center; padding: 32px; border: 1px dashed var(--line-strong); }
 .emptyState > div { max-width: 340px; }
 .emptyState svg { color: var(--accent); margin-bottom: 12px; }

@@ -7,7 +7,6 @@ import { ProtectedPage } from "@/components/protected-page";
 import { UsdcIcon } from "@/components/payment-icons";
 import { BalanceOverview } from "@/components/balance-overview";
 import { usePaymentWallet } from "@/components/wallet-provider";
-import { WalletAccess } from "@/components/wallet-gate";
 import { PaymentRequestList } from "@/components/payment-request-list";
 import { formatUsdcAtomic } from "@/lib/public-usdc";
 
@@ -15,14 +14,13 @@ export default function HomePage() {
   const wallet = usePaymentWallet();
   const recentRequests = wallet.profile.value?.paymentRequests.slice(0, 3) ?? [];
   return (
-    <ProtectedPage allowLocked>
+    <ProtectedPage>
       <div className="page">
         <header className="pageHeader">
           <p className="sectionLabel"><span />Private balance</p>
           <h1>Money that moves<br /><em>off the public map.</em></h1>
           <p className="muted">A reusable Circle USDC balance for private payments on Stellar.</p>
         </header>
-        {wallet.status !== "unlocked" && <WalletAccess compact />}
         <BalanceOverview />
         <div className="dashboardLead">
           <section className="vaultPanel">
