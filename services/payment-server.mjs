@@ -76,12 +76,15 @@ function paymentIdentity(value) {
   };
 }
 
-function eventPosition(id, ledger) {
-  if (typeof id !== "string" || !/^\d+-\d+$/.test(id)) {
+function eventPosition(event) {
+  if (typeof event.id !== "string" || !/^\d+-\d+$/.test(event.id)) {
     throw new Error("invalid Stellar payment event identifier");
   }
-  const [transactionPosition, eventPositionValue] = id.split("-");
-  const transactionIndex = BigInt(transactionPosition) - BigInt(ledger) * (1n << 32n);
+  if (!Number.isSafeInteger(event.transactionIndex)) {
+    throw new Error("invalid Stellar payment event position");
+  }
+  const [, eventPositionValue] = event.id.split("-");
+  const transactionIndex = BigInt(event.transactionIndex);
   const eventIndex = BigInt(eventPositionValue);
   if (
     transactionIndex < 0n ||
@@ -117,7 +120,7 @@ export function normalizePaymentRpcEvent(event, vault) {
   const name = topic[0];
   const actionId = bytesHex(topic[1], 32, "payment action id");
   const value = scValToNative(event.value);
-  const position = eventPosition(event.id, event.ledger);
+  const position = eventPosition(event);
   const base = {
     cursor: event.pagingToken || event.id,
     ledger: event.ledger,

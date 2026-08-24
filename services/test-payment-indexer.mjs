@@ -162,6 +162,16 @@ await rejectsEvents([
 await rejectsEvents([outputEvent(1), outputEvent(0)], /payment output leaf gap/);
 await rejectsEvents([{ ...outputEvent(0), encryptedOutput: Buffer.alloc(479) }], /payment envelope/);
 
+const failedIndexer = new PaymentEventIndexer({
+  source: pagedSource([{ ...outputEvent(0), leafIndex: 1 }]),
+  store: new MemoryPaymentIndexStore(),
+  network,
+  vault,
+  startLedger: 100,
+});
+await assert.rejects(failedIndexer.sync(), /leaf gap/);
+assert.match(failedIndexer.summary().error, /leaf gap/);
+
 const auditLeft = new PaymentEventIndexer({
   source: pagedSource(),
   store: new MemoryPaymentIndexStore(),

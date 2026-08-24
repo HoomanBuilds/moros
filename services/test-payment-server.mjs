@@ -12,9 +12,11 @@ function event(topic, value, eventIndex = 0) {
     contractId: vault,
     topic: [nativeToScVal(topic, { type: "symbol" }), nativeToScVal(actionId, { type: "bytes" })],
     value: nativeToScVal(value),
-    id: `${BigInt(ledger) * (1n << 32n) + BigInt(transactionIndex)}-${eventIndex}`,
+    id: `${BigInt(ledger) * (1n << 32n) + (BigInt(transactionIndex) << 12n)}-${eventIndex}`,
     pagingToken: `cursor-${eventIndex}`,
     ledger,
+    transactionIndex,
+    operationIndex: 0,
     txHash: "11".repeat(32),
   };
 }
@@ -28,6 +30,15 @@ assert.equal(output.leafIndex, 3);
 assert.equal(output.commitment, "44");
 assert.equal(output.encryptedOutput, "09".repeat(480));
 assert.equal(output.txIndex, transactionIndex);
+
+const mainnetOutput = normalizePaymentRpcEvent({
+  ...event("payment_output", [0, 0, 44n, Buffer.alloc(480, 9)], 1),
+  id: "0275321869125038080-0000000001",
+  ledger: 64_103_368,
+  transactionIndex: 387,
+}, vault);
+assert.equal(mainnetOutput.txIndex, 387);
+assert.equal(mainnetOutput.eventIndex, 1);
 
 const attachment = normalizePaymentRpcEvent(event(
   "payment_attachment",

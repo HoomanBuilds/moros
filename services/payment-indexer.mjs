@@ -229,13 +229,23 @@ export class PaymentEventIndexer {
       ? validateState(saved, this.network, this.vault, this.startLedger)
       : emptyState(this.network, this.vault, this.startLedger);
     this.syncPending = null;
+    this.lastError = null;
   }
 
   sync() {
     if (!this.syncPending) {
-      this.syncPending = this.syncCurrent().finally(() => {
-        this.syncPending = null;
-      });
+      this.syncPending = this.syncCurrent()
+        .then((summary) => {
+          this.lastError = null;
+          return summary;
+        })
+        .catch((error) => {
+          this.lastError = error instanceof Error ? error.message : "payment index refresh failed";
+          throw error;
+        })
+        .finally(() => {
+          this.syncPending = null;
+        });
     }
     return this.syncPending;
   }
@@ -373,6 +383,7 @@ export class PaymentEventIndexer {
       currentRoot: this.state.currentRoot,
       actions: Object.keys(this.state.actions).length,
       updatedAt: this.state.updatedAt,
+      error: this.lastError,
     };
   }
 
