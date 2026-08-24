@@ -175,8 +175,8 @@ function normalizePaymentActivity(value: unknown): PrivatePaymentActivity {
     transactionHash,
     kind: activity.kind,
     amountAtomic,
-    recipientFingerprint,
-    publicAccount,
+    ...(recipientFingerprint ? { recipientFingerprint } : {}),
+    ...(publicAccount ? { publicAccount } : {}),
     createdAt: safeTimestamp(activity.createdAt),
   };
 }
