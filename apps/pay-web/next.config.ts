@@ -2,7 +2,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   agentRules: false,
   reactStrictMode: true,
-  output: "standalone",
   transpilePackages: ["@moros/payments-client", "@moros/payments-crypto-web"],
   async redirects() {
     return ["send", "receive", "request", "activity", "contacts", "deposit", "withdraw", "settings"].map((route) => ({
