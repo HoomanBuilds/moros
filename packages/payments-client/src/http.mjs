@@ -1,6 +1,10 @@
 const MAX_RESPONSE_BYTES = 2_000_000;
 const MAX_ATTEMPTS = 3;
 
+function defaultFetch(...args) {
+  return globalThis.fetch(...args);
+}
+
 export class PaymentApiError extends Error {
   constructor(message, { status = 0, retryable = false } = {}) {
     super(message);
@@ -38,7 +42,7 @@ async function responseJson(response) {
 }
 
 export class PaymentHttpClient {
-  constructor({ endpoints, fetchImpl = fetch, timeoutMs = 8_000, attempts = 2, now = Date.now }) {
+  constructor({ endpoints, fetchImpl = defaultFetch, timeoutMs = 8_000, attempts = 2, now = Date.now }) {
     if (!Array.isArray(endpoints) || endpoints.length === 0 || endpoints.length > 4) {
       throw new Error("invalid payment API endpoints");
     }

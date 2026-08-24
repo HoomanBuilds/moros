@@ -5,6 +5,20 @@ function response(status, value, headers = {}) {
   return new Response(JSON.stringify(value), { status, headers });
 }
 
+const originalFetch = globalThis.fetch;
+let defaultFetchReceiver;
+globalThis.fetch = function () {
+  defaultFetchReceiver = this;
+  return Promise.resolve(response(200, { ok: true }));
+};
+try {
+  const defaultClient = new PaymentHttpClient({ endpoints: ["https://one.example"] });
+  assert.deepEqual(await defaultClient.request("/v1/health"), { ok: true });
+  assert.equal(defaultFetchReceiver, globalThis);
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
 let now = 1_000;
 const calls = [];
 const client = new PaymentHttpClient({
