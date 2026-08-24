@@ -5,47 +5,49 @@
 <h1 align="center">Moros</h1>
 
 <p align="center">
-  <b>Stellar's first private prediction market.</b>
+  <b>Private payment infrastructure for Circle USDC on Stellar.</b>
 </p>
 
 <p align="center">
-  Encrypted positions, proof-bound settlement, and Circle USDC on Stellar Mainnet.
+  Pay, receive, request, recover, and build private financial applications with reusable shielded USDC.
 </p>
 
 <p align="center">
-  <a href="https://predict.moros.fun">Live App</a> |
-  <a href="https://predict.moros.fun/app/create">Create a Market</a> |
-  <a href="https://predict.moros.fun/app/portfolio">Portfolio</a> |
+  <a href="https://pay.moros.fun">Moros Pay</a> |
+  <a href="https://predict.moros.fun">Moros Predict</a> |
   <a href="https://predict.moros.fun/whitepaper.pdf">Whitepaper</a> |
   <a href="https://github.com/HoomanBuilds/moros">GitHub</a> |
   <a href="https://x.com/morosxyz">X</a>
 </p>
 
-> Moros lets anyone propose a price market, place an encrypted YES or NO position, provide reusable private liquidity, and claim a proof-bound payout without publishing their position to the public chain.
+> Moros is a private financial infrastructure suite on Stellar. Moros Pay moves Circle USDC through reusable private notes, signed payment requests, encrypted recovery, and proof-bound settlement. Moros Predict is Stellar's first private prediction market and the first live financial application built from the same privacy engineering.
 
-## Live on Stellar Mainnet
+## Products on Stellar Mainnet
 
-Moros is deployed on Stellar Mainnet and settles markets in real Circle USDC. The current release supports crypto, foreign exchange, and gold price markets resolved through public Reflector feeds.
+| Product | Purpose | URL |
+| --- | --- | --- |
+| Moros Pay | Private Circle USDC payments, requests, recovery, and withdrawals | [pay.moros.fun](https://pay.moros.fun) |
+| Moros Predict | Private USDC prediction markets with pooled liquidity | [predict.moros.fun](https://predict.moros.fun) |
+| Moros private infrastructure | Payment notes, proof verification, relay, indexing, and encrypted sync | This repository |
 
-- Network: Stellar mainnet
-- Collateral: Circle USDC on Stellar
-- Market model: LMSR with encrypted batch execution
-- Liquidity model: shared permissionless LP vault with isolated market allocations
-- Resolution: Reflector price feeds through a configurable resolver registry
-- Payouts: user-initiated claims and refunds
-- Event markets: disabled until their evidence, challenge, arbitration, and refund operations are complete
+Both applications use Circle USDC on Stellar Mainnet. XLM is used for Stellar fees and account reserve requirements, not as the payment or market asset.
 
 ## Contents
 
 - [For judges and reviewers](#for-judges-and-reviewers)
-- [What Moros does](#what-moros-does)
+- [Private payment infrastructure](#private-payment-infrastructure)
+- [Moros Pay](#moros-pay)
+- [How a private payment works](#how-a-private-payment-works)
+- [Payment architecture](#payment-architecture)
+- [Payment mainnet deployment](#payment-mainnet-deployment)
+- [Moros Predict](#moros-predict)
 - [Why private batch markets](#why-private-batch-markets)
 - [How a market works](#how-a-market-works)
-- [System architecture](#system-architecture)
+- [Prediction architecture](#prediction-architecture)
 - [Pricing, liquidity, and fees](#pricing-liquidity-and-fees)
 - [Privacy model](#privacy-model)
 - [Supported mainnet markets](#supported-mainnet-markets)
-- [Mainnet deployment](#mainnet-deployment)
+- [Prediction mainnet deployment](#prediction-mainnet-deployment)
 - [Application routes](#application-routes)
 - [Repository structure](#repository-structure)
 - [Technology stack](#technology-stack)
@@ -60,16 +62,25 @@ Moros is deployed on Stellar Mainnet and settles markets in real Circle USDC. Th
 
 | Item | Link or value |
 | --- | --- |
-| Live product | [predict.moros.fun](https://predict.moros.fun) |
-| Market application | [predict.moros.fun/app](https://predict.moros.fun/app) |
+| Private payments | [pay.moros.fun](https://pay.moros.fun) |
+| Private prediction markets | [predict.moros.fun](https://predict.moros.fun) |
 | Technical whitepaper | [predict.moros.fun/whitepaper.pdf](https://predict.moros.fun/whitepaper.pdf) |
 | Source code | [github.com/HoomanBuilds/moros](https://github.com/HoomanBuilds/moros) |
 | Network | Stellar Mainnet |
-| Settlement asset | Circle USDC |
-| Canonical deployment | [deployments/private-mainnet.json](./deployments/private-mainnet.json) |
-| Proving manifest | [deployments/private-mainnet-proving.json](./deployments/private-mainnet-proving.json) |
+| Payment and market asset | Circle USDC |
+| Payment deployment | [deployments/payments-mainnet.json](./deployments/payments-mainnet.json) |
+| Payment proving manifest | [deployments/payments-mainnet-proving.json](./deployments/payments-mainnet-proving.json) |
+| Prediction deployment | [deployments/private-mainnet.json](./deployments/private-mainnet.json) |
+| Prediction proving manifest | [deployments/private-mainnet-proving.json](./deployments/private-mainnet-proving.json) |
 
-### Core mainnet contracts
+### Private payment mainnet contracts
+
+| Contract | Mainnet contract ID |
+| --- | --- |
+| Payment verifier | [CB4L4FGBRY2D53MYETJH45OVFWCXRBJEHTW7B4W56XROQ26VSHQPSPR5](https://stellar.expert/explorer/public/contract/CB4L4FGBRY2D53MYETJH45OVFWCXRBJEHTW7B4W56XROQ26VSHQPSPR5) |
+| Payment vault | [CCKD5AHU2JGUR7RWMI5CT3UVOOCPDTQYK43DI24GKRKKUWZ3N22UOAIR](https://stellar.expert/explorer/public/contract/CCKD5AHU2JGUR7RWMI5CT3UVOOCPDTQYK43DI24GKRKKUWZ3N22UOAIR) |
+
+### Private prediction mainnet contracts
 
 | Contract | Mainnet contract ID |
 | --- | --- |
@@ -91,24 +102,157 @@ Moros is deployed on Stellar Mainnet and settles markets in real Circle USDC. Th
 
 ### Recommended review path
 
-1. Open the [market application](https://predict.moros.fun/app) and inspect active and resolved markets.
-2. Open a market to review its oracle route, liquidity, encrypted activity, batch pricing, and resolution state.
-3. Open [Portfolio](https://predict.moros.fun/app/portfolio) to inspect the reusable private USDC wallet, encrypted recovery, positions, claims, and refunds.
-4. Open [Liquidity](https://predict.moros.fun/app/liquidity) to inspect pooled LP shares, automatic market allocation, and private exits.
-5. Compare the live contract graph with the [canonical deployment manifest](./deployments/private-mainnet.json).
+1. Open [Moros Pay](https://pay.moros.fun) and inspect the private wallet, signed request, payment code, activity, and recovery flows.
+2. Compare its network configuration with the [payment deployment manifest](./deployments/payments-mainnet.json) and [payment proving manifest](./deployments/payments-mainnet-proving.json).
+3. Open [Moros Predict](https://predict.moros.fun/app) and inspect active and resolved markets.
+4. Open a market to review its oracle route, liquidity, encrypted activity, batch pricing, and resolution state.
+5. Open [Portfolio](https://predict.moros.fun/app/portfolio) to inspect private USDC, positions, claims, and refunds.
+6. Open [Liquidity](https://predict.moros.fun/app/liquidity) to inspect pooled LP shares, automatic market allocation, and private exits.
+7. Compare the market graph with the [prediction deployment manifest](./deployments/private-mainnet.json).
 
 ### What is technically distinct
 
-- One reusable shielded USDC balance supports orders, liquidity, claims, refunds, and withdrawals.
+- Moros Pay uses one reusable private USDC balance across transfers, requests, receipts, and withdrawals.
+- A payment code identifies a private recipient without embedding a public Stellar account.
+- Seven payment circuits support deposits, transfers with one, two, or four inputs, and withdrawals with one, two, or four inputs.
+- Payment indexing discovers encrypted outputs while note ownership and private history are recovered locally.
+- Encrypted sync stores padded ciphertext rather than a readable payment ledger.
+- Moros Predict uses reusable shielded USDC for orders, liquidity, claims, refunds, and withdrawals.
 - Individual side, quantity, note ownership, and private portfolio history are not published as plaintext.
 - Encrypted orders clear in aggregate epochs, and the visible LMSR probability moves only after batch execution.
 - Market creators propose supported markets without personally funding the full LMSR subsidy.
 - Permissionless LP capital is pooled, while each funded market receives an isolated risk allocation.
 - Fifteen Groth16 circuits bind private note transitions and batch execution to Stellar contract state.
 
-## What Moros does
+## Private payment infrastructure
 
-Moros is an end-user prediction market application and an on-chain market protocol.
+Moros provides the privacy layer needed to move Circle USDC without turning each internal payment into public account history. The infrastructure is separated into reusable components:
+
+- A payment vault that holds Circle USDC and validates commitment and nullifier transitions.
+- A Groth16 verifier that checks the registered payment circuit shapes through Stellar host cryptography.
+- Seven Circom circuits for deposits, private transfers, change outputs, and public withdrawals.
+- A Rust payment core shared by browser and mobile integrations.
+- A browser WebAssembly package for private identities, notes, payment requests, receipts, and encrypted recovery.
+- A payment API for proof relay, encrypted output discovery, attachments, action status, and sync authentication.
+- A private indexer that follows vault events without becoming the source of truth for note ownership.
+- Encrypted Supabase sync for cross-device recovery of private profiles and activity.
+- Network-scoped manifests that bind clients to one Stellar network, vault, verifier, USDC contract, and artifact set.
+
+The payment layer is designed so new Moros applications can reuse the same identity, note, recovery, and settlement primitives without duplicating privacy logic.
+
+## Moros Pay
+
+Moros Pay is the end-user payment application for the Moros private infrastructure. It is available as a web application, with an Android client in this repository.
+
+Users can:
+
+- Create or restore a private Moros identity from recovery words.
+- Connect an existing Stellar wallet for Circle USDC funding.
+- Add USDC to a reusable private balance.
+- Receive through a rotatable payment code that contains no public Stellar account.
+- Create fixed or open-amount signed payment requests with expiry.
+- Verify payment codes and signed requests locally before approving a payment.
+- Send private USDC and receive reusable private change.
+- Save encrypted contacts and recent recipients.
+- Recover private balance and profile data across devices from ciphertext-only sync.
+- Export a scoped incoming-payment viewing capability without exporting spend authority.
+- Withdraw private USDC to a valid Stellar account.
+
+The web product lives at [pay.moros.fun](https://pay.moros.fun). Payment links use `https://pay.moros.fun/pay#...`, keeping the signed request payload in the URL fragment so it is not sent to the web server as part of the request path.
+
+## How a private payment works
+
+### 1. Create or restore a private identity
+
+The client derives network-scoped spending, viewing, encryption, request-signing, and recovery material locally. A Moros payment code carries the private recipient information needed to create an encrypted output. It does not expose a Stellar account address.
+
+### 2. Add Circle USDC
+
+The user connects an existing Stellar wallet and authorizes a deposit into the Moros payment vault. The client creates encrypted outputs for the private identity and binds them to a zero-knowledge deposit proof.
+
+### 3. Verify the destination
+
+The sender pastes a payment code, opens a signed request, or scans its QR code on Android. The client checks the checksum, network, vault, asset, request signature, amount policy, and expiry before proof generation.
+
+### 4. Prove and relay
+
+The client selects one, two, or four private input notes, creates the recipient output and private change outputs, and generates the matching Groth16 proof. The relay submits the proof-bound contract invocation without receiving the private witness.
+
+### 5. Recover and reuse
+
+The recipient discovers encrypted vault outputs, decrypts matching notes locally, and can reuse the received USDC for another payment. Encrypted profile sync keeps recovery durable without giving the database readable balances, contacts, or payment history.
+
+### 6. Withdraw when needed
+
+The owner proves control of private input notes and directs Circle USDC to a valid Stellar account. Nullifiers prevent the same note from being spent twice.
+
+## Payment architecture
+
+```mermaid
+flowchart TB
+    subgraph clients["User clients"]
+        webPay["Moros Pay web"]
+        android["Moros Pay Android"]
+        core["Rust payment core and WebAssembly"]
+        webPay --> core
+        android --> core
+    end
+
+    subgraph services["Private payment services"]
+        api["Payment API and relay"]
+        indexer["Encrypted output indexer"]
+        sync["Ciphertext-only recovery sync"]
+    end
+
+    subgraph stellar["Stellar Mainnet"]
+        usdc["Circle USDC SAC"]
+        vault["Payment vault"]
+        verifier["Groth16 verifier"]
+        vault --> usdc
+        vault --> verifier
+    end
+
+    core -->|proofs and encrypted outputs| api
+    api -->|contract invocation| vault
+    vault -->|events| indexer
+    indexer -->|encrypted outputs| core
+    core <-->|padded ciphertext| sync
+```
+
+### Payment proof set
+
+| Circuit | Private inputs | Outputs | Purpose |
+| --- | ---: | ---: | --- |
+| `deposit` | 0 | 2 | Convert public Circle USDC into private notes |
+| `transfer_one` | 1 | 4 | Spend one private note into recipient and change outputs |
+| `transfer_two` | 2 | 4 | Combine two private notes for a transfer |
+| `transfer_four` | 4 | 4 | Combine up to four private notes for a transfer |
+| `withdraw_one` | 1 | 4 | Withdraw from one private note |
+| `withdraw_two` | 2 | 4 | Withdraw from two private notes |
+| `withdraw_four` | 4 | 4 | Withdraw from up to four private notes |
+
+Every payment circuit exposes the same fixed 20-field public statement shape. The statement binds the action, context digest, membership root, nullifiers, output commitments, encrypted output hashes, attachment hash, and signed public amount.
+
+## Payment mainnet deployment
+
+The canonical records are [deployments/payments-mainnet.json](./deployments/payments-mainnet.json) and [deployments/payments-mainnet-proving.json](./deployments/payments-mainnet-proving.json).
+
+| Component | Mainnet value |
+| --- | --- |
+| Network | `stellar:pubnet` |
+| Payment vault | `CCKD5AHU2JGUR7RWMI5CT3UVOOCPDTQYK43DI24GKRKKUWZ3N22UOAIR` |
+| Payment verifier | `CB4L4FGBRY2D53MYETJH45OVFWCXRBJEHTW7B4W56XROQ26VSHQPSPR5` |
+| Circle USDC SAC | `CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75` |
+| Merkle tree levels | 20 |
+| Accepted root history | 64 roots |
+| Payment circuits | 7 |
+| Proof system | Groth16 on BN254 |
+
+Clients validate the complete deployment object before deriving identities, scanning outputs, or preparing a proof. Invalid network, passphrase, contract, USDC, artifact, or circuit configuration fails closed.
+
+## Moros Predict
+
+Moros Predict is an end-user prediction market application and an on-chain market protocol.
 
 Users can:
 
@@ -212,7 +356,7 @@ Settlement does not automatically send money to every wallet. Stellar contracts 
 - Terminal market capital and vested fees return to the pooled LP system through service-submitted transactions.
 - A user may withdraw private balance to a public Stellar wallet at any time allowed by vault capacity and withdrawal rules.
 
-## System architecture
+## Prediction architecture
 
 Moros separates user secrets, service coordination, public market state, and external data into explicit trust boundaries.
 
@@ -362,6 +506,8 @@ After exact rounding obligations are reimbursed:
 
 Moros uses commitment and nullifier notes, browser-side encryption, Groth16 proofs, a shared shielded vault, and encrypted application sync.
 
+Moros Pay and Moros Predict use separate mainnet vaults and proof manifests. This keeps payment state independent from market state while allowing both products to reuse the same privacy principles, client cryptography, encrypted recovery model, and Circle USDC settlement layer.
+
 ### What is public
 
 - The Stellar account authorizing a deposit or withdrawal
@@ -403,6 +549,8 @@ Market comments and images are intentionally public social records and are store
 
 ### Zero-knowledge circuits
 
+Moros Pay uses seven circuits for payment deposits, one, two, or four-input transfers, and one, two, or four-input withdrawals. Their canonical artifact record is [deployments/payments-mainnet-proving.json](./deployments/payments-mainnet-proving.json).
+
 The mainnet proving manifest covers 15 Groth16 circuits:
 
 | User and note flows | Market and service flows |
@@ -443,7 +591,7 @@ Reflector CEX and Reflector fiat or metals are separate contracts, but they are 
 
 Sports, politics, weather, economics, entertainment, and custom event markets are not enabled on mainnet. Their UI options remain locked until Moros has production evidence observers, dispute windows, arbitration, and reliable void or refund monitoring for those categories.
 
-## Mainnet deployment
+## Prediction mainnet deployment
 
 The canonical deployment record is [deployments/private-mainnet.json](./deployments/private-mainnet.json). Applications and services load addresses from the selected network manifest instead of duplicating contract IDs across source files. The reviewer-facing contract and dependency tables are in [For judges and reviewers](#for-judges-and-reviewers).
 
@@ -479,6 +627,22 @@ All listed core contract instances, Circle USDC SAC, and Reflector dependencies 
 
 ## Application routes
 
+### Moros Pay
+
+| Route | Purpose |
+| --- | --- |
+| [Home](https://pay.moros.fun) | Understand the private payment rail |
+| [Wallet](https://pay.moros.fun/app) | View private balance and payment actions |
+| [Send](https://pay.moros.fun/app/send) | Verify a payment code or signed request and send private USDC |
+| [Receive](https://pay.moros.fun/app/receive) | Share or rotate a private payment code |
+| [Request](https://pay.moros.fun/app/request) | Create a signed fixed or open-amount request |
+| [Contacts](https://pay.moros.fun/app/contacts) | Manage encrypted private contacts |
+| [Activity](https://pay.moros.fun/app/activity) | Recover private transfers, requests, and receipts |
+| [Deposit](https://pay.moros.fun/app/deposit) | Add Circle USDC to the private balance |
+| [Withdraw](https://pay.moros.fun/app/withdraw) | Exit private USDC to a Stellar account |
+
+### Moros Predict
+
 | Route | Purpose |
 | --- | --- |
 | [App](https://predict.moros.fun/app) | Browse active and resolved markets |
@@ -491,8 +655,15 @@ All listed core contract instances, Circle USDC SAC, and Reflector dependencies 
 
 ```text
 moros/
-├── circuits/                         Circom sources, build scripts, and proving manifests
+├── apps/
+│   ├── android/                      Moros Pay Android application
+│   └── pay-web/                      Moros Pay web application
+├── circuits/                         Prediction Circom sources and proving manifests
 ├── contracts/
+│   ├── payment-circuits/             Private payment circuit entrypoints
+│   ├── payment-types/                Shared payment contract structures
+│   ├── payment-vault/                Circle USDC payment note state machine
+│   ├── payment-verifier/             Payment Groth16 verification
 │   ├── lmsr-market/                  Batch pricing, execution, settlement, and claims
 │   ├── market-factory/               Proposal validation and market deployment
 │   ├── market-liquidity-vault/       Per-market capital isolation
@@ -502,14 +673,25 @@ moros/
 │   ├── resolver-registry/            Approved resolver routes
 │   ├── shielded-collateral-vault/    Reusable private USDC notes
 │   └── zk-verifier/                  Groth16 proof verification
+├── crates/
+│   ├── payments-core/                Shared Rust payment cryptography and protocol types
+│   ├── payments-core-wasm/           Browser WebAssembly bindings
+│   └── payments-mobile-native/       Native mobile payment bindings
 ├── deployments/                      Network-scoped deployment and artifact records
 ├── docs/                             Technical whitepaper source and PDF
 ├── fixtures/                         Reference protocol economics fixtures
+├── packages/
+│   ├── payments-client/              Payment API, relay, indexer, and sync client
+│   └── payments-crypto-web/          Built browser cryptography package
 ├── services/
+│   ├── payment-api.mjs               Payment relay, output, action, and sync API
+│   ├── payment-indexer.mjs           Payment vault event indexer
+│   ├── payment-relay.mjs             Proof-bound payment transaction relay
+│   ├── payment-sync.mjs              Encrypted recovery service
 │   ├── private-server.mjs            Private relay, coordinator, RPC proxy, and artifact host
 │   ├── resolve-keeper.mjs            Resolution, LP allocation, harvesting, and TTL keeper
 │   └── oracle-config.mjs             Supported feeds and resolver route policy
-└── web/                              Next.js application and browser proof flows
+└── web/                              Moros Predict application and browser proof flows
 ```
 
 The repository also contains an event resolver foundation. It is not part of the enabled mainnet product until non-price market operations are production-ready.
@@ -519,12 +701,16 @@ The repository also contains an event resolver foundation. It is not part of the
 | Layer | Technology |
 | --- | --- |
 | Contracts | Rust, Soroban SDK, Stellar Asset Contracts, SEP-41 token interface |
-| Proof system | Circom, SnarkJS, Groth16, BN254 Stellar host functions |
-| Web | Next.js, React, TypeScript, Stellar SDK, Stellar Wallets Kit, Tailwind CSS |
-| Private state | Commitment and nullifier notes, Poseidon hashing, AES-256-GCM archive encryption |
-| Services | Node.js, Stellar SDK, Reflector, optional Pyth Lazer Pro adapter |
+| Payment proofs | Seven Circom circuits, Groth16, BN254 Stellar host functions |
+| Prediction proofs | Fifteen Circom circuits, Groth16, BN254 Stellar host functions |
+| Shared payment core | Rust, WebAssembly, Baby Jubjub, Poseidon2, canonical CBOR |
+| Payment web | Next.js, React, TypeScript, Stellar SDK, Freighter |
+| Payment mobile | Expo, React Native, WalletConnect, Stellar wallet deep links |
+| Prediction web | Next.js, React, TypeScript, Stellar SDK, Stellar Wallets Kit, Tailwind CSS |
+| Private state | Commitment and nullifier notes, encrypted outputs, AES-256-GCM archive encryption |
+| Services | Node.js, Stellar SDK, payment relay and indexer, Reflector, optional Pyth Lazer Pro adapter |
 | Data | Stellar RPC, Horizon, Supabase Postgres, encrypted private-sync pages |
-| Production | Vercel web deployment, supervised VM services, network-scoped RPC failover |
+| Production | Vercel web applications, supervised services, network-scoped RPC failover |
 
 ## Run locally
 
@@ -536,7 +722,31 @@ The repository also contains an event resolver foundation. It is not part of the
 - `wasm32v1-none` Rust target
 - Stellar CLI
 
-### Web application
+### Moros Pay web
+
+```bash
+cd apps/pay-web
+npm install
+cp .env.example .env.local
+npm test
+npm run build
+npm run dev
+```
+
+The payment web application starts at `http://localhost:3000` by default.
+
+### Moros Pay Android
+
+```bash
+cd apps/android
+npm install
+cp .env.example .env
+npm test
+npm run typecheck
+npm start
+```
+
+### Moros Predict web
 
 ```bash
 cd web
@@ -547,7 +757,7 @@ npm run build
 npm run dev
 ```
 
-The development app starts at `http://localhost:3000`.
+The prediction web application starts at `http://localhost:3000` by default.
 
 ### Services
 
@@ -576,7 +786,18 @@ Release builds use size optimization, link-time optimization, and overflow check
 
 Moros keeps mainnet and testnet configuration in separate profiles. A network switch changes the passphrase, RPC, Horizon endpoint, private service, deployment manifest, proving artifacts, archive scope, and contract graph together.
 
-### Frontend
+### Moros Pay
+
+The web and Android applications receive one complete, validated payment deployment object. Do not mix individual mainnet and testnet fields.
+
+```bash
+NEXT_PUBLIC_PAYMENT_DEPLOYMENT="$(jq -c . ../../deployments/payments-mainnet.json)"
+EXPO_PUBLIC_PAYMENT_DEPLOYMENT="$(jq -c . ../../deployments/payments-mainnet.json)"
+```
+
+Use [deployments/payments-mainnet.json](./deployments/payments-mainnet.json) for mainnet and [deployments/payments-testnet.json](./deployments/payments-testnet.json) for testnet. Restart the selected application after changing the deployment.
+
+### Moros Predict frontend
 
 Set the selected public network:
 
@@ -630,6 +851,10 @@ The loaders fail closed when the selected network, passphrase, deployment readin
 
 ### Enforced protections
 
+- Payment clients validate network, passphrase, vault, verifier, Circle USDC, circuit names, artifact URLs, and limits before use.
+- Payment requests bind the recipient, asset, amount policy, network, vault, creation time, and expiry to a local signature.
+- Payment proofs use fixed statement shapes and bind action context, nullifiers, commitments, encrypted output hashes, attachments, and public value movement.
+- Payment relays accept only the configured vault and supported methods.
 - Circle USDC is the only enabled collateral in the mainnet manifest.
 - Factory validation restricts resolver routes, fees, timing, liquidity tiers, and market duration.
 - Isolated market vaults limit cross-market capital exposure.
@@ -670,8 +895,8 @@ A reviewer can verify the production graph without trusting this README:
 8. Confirm a market's resolver route is enabled before funding or ordering.
 9. Treat any contract, collateral, network, or artifact mismatch as a hard stop.
 
-For deeper operational detail, see [services/README.md](./services/README.md) and the [technical whitepaper](./docs/Moros-Technical-Whitepaper.pdf).
+For deeper operational detail, see [services/README.md](./services/README.md), the [payment deployment](./deployments/payments-mainnet.json), and the [technical whitepaper](./docs/Moros-Technical-Whitepaper.pdf).
 
 ---
 
-Moros combines private notes, encrypted batch execution, permissionless pooled liquidity, public price resolution, and proof-bound USDC settlement in one Stellar application.
+Moros combines private USDC payments, reusable notes, encrypted recovery, proof-bound settlement, and private financial applications in one Stellar infrastructure suite.
