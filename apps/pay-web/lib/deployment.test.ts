@@ -21,7 +21,9 @@ assert.equal(parsePaymentDeployment(JSON.stringify({ ...deployment, extra: true 
 assert.equal(parsePaymentDeployment(JSON.stringify({ ...deployment, rpcUrls: ["http://rpc.example.com"] })).ready, false);
 assert.equal(paymentDeployment.ready, true);
 if (paymentDeployment.ready) {
-  assert.equal(paymentDeployment.deployment.vault, "CCC5ZSQ46ACU2R2HY7IBDUY6TJNNYLUCRNOU3CV75ZNRQT2JBJ2KRRP5");
+  assert.equal(paymentDeployment.deployment.environment, "mainnet");
+  assert.equal(paymentDeployment.deployment.network, "stellar:pubnet");
+  assert.equal(paymentDeployment.deployment.vault, "CCKD5AHU2JGUR7RWMI5CT3UVOOCPDTQYK43DI24GKRKKUWZ3N22UOAIR");
 }
 
 console.log("payment deployment tests passed");
