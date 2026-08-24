@@ -1,10 +1,11 @@
 import { Address, contract, rpc } from "@stellar/stellar-sdk";
 import { poseidon2Hash } from "@zkpassport/poseidon2";
 import {
-  MorosPaymentClient,
   PaymentOutputScanner,
+  type MorosPaymentClient,
   type PaymentDeployment,
 } from "@moros/payments-client";
+import { createPaymentClient } from "./payment-client";
 import {
   decryptPaymentOutput,
   derivePaymentIdentityMaterial,
@@ -426,7 +427,7 @@ export async function createPrivateBalanceSession(input: BalanceSessionInput): P
     throw error;
   }
   const domain = await paymentNoteDomain(input.deployment);
-  const client = input.client ?? new MorosPaymentClient({ deployment: input.deployment });
+  const client = input.client ?? createPaymentClient(input.deployment);
   const scanner = new PaymentOutputScanner({
     client,
     deployment: input.deployment,

@@ -8,7 +8,8 @@ import {
   scValToNative,
   xdr,
 } from "@stellar/stellar-sdk";
-import { MorosPaymentClient, type PaymentDeployment } from "@moros/payments-client";
+import { type MorosPaymentClient, type PaymentDeployment } from "@moros/payments-client";
+import { createPaymentClient } from "./payment-client";
 import type { PreparedPrivateSpend } from "./private-balance";
 import {
   contextFields,
@@ -154,7 +155,7 @@ async function quoteFor(
   id: Uint8Array,
   expiry: number,
 ): Promise<{ client: MorosPaymentClient; quote: RelayQuote }> {
-  const client = new MorosPaymentClient({ deployment, timeoutMs: 20_000, attempts: 2 });
+  const client = createPaymentClient(deployment, { timeoutMs: 20_000, attempts: 2 });
   const quote = await client.quote({ actionId: id, actionExpiry: expiry }) as RelayQuote;
   const fee = BigInt(quote.fee);
   if (fee < 0n || fee > BigInt(deployment.maximumRelayFeeAtomic)) {

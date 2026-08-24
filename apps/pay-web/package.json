@@ -12,7 +12,7 @@
     "start": "next start",
     "lint": "eslint .",
     "verify:proof": "tsx scripts/verify-payment-proof.ts",
-    "test": "tsx lib/wallet-crypto.test.ts && tsx lib/deployment.test.ts && tsx lib/product-urls.test.ts && tsx lib/browser-share.test.ts && tsx lib/payment-link.test.ts && tsx lib/payment-request.test.ts && tsx lib/private-profile.test.ts && tsx lib/private-profile-sync.test.ts && tsx lib/public-usdc.test.ts && tsx lib/private-balance.test.ts && tsx lib/payment-protocol.test.ts"
+    "test": "tsx lib/wallet-crypto.test.ts && tsx lib/deployment.test.ts && tsx lib/product-urls.test.ts && tsx lib/browser-share.test.ts && tsx lib/payment-client.test.ts && tsx lib/payment-link.test.ts && tsx lib/payment-request.test.ts && tsx lib/private-profile.test.ts && tsx lib/private-profile-sync.test.ts && tsx lib/public-usdc.test.ts && tsx lib/private-balance.test.ts && tsx lib/payment-protocol.test.ts"
   },
   "dependencies": {
     "@moros/payments-client": "file:../../packages/payments-client",

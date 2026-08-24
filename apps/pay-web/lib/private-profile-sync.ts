@@ -2,9 +2,9 @@ import { StrKey } from "@stellar/stellar-sdk";
 import {
   base64UrlToBytes,
   bytesToHex,
-  MorosPaymentClient,
   type PaymentDeployment,
 } from "@moros/payments-client";
+import { createPaymentClient } from "./payment-client";
 import {
   decryptPrivateProfile,
   encryptPrivateProfile,
@@ -301,7 +301,7 @@ export async function createPrivateProfileSyncSession(input: {
   return new BrowserPrivateProfileSyncSession({
     phrase: input.phrase,
     deployment: input.deployment,
-    client: input.client ?? new MorosPaymentClient({ deployment: input.deployment, timeoutMs: 5_000, attempts: 1 }),
+    client: input.client ?? createPaymentClient(input.deployment, { timeoutMs: 5_000, attempts: 1 }),
     archive,
     saveRecord: input.saveRecord ?? savePrivateProfileRecord,
   });
