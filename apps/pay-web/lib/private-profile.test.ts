@@ -12,6 +12,7 @@ import {
   withPaymentRequestStatus,
   withPaymentActivity,
   mergePrivateProfiles,
+  privateProfileStorageKey,
   withRecentRecipient,
   withoutContact,
 } from "./private-profile";
@@ -23,6 +24,10 @@ initSync({
 });
 
 const deployment = testDeployment();
+assert.notEqual(
+  privateProfileStorageKey(deployment),
+  privateProfileStorageKey({ network: "stellar:pubnet", vault: deployment.vault }),
+);
 const phrase = recovery_phrase_from_entropy(new Uint8Array(32).fill(17));
 const recipient = {
   paymentCode: `moros_pay_${"a".repeat(280)}`,

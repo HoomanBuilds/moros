@@ -55,7 +55,7 @@ export async function deleteEncryptedWallet(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction([WALLET_STORE, PRIVATE_PROFILE_STORE], "readwrite");
       transaction.objectStore(WALLET_STORE).delete(KEY);
-      transaction.objectStore(PRIVATE_PROFILE_STORE).delete(KEY);
+      transaction.objectStore(PRIVATE_PROFILE_STORE).clear();
       transaction.onabort = () => reject(new Error("secure browser storage operation was cancelled"));
       transaction.onerror = () => reject(new Error("secure browser storage operation failed"));
       transaction.oncomplete = () => resolve();

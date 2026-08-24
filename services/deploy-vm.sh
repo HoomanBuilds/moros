@@ -24,6 +24,9 @@ RUNTIME_FILES=(
   "services/committee/bn254-babyjub.mjs"
   "services/config.mjs"
   "services/current-market-targets.mjs"
+  "services/deploy-payments-mainnet.mjs"
+  "services/deploy-payments-testnet.mjs"
+  "services/deploy-payments.mjs"
   "services/deploy-vm.sh"
   "services/deployment-utils.mjs"
   "services/key-config.mjs"
@@ -52,6 +55,7 @@ RUNTIME_FILES=(
   "services/private-relayer.mjs"
   "services/private-server.mjs"
   "services/prepare-mainnet-service-artifacts.mjs"
+  "services/prepare-payments-mainnet.mjs"
   "services/resolve-keeper.mjs"
   "services/rpc-failover.mjs"
   "services/soroban-runtime.mjs"
@@ -124,7 +128,33 @@ Type=simple
 WorkingDirectory=$repo
 EnvironmentFile=$here/.env
 EnvironmentFile=-$here/.env.payments-testnet
+Environment=MOROS_PAYMENT_NETWORK=testnet
 Environment=PAYMENT_PORT=8790
+ExecStart=$node_bin $here/payment-server.mjs
+Restart=on-failure
+RestartSec=5
+User=$USER
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  fi
+
+  if [ -f "$repo/deployments/payments-mainnet.local.json" ] && [ -f "$repo/deployments/payments-mainnet.json" ] && [ -d "$repo/apps/pay-web/public/zk/payments" ]; then
+    unit=/etc/systemd/system/zkmarket-payments-mainnet.service
+    sudo tee "$unit" >/dev/null <<UNIT
+[Unit]
+Description=Moros private payments mainnet service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$repo
+EnvironmentFile=$here/.env
+EnvironmentFile=-$here/.env.payments-mainnet
+Environment=MOROS_PAYMENT_NETWORK=mainnet
+Environment=PAYMENT_PORT=8791
 ExecStart=$node_bin $here/payment-server.mjs
 Restart=on-failure
 RestartSec=5
@@ -188,6 +218,9 @@ UNIT
   if [ -f /etc/systemd/system/zkmarket-payments-testnet.service ]; then
     sudo systemctl enable --now zkmarket-payments-testnet
   fi
+  if [ -f /etc/systemd/system/zkmarket-payments-mainnet.service ]; then
+    sudo systemctl enable --now zkmarket-payments-mainnet
+  fi
   if [ -f /etc/systemd/system/moros-pay-web.service ]; then
     sudo systemctl enable --now moros-pay-web
   fi
@@ -199,6 +232,9 @@ UNIT
   sudo systemctl restart zkmarket-resolve-keeper zkmarket-private
   if [ -f /etc/systemd/system/zkmarket-payments-testnet.service ]; then
     sudo systemctl restart zkmarket-payments-testnet
+  fi
+  if [ -f /etc/systemd/system/zkmarket-payments-mainnet.service ]; then
+    sudo systemctl restart zkmarket-payments-mainnet
   fi
   if [ -f /etc/systemd/system/moros-pay-web.service ]; then
     sudo systemctl restart moros-pay-web

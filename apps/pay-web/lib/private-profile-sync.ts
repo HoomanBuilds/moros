@@ -303,6 +303,6 @@ export async function createPrivateProfileSyncSession(input: {
     deployment: input.deployment,
     client: input.client ?? createPaymentClient(input.deployment, { timeoutMs: 5_000, attempts: 1 }),
     archive,
-    saveRecord: input.saveRecord ?? savePrivateProfileRecord,
+    saveRecord: input.saveRecord ?? ((record) => savePrivateProfileRecord(input.deployment, record)),
   });
 }

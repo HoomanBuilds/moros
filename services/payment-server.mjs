@@ -4,29 +4,47 @@ import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Keypair, Networks, rpc, scValToNative } from "@stellar/stellar-sdk";
 import { cfg } from "./config.mjs";
+import { configuredSecret } from "./key-config.mjs";
 import { PaymentApi } from "./payment-api.mjs";
 import { FilePaymentIndexStore, PaymentEventIndexer } from "./payment-indexer.mjs";
 import { PaymentRelayService } from "./payment-relay.mjs";
 import { createPaymentSyncService } from "./payment-sync-factory.mjs";
+import { configureRpcFailover } from "./rpc-failover.mjs";
 import { submitInvocation } from "./soroban-runtime.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PAYMENT_PORT || 8790);
+const PAYMENT_NETWORK = process.env.MOROS_PAYMENT_NETWORK || "testnet";
+if (PAYMENT_NETWORK !== "testnet" && PAYMENT_NETWORK !== "mainnet") {
+  throw new Error("MOROS_PAYMENT_NETWORK must be testnet or mainnet");
+}
+const MAINNET = PAYMENT_NETWORK === "mainnet";
+const NETWORK_ID = MAINNET ? "stellar:pubnet" : "stellar:testnet";
+const NETWORK_PASSPHRASE = MAINNET ? Networks.PUBLIC : Networks.TESTNET;
+const ENV_PREFIX = MAINNET ? "MOROS_PAYMENT_MAINNET" : "MOROS_PAYMENT_TESTNET";
 const DEPLOYMENT_PATH = resolve(
   cfg.repo,
-  process.env.MOROS_PAYMENT_TESTNET_DEPLOYMENT || "deployments/payments-testnet.json",
+  process.env[`${ENV_PREFIX}_DEPLOYMENT`] || `deployments/payments-${PAYMENT_NETWORK}.json`,
 );
 const LOCAL_STATE_PATH = resolve(
   cfg.repo,
-  process.env.MOROS_PAYMENT_TESTNET_STATE || "deployments/payments-testnet.local.json",
+  process.env[`${ENV_PREFIX}_STATE`] || `deployments/payments-${PAYMENT_NETWORK}.local.json`,
 );
 const ARTIFACT_ROOT = resolve(
   cfg.repo,
-  process.env.MOROS_PAYMENT_TESTNET_ZK_PUBLIC_DIR || "apps/pay-web/public/zk/payments",
+  process.env[`${ENV_PREFIX}_ZK_PUBLIC_DIR`] || "apps/pay-web/public/zk/payments",
+);
+const PROVING_MANIFEST_PATH = resolve(
+  cfg.repo,
+  process.env[`${ENV_PREFIX}_PROVING_MANIFEST`] || (
+    MAINNET
+      ? "deployments/payments-mainnet-proving.json"
+      : "apps/pay-web/public/zk/payments/manifest.json"
+  ),
 );
 const RUNTIME_ROOT = resolve(
   cfg.repo,
-  process.env.MOROS_PAYMENT_TESTNET_RUNTIME_DIR || "services/payment-runtime/testnet",
+  process.env[`${ENV_PREFIX}_RUNTIME_DIR`] || `services/payment-runtime/${PAYMENT_NETWORK}`,
 );
 const INDEX_INTERVAL_MS = Number(process.env.PAYMENT_INDEX_INTERVAL_MS || 4_000);
 const MAX_BODY_BYTES = 1_500_000;
@@ -178,12 +196,10 @@ function contentType(path) {
   return "application/octet-stream";
 }
 
-function artifactPath(pathname, names) {
+function artifactPath(pathname, artifacts) {
   if (!pathname.startsWith("/zk/payments/")) return null;
   const filename = pathname.slice("/zk/payments/".length);
-  if (!names.has(filename)) return null;
-  const path = resolve(ARTIFACT_ROOT, filename);
-  return path.startsWith(`${ARTIFACT_ROOT}/`) ? path : null;
+  return artifacts.get(filename) || null;
 }
 
 async function requestBody(request) {
@@ -233,33 +249,50 @@ async function main() {
   const deployment = readJson(DEPLOYMENT_PATH);
   const state = readJson(LOCAL_STATE_PATH);
   if (
-    deployment.environment !== "testnet" ||
-    deployment.network !== "stellar:testnet" ||
-    deployment.networkPassphrase !== Networks.TESTNET ||
+    deployment.environment !== PAYMENT_NETWORK ||
+    deployment.network !== NETWORK_ID ||
+    deployment.networkPassphrase !== NETWORK_PASSPHRASE ||
     state.complete !== true ||
+    state.network !== PAYMENT_NETWORK ||
     state.ids?.vault !== deployment.vault ||
     state.ids?.verifier !== deployment.verifier
   ) {
-    throw new Error("payment testnet deployment is invalid");
+    throw new Error(`payment ${PAYMENT_NETWORK} deployment is invalid`);
   }
-  const source = Keypair.fromSecret(required(
-    process.env.MOROS_PAYMENT_TESTNET_FUNDER_SK || process.env.MOROS_TESTNET_DEPLOYER_SK,
-    "payment testnet funder secret",
-  ));
-  const rpcUrl = process.env.MOROS_PAYMENT_TESTNET_RPC_URL || deployment.rpcUrls[0];
+  const sourceSecret = configuredSecret({
+    secret:
+      process.env[`${ENV_PREFIX}_FUNDER_SK`] ||
+      process.env[`MOROS_${PAYMENT_NETWORK.toUpperCase()}_DEPLOYER_SK`] ||
+      "",
+    identity:
+      process.env[`${ENV_PREFIX}_FUNDER_IDENTITY`] ||
+      process.env[`MOROS_${PAYMENT_NETWORK.toUpperCase()}_DEPLOYER_IDENTITY`] ||
+      "",
+    label: `payment ${PAYMENT_NETWORK} funder`,
+  });
+  const source = Keypair.fromSecret(required(sourceSecret, `payment ${PAYMENT_NETWORK} funder secret`));
+  const configuredRpc =
+    process.env[`${ENV_PREFIX}_RPC_URL`] ||
+    (MAINNET ? process.env.MOROS_MAINNET_RPC_URL : process.env.MOROS_TESTNET_RPC_URL) ||
+    deployment.rpcUrls[0];
+  const fallbackRpc =
+    process.env[`${ENV_PREFIX}_RPC_FALLBACK_URL`] ||
+    (MAINNET ? process.env.MOROS_MAINNET_RPC_FALLBACK_URL : "");
+  const rpcUrls = [...new Set([configuredRpc, fallbackRpc, ...deployment.rpcUrls].filter(Boolean))];
+  const rpcUrl = configureRpcFailover({ rpcUrl: rpcUrls[0], rpcUrls });
   const stellar = new rpc.Server(rpcUrl);
-  if ((await stellar.getNetwork()).passphrase !== Networks.TESTNET) {
-    throw new Error("payment RPC is not connected to testnet");
+  if ((await stellar.getNetwork()).passphrase !== NETWORK_PASSPHRASE) {
+    throw new Error(`payment RPC is not connected to ${PAYMENT_NETWORK}`);
   }
 
-  const artifacts = new Set(["manifest.json"]);
+  const artifacts = new Map([["manifest.json", PROVING_MANIFEST_PATH]]);
   for (const circuit of deployment.circuits) {
-    artifacts.add(`${circuit.name}.wasm`);
-    artifacts.add(`${circuit.name}.zkey`);
-    artifacts.add(`${circuit.name}.vk.json`);
+    for (const extension of ["wasm", "zkey", "vk.json"]) {
+      const filename = `${circuit.name}.${extension}`;
+      artifacts.set(filename, resolve(ARTIFACT_ROOT, filename));
+    }
   }
-  for (const filename of artifacts) {
-    const path = resolve(ARTIFACT_ROOT, filename);
+  for (const [filename, path] of artifacts) {
     if (!existsSync(path) || !statSync(path).isFile() || statSync(path).size > MAX_STATIC_FILE_BYTES) {
       throw new Error(`invalid payment proving artifact ${filename}`);
     }
@@ -285,14 +318,14 @@ async function main() {
     networkDomain: hex(state.networkDomain, 32, "payment network domain"),
     signingSeed: hex(state.relaySigningSeed, 32, "payment relay signing seed"),
     paymentIdentity: paymentIdentity(state.protocolIdentity),
-    fee: BigInt(process.env.MOROS_PAYMENT_TESTNET_RELAY_FEE_ATOMIC || "0"),
+    fee: BigInt(process.env[`${ENV_PREFIX}_RELAY_FEE_ATOMIC`] || "0"),
     submit: ({ contract, method, args }) => serialize(async () => submitInvocation({
       server: stellar,
       source,
       contractId: contract,
       method,
       args,
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase: NETWORK_PASSPHRASE,
       timeoutSeconds: 300,
     })),
   });
@@ -361,7 +394,7 @@ async function main() {
     }
   });
   server.listen(PORT, "127.0.0.1", () => {
-    process.stdout.write(`Moros payment testnet service listening on ${PORT}\n`);
+    process.stdout.write(`Moros payment ${PAYMENT_NETWORK} service listening on ${PORT}\n`);
   });
 }
 

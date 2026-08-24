@@ -2,7 +2,6 @@ import { StrKey } from "@stellar/stellar-sdk";
 import type { PaymentDeployment } from "@moros/payments-client";
 import { PRIVATE_PROFILE_STORE, transactPaymentStore } from "./wallet-store";
 
-const PROFILE_KEY = "primary";
 const PROFILE_FORMAT = 1;
 const PROFILE_PAGES = 8;
 const PAGE_CONTENT_BYTES = 4_092;
@@ -17,6 +16,12 @@ const MAX_PAYMENT_ACTIVITIES = 50;
 
 let initialized: Promise<typeof import("@moros/payments-crypto-web")> | null = null;
 let profileQueue: Promise<void> = Promise.resolve();
+
+export function privateProfileStorageKey(
+  deployment: Pick<PaymentDeployment, "network" | "vault">,
+): string {
+  return `${deployment.network}:${deployment.vault}`;
+}
 
 async function cryptoCore(): Promise<typeof import("@moros/payments-crypto-web")> {
   if (!initialized) {
@@ -406,25 +411,34 @@ export async function decryptPrivateProfile(input: {
   }
 }
 
-export async function loadPrivateProfileRecord(): Promise<EncryptedPrivateProfileRecord | null> {
+export async function loadPrivateProfileRecord(
+  deployment: Pick<PaymentDeployment, "network" | "vault">,
+): Promise<EncryptedPrivateProfileRecord | null> {
   const record = await transactPaymentStore<EncryptedPrivateProfileRecord | undefined>(
     PRIVATE_PROFILE_STORE,
     "readonly",
-    (store) => store.get(PROFILE_KEY),
+    (store) => store.get(privateProfileStorageKey(deployment)),
   );
   return record ?? null;
 }
 
-export async function savePrivateProfileRecord(record: EncryptedPrivateProfileRecord): Promise<void> {
+export async function savePrivateProfileRecord(
+  deployment: Pick<PaymentDeployment, "network" | "vault">,
+  record: EncryptedPrivateProfileRecord,
+): Promise<void> {
   validateEncryptedPrivateProfileRecord(record);
-  await transactPaymentStore<IDBValidKey>(PRIVATE_PROFILE_STORE, "readwrite", (store) => store.put(record, PROFILE_KEY));
+  await transactPaymentStore<IDBValidKey>(
+    PRIVATE_PROFILE_STORE,
+    "readwrite",
+    (store) => store.put(record, privateProfileStorageKey(deployment)),
+  );
 }
 
 export async function loadPrivateProfile(
   phrase: string,
   deployment: PaymentDeployment,
 ): Promise<{ profile: PrivateProfile; generation: number }> {
-  const record = await loadPrivateProfileRecord();
+  const record = await loadPrivateProfileRecord(deployment);
   if (!record) return { profile: emptyPrivateProfile(), generation: 0 };
   return { profile: await decryptPrivateProfile({ phrase, deployment, record }), generation: record.generation };
 }
@@ -448,7 +462,7 @@ export async function updatePrivateProfile(
   update: (current: PrivateProfile) => PrivateProfile,
 ): Promise<PrivateProfile> {
   return withPrivateProfileLock(async () => {
-    const currentRecord = await loadPrivateProfileRecord();
+    const currentRecord = await loadPrivateProfileRecord(deployment);
     const current = currentRecord
       ? {
           profile: await decryptPrivateProfile({ phrase, deployment, record: currentRecord }),
@@ -463,7 +477,7 @@ export async function updatePrivateProfile(
       generation: current.generation + 1,
       parentHash: currentRecord ? privateProfileHeadHash(currentRecord) : undefined,
     });
-    await savePrivateProfileRecord(record);
+    await savePrivateProfileRecord(deployment, record);
     return next;
   });
 }

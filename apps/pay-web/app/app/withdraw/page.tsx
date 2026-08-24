@@ -36,7 +36,7 @@ export default function WithdrawPage() {
         issuer: paymentDeployment.deployment.usdcIssuer,
       });
       if (!destination.accountActive) throw new Error("The destination Stellar account is not active.");
-      if (!destination.hasTrustline) throw new Error("The destination account must enable the testnet USDC trustline first.");
+      if (!destination.hasTrustline) throw new Error("The destination account must enable the Circle USDC trustline first.");
       setReviewed(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not review this withdrawal.");
