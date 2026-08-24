@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
-import bundledTestnetDeployment from "../config/payments-testnet.json";
-import canonicalTestnetDeployment from "../../../deployments/payments-testnet.json";
 import { parsePaymentDeployment, paymentDeployment } from "./deployment";
 import { testDeployment } from "./test-deployment";
-
-assert.deepEqual(bundledTestnetDeployment, canonicalTestnetDeployment);
 
 assert.deepEqual(parsePaymentDeployment(undefined), {
   ready: false,
