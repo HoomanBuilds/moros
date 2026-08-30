@@ -71,6 +71,12 @@ function reportPool(info: PooledLiquidityInfo, nav: PooledLiquidityNav): void {
     const resets = new Date(Number(nav.limiter_resets_at) * 1000);
     log(`  withdrawal window resets ${resets.toISOString()}`);
   }
+  log(
+    `  window limit ${usdc(info.withdrawal_window_limit)} used ${usdc(info.withdrawal_window_used)} every ${info.policy.withdrawal_window}s at ${info.policy.max_withdrawal_bps} bps`,
+  );
+  log(
+    `  minimum idle ${info.policy.minimum_idle_bps} bps, deployed principal ${usdc(info.deployed_principal)} USDC`,
+  );
 }
 
 export async function exitPooledLiquidity({
@@ -180,8 +186,15 @@ export async function exitPooledLiquidity({
       `immediate exit capacity cannot cover any remaining note; ${usdc(heldShares)} shares stay locked until active market exposure is released`,
     );
     if (!watch) return { recovered, decrypted: true };
-    log(`waiting ${intervalSeconds}s before rechecking capacity`);
-    await sleep(intervalSeconds * 1000);
+    // Capacity only returns when the withdrawal window rolls over, so sleep to
+    // that instant rather than burning reads on polls that cannot succeed.
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const untilReset = state.nav.limiter_resets_at > now
+      ? Number(state.nav.limiter_resets_at - now) + 15
+      : 0;
+    const waitSeconds = Math.max(intervalSeconds, untilReset);
+    log(`waiting ${waitSeconds}s before rechecking capacity`);
+    await sleep(waitSeconds * 1000);
   }
   log(`stopped after ${maxRounds} rounds`);
   return { recovered, decrypted: true };
