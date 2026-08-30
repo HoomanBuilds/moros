@@ -260,11 +260,16 @@ export async function publicUsdcBalance(
   return parseUsdc(entry.balance);
 }
 
+export function errorDetail(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  return process.env.MOROS_DEBUG === "1"
+    ? error.stack ?? error.message
+    : error.message;
+}
+
 export function runScript(main: () => Promise<void>): void {
   main().catch((error: unknown) => {
-    process.stderr.write(
-      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
-    );
+    process.stderr.write(`${errorDetail(error)}\n`);
     process.exitCode = 1;
   });
 }

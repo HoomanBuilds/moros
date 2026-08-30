@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import type { Position } from "@/lib/positions/book";
 import {
+  errorDetail,
   installLocalStorage,
   installWalletAdapter,
   log,
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
 
   let recovered = 0n;
   let pending = 0n;
+  let failed = 0n;
   for (const position of positions) {
     const record = privateRecord(position);
     if (!record) continue;
@@ -107,23 +109,29 @@ async function main(): Promise<void> {
       : state.terminalAmount;
     pending += amount;
     log(
-      `position ${shortCommitment(record.positionCommitment)} ${state.action} ${usdc(amount)} USDC (outcome ${state.outcome})`,
+      `position ${shortCommitment(record.positionCommitment)} ${state.action} ${usdc(amount)} USDC (outcome ${state.outcome}, market ${position.market}, epoch ${record.epochNumber})`,
     );
     if (!execute) continue;
-    const result = await runPrivatePositionAction({
-      address,
-      market: position.market,
-      epochNumber: record.epochNumber,
-      sequence: record.sequence,
-      positionCommitment: record.positionCommitment,
-      side: record.side,
-      encryptionRandomness: record.encryptionRandomness,
-      action: state.action,
-      onStatus: (status) => log(`    ${status}`),
-    });
-    log(`    ${state.action} tx ${result.hash} returned ${usdc(result.amount)} USDC`);
-    await waitForPrivateOutput(result.outputCommitment);
-    recovered += result.amount;
+    // One market's missing committee witness must not strand the others.
+    try {
+      const result = await runPrivatePositionAction({
+        address,
+        market: position.market,
+        epochNumber: record.epochNumber,
+        sequence: record.sequence,
+        positionCommitment: record.positionCommitment,
+        side: record.side,
+        encryptionRandomness: record.encryptionRandomness,
+        action: state.action,
+        onStatus: (status) => log(`    ${status}`),
+      });
+      log(`    ${state.action} tx ${result.hash} returned ${usdc(result.amount)} USDC`);
+      await waitForPrivateOutput(result.outputCommitment);
+      recovered += result.amount;
+    } catch (error) {
+      failed += amount;
+      log(`    SKIPPED: ${errorDetail(error)}`);
+    }
   }
 
   if (pending === 0n) {
@@ -135,6 +143,9 @@ async function main(): Promise<void> {
       ? `recovered ${usdc(recovered)} USDC into the private balance`
       : `dry run: ${usdc(pending)} USDC is recoverable`,
   );
+  if (failed > 0n) {
+    log(`${usdc(failed)} USDC could not be recovered; see the SKIPPED lines above`);
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
