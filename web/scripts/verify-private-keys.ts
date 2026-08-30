@@ -9,6 +9,7 @@ import {
   reportSignatureHelp,
   resolveSession,
   runScript,
+  sep53Signature,
   usdc,
 } from "./private-drain-runtime";
 
@@ -21,6 +22,10 @@ function localCandidates(signer: Keypair, message: string): Array<{
 }> {
   const raw = signer.sign(Buffer.from(message, "utf8"));
   return [
+    {
+      name: "SEP-53 base64(sign(sha256(prefix+message)))",
+      signature: sep53Signature(signer, message),
+    },
     { name: "base64(sign(utf8(message)))", signature: raw.toString("base64") },
     { name: "base64url(sign(utf8(message)))", signature: raw.toString("base64url") },
     { name: "hex(sign(utf8(message)))", signature: raw.toString("hex") },

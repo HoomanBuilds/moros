@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { Keypair, TransactionBuilder } from "@stellar/stellar-sdk";
 import type * as WalletModule from "@/lib/wallet";
 
@@ -97,6 +98,19 @@ export function installLocalStorage(): void {
   });
 }
 
+// Freighter signs SEP-53: sha256 over "Stellar Signed Message:\n" concatenated
+// with the message, returned base64. This is what seeds the note keys, so a
+// local key must sign the same payload to reproduce them.
+export function sep53Signature(signer: Keypair, message: string): string {
+  const payload = createHash("sha256")
+    .update(Buffer.concat([
+      Buffer.from("Stellar Signed Message:\n", "utf8"),
+      Buffer.from(message, "utf8"),
+    ]))
+    .digest();
+  return signer.sign(payload).toString("base64");
+}
+
 function keypairFromEnvironment(identity?: string): Keypair {
   const secret = process.env.MOROS_STELLAR_SECRET?.trim();
   if (secret) {
@@ -108,7 +122,7 @@ function keypairFromEnvironment(identity?: string): Keypair {
   const name = identity || process.env.MOROS_STELLAR_IDENTITY;
   if (!name) {
     throw new Error(
-      "Set MOROS_RECOVERY_SIGNATURE (preferred), or MOROS_STELLAR_IDENTITY / MOROS_STELLAR_SECRET",
+      "Set MOROS_STELLAR_IDENTITY or MOROS_STELLAR_SECRET, or MOROS_RECOVERY_SIGNATURE",
     );
   }
   const shown = execFileSync("stellar", ["keys", "show", name], {
@@ -130,10 +144,8 @@ function requireAddress(candidate: string | undefined): string {
   return address;
 }
 
-// Note keys are derived only from the wallet's signature over the recovery
-// message, and every wallet encodes that signature differently. Supplying the
-// browser wallet's own signature is the only way to reproduce the same keys, so
-// it wins over local key signing whenever it is available.
+// A supplied signature still wins, so a wallet that does not follow SEP-53 can
+// be drained by pasting its own signature over the recovery message.
 export function resolveSession(values: Map<string, string>): PrivateSession {
   const supplied = (
     values.get("signature") || process.env.MOROS_RECOVERY_SIGNATURE
@@ -159,8 +171,7 @@ export function resolveSession(values: Map<string, string>): PrivateSession {
   return {
     address,
     keypair: signer,
-    signMessage: (message) =>
-      signer.sign(Buffer.from(message, "utf8")).toString("base64"),
+    signMessage: (message) => sep53Signature(signer, message),
     signTransaction: (xdr, passphrase) => {
       const transaction = TransactionBuilder.fromXDR(xdr, passphrase);
       transaction.sign(signer);
