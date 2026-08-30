@@ -9,6 +9,7 @@ import {
   recoveryMessage,
   reportSignatureHelp,
   resolveSession,
+  routeRpcThroughService,
   runScript,
   shortCommitment,
   usdc,
@@ -67,6 +68,8 @@ async function main(): Promise<void> {
     || DEFAULT_APP_URL).replace(/\/+$/u, "");
 
   installLocalStorage();
+  const rpcUrl = routeRpcThroughService();
+  if (rpcUrl) log(`stellar rpc via service proxy ${rpcUrl}`);
   installAppOriginFetch(origin);
   const session = resolveSession(values);
   const address = session.address;

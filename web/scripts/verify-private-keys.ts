@@ -8,6 +8,7 @@ import {
   recoveryMessage,
   reportSignatureHelp,
   resolveSession,
+  routeRpcThroughService,
   runScript,
   sep53Signature,
   usdc,
@@ -51,6 +52,8 @@ function localCandidates(signer: Keypair, message: string): Array<{
 async function main(): Promise<void> {
   const { values } = parseArgs(process.argv.slice(2));
   installLocalStorage();
+  const rpcUrl = routeRpcThroughService();
+  if (rpcUrl) log(`stellar rpc via service proxy ${rpcUrl}`);
   const session = resolveSession(values);
   const address = session.address;
 

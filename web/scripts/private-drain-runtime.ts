@@ -81,6 +81,32 @@ export function parseArgs(argv: string[]): {
   return { switches, values };
 }
 
+// The public Soroban endpoint rate-limits hard enough to strand a multi-proof
+// run, so reads default to the private service's own allowlisted proxy
+// (600/min per client). Must run before "@/lib/network" is imported, since
+// NETWORK is built from the environment at module load.
+export function routeRpcThroughService(): string | null {
+  if (process.env.MOROS_DIRECT_RPC === "1") return null;
+  const testnet = process.env.NEXT_PUBLIC_STELLAR_NETWORK === "testnet";
+  const scoped = testnet
+    ? "NEXT_PUBLIC_TESTNET_STELLAR_RPC_URL"
+    : "NEXT_PUBLIC_MAINNET_STELLAR_RPC_URL";
+  if (process.env[scoped]) return null;
+  const service = testnet
+    ? process.env.NEXT_PUBLIC_TESTNET_PRIVATE_SERVICE_URL
+    : process.env.NEXT_PUBLIC_MAINNET_PRIVATE_SERVICE_URL;
+  const base = (
+    service
+    || process.env.NEXT_PUBLIC_PRIVATE_SERVICE_URL
+    || process.env.NEXT_PUBLIC_COMMITTEE_URL
+    || ""
+  ).replace(/\/+$/u, "");
+  if (!base) return null;
+  const url = `${base}/stellar/rpc`;
+  process.env[scoped] = url;
+  return url;
+}
+
 export function installLocalStorage(): void {
   const values = new Map<string, string>();
   Object.defineProperty(globalThis, "localStorage", {

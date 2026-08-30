@@ -13,6 +13,7 @@ import {
   recoveryMessage,
   reportSignatureHelp,
   resolveSession,
+  routeRpcThroughService,
   runScript,
   shortCommitment,
   sleep,
@@ -204,6 +205,8 @@ async function main(): Promise<void> {
   }
 
   installLocalStorage();
+  const rpcUrl = routeRpcThroughService();
+  if (rpcUrl) log(`stellar rpc via service proxy ${rpcUrl}`);
   const session = resolveSession(values);
   const address = session.address;
   const { NETWORK } = await import("@/lib/network");

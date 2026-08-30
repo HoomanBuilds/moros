@@ -9,6 +9,7 @@ import {
   recoveryMessage,
   reportSignatureHelp,
   resolveSession,
+  routeRpcThroughService,
   runScript,
   shortCommitment,
   usdc,
@@ -97,6 +98,8 @@ async function main(): Promise<void> {
   const { switches, values } = parseArgs(process.argv.slice(2));
   const execute = switches.has("execute");
   installLocalStorage();
+  const rpcUrl = routeRpcThroughService();
+  if (rpcUrl) log(`stellar rpc via service proxy ${rpcUrl}`);
   const session = resolveSession(values);
   const address = session.address;
   const { NETWORK } = await import("@/lib/network");
