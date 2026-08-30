@@ -18,6 +18,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:e2e": "playwright test",
+    "private:recover": "tsx --env-file=.env.local scripts/recover-private-positions.ts",
     "private:verify": "tsx --env-file=.env.local scripts/verify-private-keys.ts",
     "private:withdraw": "tsx --env-file=.env.local scripts/drain-private-usdc.ts",
     "private:lp-exit": "tsx --env-file=.env.local scripts/drain-private-liquidity.ts",
