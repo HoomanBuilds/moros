@@ -14,6 +14,7 @@ import {
   reportSignatureHelp,
   resolveSession,
   routeRpcThroughService,
+  warmPrivateConfig,
   runScript,
   shortCommitment,
   sleep,
@@ -224,6 +225,7 @@ async function main(): Promise<void> {
   const address = session.address;
   const { NETWORK } = await import("@/lib/network");
   await installWalletAdapter(session, NETWORK.passphrase);
+  await warmPrivateConfig();
   log(`network ${NETWORK.id} - wallet ${address}`);
   log(`private service ${NETWORK.privateServiceUrl}`);
   if (!execute) log("dry run - pass --execute to move funds");

@@ -9,6 +9,7 @@ import {
   reportSignatureHelp,
   resolveSession,
   routeRpcThroughService,
+  warmPrivateConfig,
   runScript,
   sep53Signature,
   usdc,
@@ -71,6 +72,7 @@ async function main(): Promise<void> {
     import("@/lib/private/primitives"),
   ]);
 
+  await warmPrivateConfig();
   const config = await getPrivateConfig();
   const tree = await getPrivateTree();
   const vault = resolveArchiveVault(undefined, config.contracts.sharedVault);

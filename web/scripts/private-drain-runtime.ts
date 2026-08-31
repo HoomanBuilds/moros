@@ -235,6 +235,22 @@ export async function installWalletAdapter(
   configureWalletKitAdapter(adapter as unknown as WalletAdapter);
 }
 
+// getPrivateConfig aborts after 3s, which a briefly slow service trips before
+// any work starts. Retry so a slow first byte does not throw away a whole run.
+export async function warmPrivateConfig(attempts = 5): Promise<void> {
+  const { getPrivateConfig } = await import("@/lib/private/client");
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await getPrivateConfig();
+      return;
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      log(`private config attempt ${attempt} failed: ${errorDetail(error)}`);
+      await sleep(2_000 * attempt);
+    }
+  }
+}
+
 export async function recoveryMessage(address: string): Promise<string> {
   const [{ NETWORK }, { getPrivateConfig }, { backupMessage }, { resolveArchiveVault }] =
     await Promise.all([
