@@ -86,11 +86,13 @@ async function main(): Promise<void> {
     { listPositions },
     { getPrivatePositionState, runPrivatePositionAction },
     { waitForPrivateOutput },
+    { getPrivateAllocation },
   ] = await Promise.all([
     import("@/lib/positions/backup"),
     import("@/lib/positions/book"),
     import("@/lib/private/actions"),
     import("@/lib/private/output-index"),
+    import("@/lib/private/client"),
   ]);
 
   await restorePositionBackups(address);
@@ -99,6 +101,7 @@ async function main(): Promise<void> {
 
   let recovered = 0n;
   let pending = 0n;
+  let blocked = 0n;
   let failed = 0n;
   for (const position of positions) {
     const record = privateRecord(position);
@@ -112,10 +115,25 @@ async function main(): Promise<void> {
     const amount = state.action === "recover-change"
       ? state.changeAmount
       : state.terminalAmount;
-    pending += amount;
     log(
       `position ${shortCommitment(record.positionCommitment)} ${state.action} ${usdc(amount)} USDC (outcome ${state.outcome}, market ${position.market}, epoch ${record.epochNumber})`,
     );
+    // Only a refund on a still-refundable epoch skips the committee allocation
+    // witness; everything else cannot be proven if the service lost it.
+    if (!(state.action === "refund" && state.epochPhase === "Refundable")) {
+      try {
+        await getPrivateAllocation(
+          position.market,
+          record.epochNumber,
+          record.positionCommitment,
+        );
+      } catch (error) {
+        blocked += amount;
+        log(`    BLOCKED: ${errorDetail(error)}`);
+        continue;
+      }
+    }
+    pending += amount;
     if (!execute) continue;
     // One market's missing committee witness must not strand the others.
     try {
@@ -139,6 +157,9 @@ async function main(): Promise<void> {
     }
   }
 
+  if (blocked > 0n) {
+    log(`${usdc(blocked)} USDC is blocked on missing allocation witnesses`);
+  }
   if (pending === 0n) {
     log("no positions have a recoverable balance");
     return;
