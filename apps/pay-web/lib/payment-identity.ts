@@ -1,5 +1,9 @@
 import { StrKey } from "@stellar/stellar-sdk";
 import { base64UrlToBytes, bytesToBase64Url, type PaymentDeployment } from "@moros/payments-client";
+import { productUrls } from "./product-urls";
+
+const CORE_PAYMENT_LINK_PREFIX = "https://pay.moros.fun/pay#";
+const PAYMENT_LINK_PREFIX = `${productUrls.pay}/pay#`;
 
 let initialized: Promise<typeof import("@moros/payments-crypto-web")> | null = null;
 
@@ -138,7 +142,7 @@ export async function createPaymentRequest(input: PaymentRequestInput): Promise<
     input.childIndex ?? 0n,
   );
   try {
-    return identity.create_payment_link(
+    const link = identity.create_payment_link(
       contractBytes(input.deployment.usdcContract),
       input.amountAtomic,
       crypto.getRandomValues(new Uint8Array(16)),
@@ -146,6 +150,7 @@ export async function createPaymentRequest(input: PaymentRequestInput): Promise<
       BigInt(input.expiresAt),
       input.merchantLabel?.trim() || undefined,
     );
+    return `${PAYMENT_LINK_PREFIX}${link.slice(CORE_PAYMENT_LINK_PREFIX.length)}`;
   } finally {
     identity.free();
   }
@@ -189,8 +194,12 @@ export async function verifyPaymentRequest(
   now = Math.floor(Date.now() / 1000),
 ): Promise<VerifiedPaymentLink> {
   const core = await cryptoCore();
+  // The deployed crypto package verifies the same signed payload using its original URL prefix.
+  const coreLink = link.startsWith(PAYMENT_LINK_PREFIX)
+    ? `${CORE_PAYMENT_LINK_PREFIX}${link.slice(PAYMENT_LINK_PREFIX.length)}`
+    : link;
   const request = core.verify_payment_link(
-    link,
+    coreLink,
     BigInt(now),
     300n,
     networkId(deployment),

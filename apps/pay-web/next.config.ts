@@ -4,11 +4,26 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@moros/payments-client", "@moros/payments-crypto-web"],
   async redirects() {
-    return ["send", "receive", "request", "activity", "contacts", "deposit", "withdraw", "settings"].map((route) => ({
+    const paymentRoutes = ["send", "receive", "request", "activity", "contacts", "deposit", "withdraw", "settings"].map((route) => ({
       source: `/${route}`,
       destination: `/app/${route}`,
       permanent: false,
     }));
+    return [
+      ...["predict.moros.fun", "www.moros.fun"].map((host) => ({
+        source: "/:path*",
+        has: [{ type: "host" as const, value: host }],
+        destination: "https://moros.fun/:path*",
+        permanent: true,
+      })),
+      ...["create", "portfolio", "liquidity", "markets", "market"].map((route) => ({
+        source: `/app/${route}/:path*`,
+        destination: "/app",
+        permanent: true,
+      })),
+      { source: "/whitepaper.pdf", destination: "/", permanent: true },
+      ...paymentRoutes,
+    ];
   },
   async headers() {
     return [

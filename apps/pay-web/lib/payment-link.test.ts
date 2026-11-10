@@ -35,7 +35,7 @@ const link = await createPaymentRequest({
   now: 1_780_000_000,
   expiresAt: 1_780_003_600,
 });
-assert.match(link, /^https:\/\/pay\.moros\.fun\/pay#/);
+assert.match(link, /^https:\/\/moros\.fun\/pay#/);
 
 const verified = await verifyPaymentRequest(link, deployment, 1_780_000_001);
 assert.equal(verified.amountAtomic, "125000000");
@@ -43,6 +43,23 @@ assert.match(verified.requestId, /^[A-Za-z0-9_-]{22}$/);
 assert.equal(verified.createdAt, 1_780_000_000);
 assert.equal(verified.merchantLabel, "Moros Store");
 assert.equal(verified.recipientFingerprint, nextIdentity.recipientFingerprint);
+
+const oldLink = link.replace("https://moros.fun/pay#", "https://pay.moros.fun/pay#");
+const oldVerified = await verifyPaymentRequest(oldLink, deployment, 1_780_000_001);
+assert.equal(oldVerified.requestId, verified.requestId);
+assert.equal(oldVerified.amountAtomic, verified.amountAtomic);
+assert.deepEqual(oldVerified.payloadHash, verified.payloadHash);
+for (const prefix of [
+  "https://moros.fun.evil.example/pay#",
+  "https://moros.fun@evil.example/pay#",
+  "http://moros.fun/pay#",
+  "https://moros.fun/pay?request=#",
+  "https://moros.fun/other#",
+]) {
+  await assert.rejects(() => verifyPaymentRequest(
+    link.replace("https://moros.fun/pay#", prefix), deployment, 1_780_000_001,
+  ));
+}
 
 await assert.rejects(
   () => verifyDirectPaymentCode(identity.paymentCode, { ...deployment, network: "stellar:pubnet" }),

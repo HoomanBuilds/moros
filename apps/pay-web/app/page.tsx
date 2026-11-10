@@ -11,7 +11,6 @@ import { Brand } from "@/components/brand";
 import { LandingMotion } from "@/components/landing-motion";
 import { UsdcIcon } from "@/components/payment-icons";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { productUrls } from "@/lib/product-urls";
 
 const marketNumbers = [
   { value: "$72.7B", target: 72.7, decimals: 1, prefix: "$", suffix: "B", label: "USDC in circulation", source: "Circle, 20 Aug 2026" },
@@ -31,7 +30,6 @@ export default function LandingPage() {
           <a href="#private-path">Product</a>
           <a href="#private-by-design">Privacy</a>
           <a href="#how-it-works">How it works</a>
-          <a href={productUrls.predict}>Prediction markets</a>
         </div>
         <div className="landingNavActions">
           <ThemeToggle />
@@ -202,7 +200,7 @@ export default function LandingPage() {
         <Link className="button primary" href="/app">Start with Moros Pay <ArrowRight size={17} /></Link>
       </section>
 
-      <footer className="landingFooter"><Brand compact /><span>Private USDC payments on Stellar.</span><a href={productUrls.predict}>Moros Predict</a></footer>
+      <footer className="landingFooter"><Brand compact /><span>Private USDC payments on Stellar.</span><a href="https://github.com/HoomanBuilds/moros" target="_blank" rel="noopener noreferrer">GitHub</a></footer>
     </main>
   );
 }

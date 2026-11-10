@@ -8,7 +8,7 @@ assert.equal(normalizeProductUrl("http://unsafe.example", "https://fallback.exam
 assert.equal(normalizeProductUrl("ftp://localhost/app", "https://fallback.example"), "https://fallback.example");
 assert.equal(normalizeProductUrl("not a URL", "https://fallback.example"), "https://fallback.example");
 assert.equal(productUrls.brand, "https://moros.fun");
-assert.equal(productUrls.pay, "https://pay.moros.fun");
-assert.equal(productUrls.predict, "https://predict.moros.fun");
+assert.equal(productUrls.pay, "https://moros.fun");
+assert.equal("predict" in productUrls, false);
 
 console.log("payment product URL tests passed");

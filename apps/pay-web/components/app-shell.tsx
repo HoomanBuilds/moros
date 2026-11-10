@@ -16,7 +16,6 @@ import { useEffect, useRef } from "react";
 import { Brand } from "./brand";
 import { ThemeToggle } from "./theme-toggle";
 import { usePaymentWallet } from "./wallet-provider";
-import { productUrls } from "@/lib/product-urls";
 
 const navigation = [
   { href: "/app", label: "Home", icon: Home },
@@ -66,7 +65,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         )}
         <div className="topbarActions">
-          <a className="productSwitch desktopOnly" href={productUrls.predict}>Predict</a>
           <ThemeToggle />
           {wallet.status === "unlocked" && (
             <>

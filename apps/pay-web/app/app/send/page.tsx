@@ -7,6 +7,7 @@ import { ProtectedPage } from "@/components/protected-page";
 import { UsdcIcon } from "@/components/payment-icons";
 import { usePaymentWallet } from "@/components/wallet-provider";
 import { paymentDeployment } from "@/lib/deployment";
+import { productUrls } from "@/lib/product-urls";
 import {
   verifyDirectPaymentCode,
   verifyPaymentRequest,
@@ -140,7 +141,7 @@ export default function SendPage() {
               </div>
             </section>
           )}
-          <label className="field"><span>Payment code or signed request</span><textarea rows={4} maxLength={4096} value={recipient} onChange={(event) => changeRecipient(event.target.value)} placeholder="moros_pay_... or https://pay.moros.fun/pay#..." autoComplete="off" required /></label>
+          <label className="field"><span>Payment code or signed request</span><textarea rows={4} maxLength={4096} value={recipient} onChange={(event) => changeRecipient(event.target.value)} placeholder={`moros_pay_... or ${productUrls.pay}/pay#...`} autoComplete="off" required /></label>
           <label className="field"><span className="fieldHeading"><span>Amount</span>{wallet.balance.spendableAtomic !== null && <button className="textButton" type="button" onClick={() => { setAmount(formatUsdcAtomic(wallet.balance.spendableAtomic)); setPrepared(null); }}>Use max</button>}</span><span className="amountBox"><input inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); if (!prepared?.fixedAmount) setPrepared(null); }} placeholder="0.00" aria-label="USDC amount" readOnly={prepared?.fixedAmount} required /><span className="amountAsset"><UsdcIcon />USDC</span></span></label>
           <label className="field"><span>Private note, optional</span><input value={memo} maxLength={96} onChange={(event) => setMemo(event.target.value)} placeholder="Only the recipient can read this" /></label>
           <div className="privacyItem"><span><ShieldCheck size={18} /></span><div><strong>Verified before proving</strong><small>Moros checks the code checksum, network, private vault, request signature, asset, and expiry locally.</small></div></div>
