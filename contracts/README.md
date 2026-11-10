@@ -1,26 +1,18 @@
-# Contracts (Soroban / Rust)
+# Moros payment contracts
 
-Independently-built Cargo workspace of the on-chain contracts. Build target is
-**`wasm32v1-none`** (Rust 1.84+ / current stable; `wasm32-unknown-unknown` is
-unsupported by the SDK on recent Rust).
+| Package | Responsibility |
+| --- | --- |
+| `payment-types` | Payment statements, action contexts, identities, fees, relay quotes, and shared cryptographic types |
+| `payment-vault` | Circle USDC custody, private notes, commitments, nullifiers, and payment action verification |
+| `payment-verifier` | Verification keys and BN254 Groth16 verification for the seven payment circuits |
+| `payment-circuits` | Circom source and the required Poseidon2, note, Merkle, and encryption primitives |
 
+`payment-types/src/crypto.rs` contains the field, point, envelope, and hashing primitives used by the payment contracts. Circuit identifiers, domains, signal order, and cryptographic constants remain consistent with existing deployments.
+
+```bash
+cargo test --manifest-path contracts/Cargo.toml --workspace
 ```
-stellar contract build      # build all member crates to wasm32v1-none
-cargo test                  # native tests via the Soroban test env
-```
 
-## Members
-| Crate | Contract | Status |
-|---|---|---|
-| `lmsr-market` | LMSR pricing, uniform batches, lifecycle, resolution, and LP accounting | deployed on testnet |
-| `market-factory` | Creator-free proposals, deterministic deployment, capability gates, and LP-backed activation | deployed on testnet |
-| `market-liquidity-vault` | Isolated market funding, exits, and terminal redemption | deployed on testnet |
-| `pooled-liquidity-vault` | Shared LP shares, risk limits, allocation, NAV, withdrawals, and harvests | deployed on testnet |
-| `shielded-collateral-vault` | Reusable private USDC notes, orders, claims, refunds, LP actions, outputs, and nullifiers | deployed on testnet |
-| `zk-verifier` | BN254 Groth16 proof verification with immutable typed keys | deployed on testnet |
-| `resolver` | Free SEP-40 price resolution, optional Pyth verification, and stale-market voiding | deployed on testnet |
-| `event-resolver` | Bonded evidence, challenges, arbitration, and timeout voiding | inactive foundation |
-| `privacy-types` | Shared proof statements, operation bindings, and verification key types | library |
+Release settings retain overflow checks, size optimization, LTO, and symbol stripping. Existing deployment and proving records are in `../deployments/payments-mainnet.json` and `../deployments/payments-mainnet-proving.json`.
 
-`overflow-checks` is **on** in the release profile (a solvency safeguard). The LMSR
-fixed-point `exp`/`ln` math was validated on testnet before being ported here.
+Vendored Poseidon2 source retains its upstream license and notices under `payment-circuits/vendor/stellar-private-payments/`.

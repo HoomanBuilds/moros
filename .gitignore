@@ -20,8 +20,6 @@ node_modules/
 npm-debug.log*
 yarn-error.log*
 .pnp.*
-web/node_modules/
-web/.next/
 **/.next/
 **/.expo/
 **/dist/
@@ -36,13 +34,8 @@ witness.wtns
 build/
 output/
 proofgen/
-/circuits/private-build/
-/circuits/private-mainnet-build/
 /circuits/payments-build/
 /circuits/ptau/
-/web/public/zk/private/
-/web/public/zk/payments/
-/apps/pay-web/public/zk/payments/
 
 # --- Env / secrets / local deploy state ---
 .env
@@ -59,16 +52,18 @@ deployments/*.local.json
 .vscode/
 circuits/build/
 
-# --- Web ZK artifacts (proving keys are public; tracked so Vercel serves them) ---
-!web/public/zk/*.wasm
-!web/public/zk/*.zkey
-!packages/payments-crypto-web/*.wasm
+# --- Generated payment assets ---
 
-# committee runtime state (registered pools)
-services/pools.json
-services/queue.json
-services/indexer-data/
-services/keeper-status.json
-services/private-runtime/
 services/payment-runtime/
 .vercel
+
+/.superpowers/
+/.claude-logs/
+**/*.tsbuildinfo
+/.stellar/
+**/stellar-identities/
+/deploy-bundle.tar.gz
+/services/.env.stellar-rpc
+
+!packages/payments-crypto-web/*.wasm
+/apps/pay-web/public/zk/payments/

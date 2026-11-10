@@ -6,13 +6,7 @@ circuits
 contracts
 deployments
 docs
-fixtures
 inspiration
 remotion
 services
-spikes
 2026-*.png
-web/.env*
-web/.next
-web/.vercel
-web/node_modules
