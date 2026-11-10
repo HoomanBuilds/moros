@@ -1,6 +1,6 @@
 15-135-178-84.sslip.io {
 	encode gzip
-	reverse_proxy localhost:8140
+	respond 404
 }
 
 moros-market.duckdns.org {
@@ -14,16 +14,12 @@ moros-market.duckdns.org {
 		reverse_proxy localhost:8790
 	}
 
-	handle /private/* {
-		reverse_proxy localhost:8788
-	}
-
-	handle /zk/private/* {
+	handle /stellar/rpc {
 		reverse_proxy localhost:8788
 	}
 
 	handle {
-		reverse_proxy localhost:8788
+		respond 404
 	}
 }
 
