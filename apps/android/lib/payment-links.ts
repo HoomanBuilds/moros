@@ -4,7 +4,7 @@ export type ParsedPaymentTarget = {
 };
 
 const paymentCodePattern = /^moros_pay_[A-Za-z0-9_-]{24,2048}$/;
-const paymentHost = "pay.moros.fun";
+const paymentHosts = new Set(["moros.fun", "pay.moros.fun"]);
 
 export function parsePaymentTarget(raw: string): ParsedPaymentTarget {
   const value = raw.trim();
@@ -18,7 +18,8 @@ export function parsePaymentTarget(raw: string): ParsedPaymentTarget {
     throw new Error("This is not a valid Moros payment code.");
   }
 
-  const allowedHost = url.protocol === "https:" && url.hostname === paymentHost && url.pathname === "/pay";
+  const allowedHost = url.protocol === "https:" && paymentHosts.has(url.hostname)
+    && !url.port && !url.username && !url.password && url.pathname === "/pay";
   const allowedScheme = url.protocol === "moros:" && (url.hostname === "pay" || url.pathname === "pay");
   if (!allowedHost && !allowedScheme) throw new Error("This payment request belongs to another app.");
 
