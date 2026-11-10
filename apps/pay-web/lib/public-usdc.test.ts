@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Keypair } from "@stellar/stellar-sdk";
-import { formatUsdcAtomic, loadPublicUsdcBalance } from "./public-usdc";
+import { formatUsdcAtomic, formatUsdcDisplay, loadPublicUsdcBalance } from "./public-usdc";
 
 const account = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 1)).publicKey();
 const issuer = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 2)).publicKey();
@@ -17,6 +17,14 @@ assert.equal(formatUsdcAtomic(0n), "0");
 assert.equal(formatUsdcAtomic(10_000_001n), "1.0000001");
 assert.equal(formatUsdcAtomic(120_000_000n), "12");
 assert.throws(() => formatUsdcAtomic(-1n), /negative/);
+assert.equal(formatUsdcDisplay(null), "--");
+assert.equal(formatUsdcDisplay(0n), "0.00");
+assert.equal(formatUsdcDisplay(125_000_000n), "12.50");
+assert.equal(formatUsdcDisplay(1n), "0.0000001");
+assert.equal(formatUsdcDisplay(10_000_001n), "1.0000001");
+assert.equal(formatUsdcDisplay(12_345_670_000n), "1,234.567");
+assert.equal(formatUsdcDisplay((1n << 64n) - 1n), "1,844,674,407,370.9551615");
+assert.throws(() => formatUsdcDisplay(-1n), /negative/);
 
 const originalFetch = globalThis.fetch;
 let defaultFetchCalled = false;
@@ -38,7 +46,7 @@ const inactive = await loadPublicUsdcBalance({
   issuer,
   fetchImpl: async () => response(404, { status: 404 }),
 });
-assert.deepEqual(inactive, { accountActive: false, hasTrustline: false, balanceAtomic: 0n });
+assert.deepEqual(inactive, { accountActive: false, hasTrustline: false, balanceAtomic: 0n, receiveCapacityAtomic: 0n });
 
 const noTrustline = await loadPublicUsdcBalance({
   horizonUrl: "https://horizon.example",
@@ -46,7 +54,7 @@ const noTrustline = await loadPublicUsdcBalance({
   issuer,
   fetchImpl: async () => response(200, { balances: [{ asset_type: "native", balance: "10.0" }] }),
 });
-assert.deepEqual(noTrustline, { accountActive: true, hasTrustline: false, balanceAtomic: 0n });
+assert.deepEqual(noTrustline, { accountActive: true, hasTrustline: false, balanceAtomic: 0n, receiveCapacityAtomic: 0n });
 
 const funded = await loadPublicUsdcBalance({
   horizonUrl: "https://horizon.example",
@@ -56,7 +64,7 @@ const funded = await loadPublicUsdcBalance({
     balances: [{ asset_code: "USDC", asset_issuer: issuer, balance: "42.1234567" }],
   }),
 });
-assert.deepEqual(funded, { accountActive: true, hasTrustline: true, balanceAtomic: 421_234_567n });
+assert.deepEqual(funded, { accountActive: true, hasTrustline: true, balanceAtomic: 421_234_567n, receiveCapacityAtomic: 9223372036854775807n - 421_234_567n });
 
 await assert.rejects(
   loadPublicUsdcBalance({
@@ -67,3 +75,12 @@ await assert.rejects(
   }),
   /invalid USDC balance/,
 );
+
+const reserved = await loadPublicUsdcBalance({ horizonUrl: "https://horizon.example", address: account, issuer,
+  fetchImpl: async () => response(200, { balances: [{ asset_code: "USDC", asset_issuer: issuer, balance: "10", selling_liabilities: "2", buying_liabilities: "3", limit: "20" }] }),
+});
+assert.equal(reserved.balanceAtomic, 80_000_000n);
+assert.equal(reserved.receiveCapacityAtomic, 70_000_000n);
+await assert.rejects(loadPublicUsdcBalance({ horizonUrl: "https://horizon.example", address: account, issuer,
+  fetchImpl: async () => response(200, { balances: [{ asset_code: "USDC", asset_issuer: issuer, balance: "10", is_authorized: false }] }),
+}), /not authorized/);

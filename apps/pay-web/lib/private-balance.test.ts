@@ -177,7 +177,13 @@ assert.equal(secondScan.scannedOutputs, 2);
 assert.equal(secondScan.ownedNotes, 2);
 assert.equal(secondScan.spendableNotes, 1);
 assert.equal(secondScan.spendableAtomic, 200000000n);
+const checksBefore = checkedNullifiers.length;
+await session.refresh();
+assert.equal(checkedNullifiers.length - checksBefore, 1, "Previously spent notes must not consume RPC reads on every refresh");
 session.dispose();
+await assert.rejects(() => session.refresh(), /closed/);
+await assert.rejects(() => session.prepareSpend(1n), /closed/);
+
 
 const childIdentity = core.payment_identity_from_phrase(
   phrase,

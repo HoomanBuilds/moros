@@ -10,6 +10,7 @@ export interface PublicUsdcBalance {
   accountActive: boolean;
   hasTrustline: boolean;
   balanceAtomic: bigint;
+  receiveCapacityAtomic: bigint;
 }
 
 interface HorizonBalance {
@@ -17,6 +18,10 @@ interface HorizonBalance {
   asset_code?: unknown;
   asset_issuer?: unknown;
   balance?: unknown;
+  is_authorized?: unknown;
+  selling_liabilities?: unknown;
+  buying_liabilities?: unknown;
+  limit?: unknown;
 }
 
 function parseAtomicAmount(value: unknown): bigint {
@@ -47,7 +52,7 @@ export async function loadPublicUsdcBalance({
     signal,
   });
   if (response.status === 404) {
-    return { accountActive: false, hasTrustline: false, balanceAtomic: 0n };
+    return { accountActive: false, hasTrustline: false, balanceAtomic: 0n, receiveCapacityAtomic: 0n };
   }
   if (!response.ok) throw new Error(`Could not read the Stellar account (${response.status}).`);
   const payload = await response.json() as { balances?: unknown };
@@ -57,10 +62,17 @@ export async function loadPublicUsdcBalance({
     const balance = item as HorizonBalance;
     return balance.asset_code === "USDC" && balance.asset_issuer === issuer;
   });
+  if (trustline?.is_authorized === false) throw new Error("This account is not authorized to transfer Circle USDC.");
+  const held = trustline ? parseAtomicAmount(trustline.balance) : 0n;
+  const selling = trustline ? parseAtomicAmount(trustline.selling_liabilities ?? "0") : 0n;
+  const buying = trustline ? parseAtomicAmount(trustline.buying_liabilities ?? "0") : 0n;
+  const limit = trustline ? parseAtomicAmount(trustline.limit ?? "922337203685.4775807") : 0n;
+  if (selling > held || buying + held > limit) throw new Error("Horizon returned inconsistent USDC limits.");
   return {
     accountActive: true,
     hasTrustline: Boolean(trustline),
-    balanceAtomic: trustline ? parseAtomicAmount(trustline.balance) : 0n,
+    balanceAtomic: held - selling,
+    receiveCapacityAtomic: limit - held - buying,
   };
 }
 
@@ -70,4 +82,12 @@ export function formatUsdcAtomic(value: bigint | null): string {
   const whole = value / USDC_SCALE;
   const fraction = (value % USDC_SCALE).toString().padStart(7, "0").replace(/0+$/, "");
   return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+const wholeAmount = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+export function formatUsdcDisplay(value: bigint | null): string {
+  if (value === null) return "--";
+  const [whole, fraction = ""] = formatUsdcAtomic(value).split(".");
+  return `${wholeAmount.format(BigInt(whole))}.${fraction.padEnd(2, "0")}`;
 }

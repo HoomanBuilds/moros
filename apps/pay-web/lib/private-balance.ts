@@ -219,6 +219,7 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
   private readonly scanner: PaymentOutputScanner;
   private readonly readSpent: (nullifier: bigint) => Promise<boolean>;
   private readonly recovered = new Map<string, RecoveredPaymentNote>();
+  private readonly spentNullifiers = new Set<bigint>();
   private readonly unowned = new Map<string, ReturnType<typeof indexedOutput>>();
   private readonly commitments: bigint[] = [];
   private spendable: RecoveredPaymentNote[] = [];
@@ -258,11 +259,17 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
         this.deployment,
         BigInt(childIndex),
       );
+      if (this.disposed) {
+        identity.spendSecret.fill(0);
+        identity.viewingSecret.fill(0);
+        throw new Error("Private balance session is closed.");
+      }
       this.identities.push(identity);
       added.push(identity);
     }
     for (const [commitment, output] of this.unowned) {
       const recovered = await this.recoverOutput(output, added);
+      if (this.disposed) throw new Error("Private balance session is closed.");
       if (recovered === undefined) continue;
       this.unowned.delete(commitment);
       if (recovered) this.recovered.set(recovered.nullifier.toString(), recovered);
@@ -282,6 +289,7 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
   async prepareSpend(requiredAtomic: bigint, signal?: AbortSignal): Promise<PreparedPrivateSpend> {
     return this.enqueue(async () => {
       await this.refreshCurrent(signal);
+      if (this.disposed) throw new Error("Private balance session is closed.");
       const notes = selectPaymentNotes(this.spendable, requiredAtomic);
       return {
         commitments: [...this.commitments],
@@ -298,6 +306,7 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
   }
 
   private async refreshCurrent(signal?: AbortSignal): Promise<PrivateBalanceSnapshot> {
+    if (this.disposed) throw new Error("Private balance session is closed.");
     const result = await this.scanner.scan({
       signal,
       pageSize: 100,
@@ -309,6 +318,7 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
         }
         this.commitments[output.leafIndex] = commitment;
         const recovered = await this.recoverOutput(output, this.identities);
+        if (this.disposed) throw new Error("Private balance session is closed.");
         if (recovered === undefined) {
           this.unowned.set(output.commitment, output);
           return null;
@@ -317,20 +327,22 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
         return recovered;
       },
     });
+    if (this.disposed) throw new Error("Private balance session is closed.");
     if (result.scanned > MAX_SCAN_OUTPUTS) throw new Error("Payment output scan limit exceeded.");
     for (const { note } of result.notes) {
       const recovered = note as RecoveredPaymentNote;
       this.recovered.set(recovered.nullifier.toString(), recovered);
     }
     const recovered = [...this.recovered.values()];
-    const spent = new Map<bigint, boolean>();
-    for (let offset = 0; offset < recovered.length; offset += 8) {
+    const unchecked = recovered.filter((note) => !this.spentNullifiers.has(note.nullifier));
+    for (let offset = 0; offset < unchecked.length; offset += 8) {
       if (signal?.aborted) throw signal.reason || new Error("Payment balance refresh aborted.");
-      const batch = recovered.slice(offset, offset + 8);
+      const batch = unchecked.slice(offset, offset + 8);
       const states = await Promise.all(batch.map((note) => this.readSpent(note.nullifier)));
-      batch.forEach((note, index) => spent.set(note.nullifier, states[index]));
+      if (this.disposed) throw new Error("Private balance session is closed.");
+      batch.forEach((note, index) => { if (states[index]) this.spentNullifiers.add(note.nullifier); });
     }
-    const spendable = recovered.filter((note) => !spent.get(note.nullifier));
+    const spendable = recovered.filter((note) => !this.spentNullifiers.has(note.nullifier));
     this.spendable = spendable;
     return {
       spendableAtomic: spendable.reduce((total, note) => total + note.amount, 0n),
@@ -403,6 +415,7 @@ class BrowserPrivateBalanceSession implements PrivateBalanceSession {
     }
     this.identities.length = 0;
     this.recovered.clear();
+    this.spentNullifiers.clear();
     this.unowned.clear();
     this.commitments.length = 0;
     this.spendable = [];

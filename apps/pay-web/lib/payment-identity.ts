@@ -12,7 +12,7 @@ async function cryptoCore(): Promise<typeof import("@moros/payments-crypto-web")
     initialized = import("@moros/payments-crypto-web").then(async (module) => {
       await module.default();
       return module;
-    });
+    }).catch((error) => { initialized = null; throw error; });
   }
   return initialized;
 }
