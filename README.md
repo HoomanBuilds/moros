@@ -1,10 +1,14 @@
 <p align="center"><img src="apps/pay-web/public/logo-96.webp" alt="Moros" width="80" /></p>
 
-# Moros
+<h1 align="center">Moros</h1>
 
-Payments and financial infrastructure on Stellar, settled in Circle USDC.
+<p align="center">Payments and financial infrastructure on Stellar, settled in Circle USDC.</p>
 
-[Website](https://moros.fun) | [Payment app](https://moros.fun/app) | [X](https://x.com/morosxyz)
+<p align="center">
+  <a href="https://moros.fun">Website</a> |
+  <a href="https://moros.fun/app">Payment app</a> |
+  <a href="https://x.com/morosxyz">X</a>
+</p>
 
 Moros brings reusable private USDC balances, signed payment requests, encrypted recovery, and verifiable settlement to Stellar. Moros Pay is the web application, supported by shared contracts, cryptography, payment services, and client libraries that other applications can integrate.
 
