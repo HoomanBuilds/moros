@@ -4,84 +4,60 @@ import { useEffect } from "react";
 
 export function LandingMotion() {
   useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (preference.matches || !("IntersectionObserver" in window)) return;
+
     let disposed = false;
-    let smoothScroll: { destroy(): void } | undefined;
-    const animationFrames = new Set<number>();
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const countElements = document.querySelectorAll<HTMLElement>("[data-market-count]");
-
-    const formatCount = (element: HTMLElement, value: number) => {
-      const decimals = Number(element.dataset.decimals ?? 0);
-      const prefix = element.dataset.prefix ?? "";
-      const suffix = element.dataset.suffix ?? "";
-      const formatted = value.toLocaleString("en-US", {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-      });
-      element.textContent = `${prefix}${formatted}${suffix}`;
+    let stopHero: (() => void) | undefined;
+    const animations = new Set<Animation>();
+    const image = document.querySelector<HTMLImageElement>("[data-hero-image]");
+    const revealHero = () => {
+      if (!image) return;
+      void image.decode().then(async () => {
+        const bounds = image.getBoundingClientRect();
+        if (disposed || preference.matches || document.hidden || bounds.bottom <= 0 || bounds.top >= window.innerHeight) return;
+        const { startRiverMotion } = await import("@/lib/landing-river");
+        if (!disposed && !preference.matches) stopHero = startRiverMotion(image);
+      }).catch(() => {});
     };
-
-    const animateCount = (element: HTMLElement, delay: number) => {
-      const target = Number(element.dataset.target ?? 0);
-      const duration = 1600;
-      const startedAt = performance.now() + delay;
-
-      const tick = (now: number) => {
-        if (disposed) return;
-        const progress = Math.min(1, Math.max(0, (now - startedAt) / duration));
-        const eased = 1 - Math.pow(1 - progress, 4);
-        formatCount(element, target * eased);
-        if (progress < 1) {
-          const frame = requestAnimationFrame(tick);
-          animationFrames.add(frame);
-        }
-      };
-
-      const frame = requestAnimationFrame(tick);
-      animationFrames.add(frame);
-    };
-
-    if (!reduceMotion) {
-      countElements.forEach((element) => formatCount(element, 0));
-    }
-
-    const elements = document.querySelectorAll<HTMLElement>("[data-reveal]");
     const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        if (!entry.isIntersecting) return;
-        const target = entry.target as HTMLElement;
-        target.classList.add("isVisible");
-        if (!reduceMotion && target.hasAttribute("data-count-group")) {
-          target.querySelectorAll<HTMLElement>("[data-market-count]").forEach((element, index) => {
-            animateCount(element, 120 + index * 110);
-          });
-        }
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
         observer.unobserve(entry.target);
-      });
-    }, { rootMargin: "0px 0px -8%", threshold: 0.2 });
+        if (entry.target === image) {
+          revealHero();
+          continue;
+        }
+        const animation = entry.target.animate(
+          [{ opacity: 0, transform: "translateY(18px)" }, { opacity: 1, transform: "translateY(0)" }],
+          { duration: 700, easing: "cubic-bezier(.22, 1, .36, 1)" },
+        );
+        animations.add(animation);
+        animation.onfinish = () => animations.delete(animation);
+      }
+    }, { threshold: 0.08 });
 
-    elements.forEach((element) => observer.observe(element));
-    const frame = requestAnimationFrame(() => document.documentElement.classList.add("landingMotionReady"));
-    void import("lenis").then(({ default: Lenis }) => {
-      if (disposed) return;
-      smoothScroll = new Lenis({
-        anchors: true,
-        autoRaf: true,
-        lerp: 0.11,
-        respectReducedMotion: true,
-        smoothWheel: true,
-        stopInertiaOnNavigate: true,
-        syncTouch: false,
-      });
+    if (image) observer.observe(image);
+
+    document.querySelectorAll<HTMLElement>("[data-landing-reveal]").forEach((element) => {
+      if (element.getBoundingClientRect().top >= window.innerHeight) observer.observe(element);
     });
+
+    const stopMotion = () => {
+      if (!preference.matches) return;
+      stopHero?.();
+      observer.disconnect();
+      animations.forEach((animation) => animation.cancel());
+      animations.clear();
+    };
+    preference.addEventListener("change", stopMotion);
 
     return () => {
       disposed = true;
-      smoothScroll?.destroy();
-      animationFrames.forEach((frame) => cancelAnimationFrame(frame));
-      cancelAnimationFrame(frame);
+      stopHero?.();
       observer.disconnect();
-      document.documentElement.classList.remove("landingMotionReady");
+      animations.forEach((animation) => animation.cancel());
+      preference.removeEventListener("change", stopMotion);
     };
   }, []);
 

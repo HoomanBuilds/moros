@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { productUrls } from "@/lib/product-urls";
-import "lenis/dist/lenis.css";
 import "./globals.css";
 
 const sans = Instrument_Sans({ variable: "--font-sans", subsets: ["latin"] });
