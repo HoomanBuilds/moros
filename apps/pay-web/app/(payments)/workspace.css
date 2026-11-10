@@ -1,0 +1,357 @@
+.workspace {
+  --background: #fbfaf8;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --text: #302c30;
+  --muted: #6d656b;
+  --muted-strong: #565055;
+  --line: #e4dfde;
+  --line-strong: #b9aeb4;
+  --accent: #765767;
+  --accent-text: #765767;
+  --accent-soft: #f1e9ed;
+  --surface-inverse: #302c30;
+  --inverse: #fffdfa;
+  color: var(--text);
+  background: var(--background);
+  min-height: 100dvh;
+  font-size: 14px;
+}
+:root[data-theme="dark"] .workspace {
+  --background: #181619;
+  --surface: #201d20;
+  --surface-raised: #272327;
+  --text: #f4efef;
+  --muted: #b2a6ad;
+  --muted-strong: #d0c3ca;
+  --line: #393239;
+  --line-strong: #796a74;
+  --accent: #dfbbd0;
+  --accent-text: #dfbbd0;
+  --accent-soft: #362b33;
+  --surface-inverse: #eee5eb;
+  --inverse: #241e22;
+}
+.workspace .topbar { height: 64px; padding: 0 28px; display: flex; gap: 32px; background: var(--background); backdrop-filter: none; border-color: var(--line); }
+.workspace .brandLink { width: 176px; flex-shrink: 0; }
+.workspace .topbarActions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.workspace .networkLabel { font-size: 12px; color: var(--muted); margin-right: 12px; text-transform: capitalize; }
+.workspace .workspaceSidebar { width: 232px; position: fixed; top: 64px; bottom: 0; display: flex; flex-direction: column; padding: 28px 16px; border-right: 1px solid var(--line); overflow-y: auto; }
+.workspaceSidebar nav { display: grid; gap: 4px; }
+.workspace .workspaceNav { display: flex; align-items: center; gap: 12px; border-radius: 7px; padding: 12px 16px; color: var(--muted-strong); font-size: 14px; transition: color 180ms, background 180ms; }
+.workspace .workspaceNav:hover { background: var(--surface-raised); color: var(--text); }
+.workspace .workspaceNav.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.workspace .fundingNav { border-top: 1px solid var(--line); padding-top: 20px; margin-top: 24px; }
+.workspace .sidebarFoot { margin-top: auto; padding: 36px 16px 4px; font-size: 12px; color: var(--muted); }
+.workspace .sidebarFoot a { text-decoration: underline; text-underline-offset: 4px; }
+.workspace .main { margin-left: 232px; max-width: none; width: auto; padding: 32px clamp(24px, 3vw, 48px) 64px; min-height: calc(100dvh - 64px); outline: none; }
+.workspace .page { animation: none; width: 100%; max-width: 1120px; margin: 0 auto; }
+.workspace .pageHeader { margin: 0 0 32px; padding: 0; max-width: none; }
+.workspace .pageHeader h1 { font: 600 28px/1.25 var(--font-sans), sans-serif; letter-spacing: -.025em; margin: 0 0 10px; }
+.workspace .pageHeader p { font-size: 14px; line-height: 1.6; max-width: 65ch; margin: 0; }
+.workspace .panel { padding: 28px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; box-shadow: none; }
+.workspace h2 { font: 600 18px/1.35 var(--font-sans), sans-serif; letter-spacing: -.025em; margin: 0; }
+.workspace h3 { font-size: 18px; }
+.workspace .button { border-radius: 7px; min-height: 44px; padding: 12px 20px; font-size: 14px; font-weight: 500; letter-spacing: 0; transition: background 180ms, border-color 180ms, opacity 180ms; transform: none; box-shadow: none; }
+.workspace .button:hover { transform: none; }
+.workspace .button.primary { background: var(--surface-inverse); border-color: var(--surface-inverse); color: var(--inverse); }
+.workspace .button.primary:hover { opacity: .87; }
+.workspace .button.secondary { background: var(--surface-raised); border-color: var(--line); color: var(--text); }
+.workspace .button.secondary:hover { border-color: var(--line-strong); }
+.workspace .button:disabled, .workspace button:disabled { opacity: .5; cursor: not-allowed; }
+.workspace .compactButton { min-height: 36px; padding: 8px 12px; font-size: 12px; }
+.workspace .iconButton { width: 40px; height: 40px; min-width: 40px; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: transparent; display: inline-flex; align-items: center; justify-content: center; }
+.workspace .textButton { font-size: 14px; color: var(--accent-text); display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; cursor: pointer; background: transparent; border: 0; padding: 0; text-align: left; }
+.workspace .textButton:hover, .workspace .field small a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.workspace :is(button,a,input,textarea,select,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.workspace .actionRow { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; }
+.workspace .formStack, .workspace .formFields { display: flex; flex-direction: column; gap: 24px; }
+.workspace .formFields { margin: 0; padding: 0; min-width: 0; border: 0; }
+.workspace .field { grid-template-columns: minmax(0, 1fr); min-width: 0; font-family: var(--font-sans), sans-serif; text-transform: none; letter-spacing: 0; gap: 8px; margin: 0; font-size: 13px; }
+.workspace .field > span:first-child { color: var(--text); font-weight: 500; }
+.workspace .field small { font-size: 12px; line-height: 1.5; color: var(--muted); font-weight: 400; }
+.workspace .field small a { color: var(--accent-text); }
+.workspace .field input, .workspace .field textarea, .workspace .searchInput { background: var(--surface-raised); border: 1px solid var(--line); color: var(--text); padding: 13px 14px; border-radius: 7px; min-height: 46px; font-size: 16px; width: 100%; resize: vertical; }
+.workspace .field input::placeholder, .workspace .field textarea::placeholder { color: var(--muted); opacity: .85; }
+.workspace .field textarea { line-height: 1.6; }
+.workspace .fieldHeading { display: flex; justify-content: space-between; align-items: center; }
+.workspace .amountBox { display: flex; align-items: center; gap: 16px; border: 1px solid var(--line); padding: 8px 16px; border-radius: 7px; background: var(--surface-raised); }
+.workspace .amountBox input { border: 0; border-radius: 0; min-width: 0; width: 100%; padding: 8px 0; font: 500 32px/1.3 var(--font-sans), sans-serif; letter-spacing: -.04em; background: transparent; }
+.workspace .amountAsset { display: flex; gap: 7px; align-items: center; font-size: 13px; flex-shrink: 0; }
+.workspace .fullButton { width: 100%; }
+.workspace .transactionPage { max-width: 600px; }
+.workspace .paymentWorkspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.workspace .paymentPanel { min-width: 0; }
+.workspace .flowSteps { display: flex; padding: 0 0 24px; margin: 0 0 28px; list-style: none; border-bottom: 1px solid var(--line); justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.workspace .flowSteps .current { color: var(--accent-text); font-weight: 600; }
+.workspace .paymentHelp { margin: 0; padding: 0; min-width: 0; max-width: 680px; }
+.workspace .paymentHelp p { font-size: 13px; color: var(--muted); line-height: 1.65; margin: 12px 0; overflow-wrap: anywhere; }
+.workspace .syncFailure { display: grid; gap: 8px; margin-bottom: 20px; }
+.workspace .finePrint { font-size: 12px; line-height: 1.65; margin: 0; color: var(--muted); }
+.workspace .errorText { font-size: 13px; line-height: 1.65; color: var(--danger); overflow-wrap: anywhere; margin: 0; }
+.workspace .formError { margin-top: 20px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent); border-radius: 7px; }
+.workspace .notice { font-size: 13px; line-height: 1.6; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--accent-soft); }
+.workspace .notice p { margin: 0 0 10px; }
+.workspace .fundingWallet { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; }
+.workspace .fundingWallet > div { display: grid; gap: 6px; font-size: 12px; }
+.workspace .reviewHeading h2 { font-size: 16px; margin: 0 0 12px; }
+.workspace .reviewAmount { font-size: 36px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.workspace .reviewAmount span { font-size: 16px; font-weight: 400; color: var(--muted); }
+.workspace .reviewDetails { margin: 0; }
+.workspace .reviewDetails > div { display: grid; grid-template-columns: 1fr minmax(0, 1.4fr); gap: 20px; padding: 14px 0; font-size: 13px; border-bottom: 1px solid var(--line); }
+.workspace .reviewDetails dt { color: var(--muted); }
+.workspace .reviewDetails dd { margin: 0; text-align: right; display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.workspace .reviewDetails .reviewTotal { border: 0; font-weight: 600; }
+.workspace .reviewTotal dt { color: var(--text); }
+.workspace .breakCode { overflow-wrap: anywhere; font-size: 12px; }
+.workspace .paymentReceipt { max-width: 640px; text-align: center; display: grid; gap: 24px; justify-items: center; padding: 48px 32px; }
+.workspace .receiptCheck { width: 56px; height: 56px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--success); }
+.workspace .paymentReceipt h2 { font: 600 28px/1.25 var(--font-sans), sans-serif; }
+.workspace .paymentReceipt p { margin: 0; line-height: 1.7; }
+.workspace .paymentReceipt details { max-width: 100%; font-size: 13px; }
+.workspace .paymentReceipt summary { cursor: pointer; }
+.workspace .paymentReceipt .codeBlock { margin: 12px 0; }
+.workspace .requestPreview { display: flex; justify-content: space-between; align-items: center; gap: 24px; border-bottom: 1px solid var(--line); padding: 0 0 24px; margin-bottom: 32px; }
+.workspace .requestPreview > div { display: grid; gap: 8px; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.workspace .requestPreview > strong { max-width: 100%; overflow-wrap: anywhere; }
+.workspace .requestPreview small { color: var(--muted); }
+.workspace .overviewBalances { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 24px; margin-bottom: 24px; }
+.workspace .privateBalancePanel { background: var(--surface); }
+.workspace .panelHeading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.workspace .panelHeading > span { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; }
+.workspace .balanceAmount { margin: 28px 0 8px; font-size: clamp(36px, 3.5vw, 48px); line-height: 1.1; font-weight: 500; letter-spacing: -.05em; overflow-wrap: anywhere; }
+.workspace .balanceAmount small, .workspace .publicAmount small { font-size: 14px; font-weight: 400; letter-spacing: 0; }
+.workspace .privateBalancePanel > .muted { margin: 0 0 24px; font-size: 12px; }
+.workspace .balanceActions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.workspace .balanceActions .textButton { padding: 8px; }
+.workspace .publicWalletPanel { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; }
+.workspace .publicWalletPanel p { margin: 0; line-height: 1.7; }
+.workspace .publicAmount { font-size: 28px; font-weight: 500; overflow-wrap: anywhere; }
+.workspace .publicWalletPanel .actionRow { margin-top: auto; }
+.workspace .recordPanel { margin-bottom: 24px; padding: 0; overflow: hidden; }
+.workspace .recordPanel > .panelHeading, .workspace .recordToolbar { padding: 24px; border-bottom: 1px solid var(--line); }
+.workspace .compactEmpty { padding: 32px 24px; display: flex; gap: 16px; align-items: center; justify-content: space-between; border: 0; }
+.workspace .compactEmpty strong { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 500; }
+.workspace .compactEmpty p { margin: 0; font-size: 13px; color: var(--muted); }
+.workspace .recordToolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.workspace .filterButtons { display: flex; gap: 4px; flex-wrap: wrap; }
+.workspace .filterButtons button { background: transparent; border: 0; border-radius: 5px; padding: 8px 12px; color: var(--muted); font-size: 13px; cursor: pointer; }
+.workspace .filterButtons button.active { color: var(--accent-text); background: var(--accent-soft); }
+.workspace .activityRecord { border-bottom: 1px solid var(--line); }
+.workspace .activityRecord:last-child { border: 0; }
+.workspace .activityRecord summary { list-style: none; padding: 20px 24px; display: flex; align-items: center; gap: 16px; cursor: pointer; }
+.workspace .activityRecord summary::-webkit-details-marker { display: none; }
+.workspace .activityRecord summary:hover { background: var(--surface-raised); }
+.workspace .recordIcon { width: 38px; height: 38px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: var(--background); border: 1px solid var(--line); }
+.workspace .recordMain, .workspace .recordAmount { display: grid; gap: 7px; min-width: 0; }
+.workspace .recordMain strong, .workspace .recordAmount strong { font-size: 13px; font-weight: 500; }
+.workspace .recordMain small, .workspace .recordAmount small { font-size: 12px; color: var(--muted); }
+.workspace .recordAmount { margin-left: auto; text-align: right; overflow-wrap: anywhere; }
+.workspace .recordDetails { margin: 0; padding: 0 24px 24px 78px; font-size: 12px; display: grid; gap: 8px; }
+.workspace .recordDetails dt { color: var(--muted); }
+.workspace .recordDetails dd { margin: 0 0 10px; }
+.workspace .emptyState { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 240px; text-align: center; padding: 32px; gap: 16px; border: 0; background: transparent; }
+.workspace .emptyState p { color: var(--muted); margin: 0; font-size: 13px; }
+.workspace .recoveryNotice { display: flex; align-items: center; justify-content: space-between; gap: 24px; border: 1px solid var(--line); border-radius: 8px; padding: 20px; margin-bottom: 24px; font-size: 13px; }
+.workspace .recoveryNotice p { color: var(--muted); margin: 6px 0 0; line-height: 1.6; }
+.workspace .operationBanner { border: 1px solid var(--line); border-radius: 7px; background: var(--accent-soft); padding: 16px; margin: 0 auto 24px; max-width: 1120px; font-size: 13px; }
+.workspace .qrCard { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; width: min(100%, 280px); margin: 0 auto; }
+.workspace .qrCard img { width: 100%; height: auto; display: block; }
+.workspace .fingerprint { font-size: 13px; overflow-wrap: anywhere; margin: 8px 0 0; }
+.workspace .codeBlock { padding: 14px; background: var(--background); border: 1px solid var(--line); font-size: 11px; line-height: 1.8; border-radius: 7px; max-height: 200px; overflow: auto; overflow-wrap: anywhere; }
+.workspace details > summary { color: var(--muted-strong); font-size: 13px; cursor: pointer; }
+.workspace .requestManager { min-width: 0; margin: 0; }
+.workspace .panelHeader { padding: 0 0 20px; background: transparent; border: 0; }
+.workspace .panelHeader h2 { font-size: 20px; }
+.workspace .requestList { border: 0; border-radius: 0; overflow: hidden; background: transparent; }
+.workspace .recordPanel .requestList { padding: 0 24px; }
+.workspace .requestRow { padding: 20px 0; min-height: 0; animation: none; gap: 12px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; }
+.workspace .requestRowTitle { gap: 12px; }
+.workspace .requestRowTitle strong { font-size: 13px; }
+.workspace .requestRowMeta { font-size: 11px; gap: 8px; }
+.workspace .requestRowMeta .mono { display: none; }
+.workspace .segmented { background: var(--background); border: 1px solid var(--line); border-radius: 7px; padding: 4px; }
+.workspace .segmented button { border-radius: 5px; font-size: 12px; min-height: 38px; }
+.workspace .segmented button.active { background: var(--surface-raised); color: var(--text); }
+.workspace .expiryField { padding: 0; border: 0; margin: 0; }
+.workspace .expiryField legend { font-size: 13px; margin-bottom: 12px; }
+.workspace .expiryOptions button { border-radius: 6px; font-size: 12px; }
+.workspace .createdRequest { margin: 0; min-width: 0; }
+.workspace .settingsList { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.workspace .settingRow { padding: 24px; gap: 24px; }
+.workspace .settingRow strong { font-size: 14px; }
+.workspace .settingRow small { font-size: 12px; line-height: 1.6; margin-top: 6px; }
+.workspace .settingsSection { margin-top: 24px; }
+.workspace .settingsSection .muted { font-size: 13px; line-height: 1.7; max-width: 70ch; }
+.workspace .settingsSection .button { align-self: flex-start; }
+.workspace .walletAccess { border: 0; background: transparent; width: 100%; max-width: 880px; margin: 32px auto; padding: 0; }
+.workspace .walletAccessIntro { display: block; border: 0; max-width: 620px; margin-bottom: 36px; padding: 0; }
+.workspace .walletAccessIntro h1 { font: 600 32px/1.25 var(--font-sans), sans-serif; letter-spacing: -.03em; margin: 12px 0 20px; }
+.workspace .walletAccessIntro > p:last-child { font-size: 14px; line-height: 1.75; color: var(--muted); max-width: 54ch; }
+.workspace .walletAccessGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.workspace .walletAccessCard { padding: 28px; min-height: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: none; display: flex; flex-direction: column; gap: 24px; }
+.workspace .walletAccessCard.private { color: var(--text); background: var(--surface); border-color: var(--line); }
+.workspace .walletAccessCard::before, .workspace .walletAccessCard::after { display: none; }
+.workspace .walletChoiceHeading { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.workspace .walletChoiceHeading svg { flex-shrink: 0; color: var(--accent-text); }
+.workspace .walletAccessCard .walletChoiceHeading h2 { margin: 0; }
+.workspace .walletAccessCard h2 { font: 500 20px/1.3 var(--font-sans), sans-serif; margin: 0 0 12px; }
+.workspace .walletAccessCard p { font-size: 13px; line-height: 1.7; margin: 0; }
+.workspace .walletAccessActions, .workspace .walletAccessConnected { display: grid; gap: 12px; margin-top: auto; }
+.workspace .walletAccessShell { margin: 0 auto; padding: 0; min-height: 0; }
+.workspace .gateCard { max-width: 480px; margin: 32px auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 32px; box-shadow: none; }
+.workspace .gateCard.wide { max-width: 760px; }
+.workspace .gateCard h1 { font: 600 28px/1.25 var(--font-sans), sans-serif; letter-spacing: -.025em; margin: 0; }
+.workspace .gateCard > .muted { font-size: 13px; line-height: 1.7; }
+.workspace .gateHeading { display: flex; align-items: center; gap: 12px; }
+.workspace .gateHeading > svg { flex-shrink: 0; color: var(--accent-text); }
+.workspace .recoveryGrid { padding: 16px; list-style: none; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px 8px; border-radius: 7px; }
+.workspace .recoveryGrid li { font: 14px/1.5 var(--font-sans), sans-serif; }
+.workspace .recoveryGrid li span { flex-shrink: 0; font-size: 12px; line-height: 21px; font-variant-numeric: tabular-nums; }
+.workspace .recoveryChecks { gap: 12px; }
+.workspace .passwordField { position: relative; }
+.workspace .passwordField input { padding-right: 48px; }
+.workspace .passwordField button { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; display: grid; place-items: center; background: none; border: 0; cursor: pointer; }
+.workspace .bottomNav { display: none; }
+.workspace .spin { animation: workspace-spin 1.2s linear infinite; }
+@keyframes workspace-spin { to { transform: rotate(360deg); } }
+@media (max-width: 1150px) {
+  .workspace .workspaceSidebar { width: 200px; }
+  .workspace .brandLink { width: 144px; }
+  .workspace .main { margin-left: 200px; padding: 32px 24px 48px; }
+  .workspace .paymentHelp { max-width: 600px; padding-top: 0; }
+}
+@media (max-width: 760px) {
+  .workspace .topbar { padding: 0 18px; gap: 16px; height: 64px; }
+  .workspace .brandLink { width: auto; }
+  .workspace .workspaceTitle, .workspace .networkLabel, .workspace .workspaceSidebar { display: none; }
+  .workspace .topbarActions { gap: 8px; }
+  .workspace .main { margin-left: 0; padding: 24px 18px 110px; min-height: calc(100dvh - 64px); }
+  .workspace .pageHeader { margin-bottom: 24px; }
+  .workspace .pageHeader h1 { font-size: 26px; }
+  .workspace .pageHeader p { font-size: 13px; }
+  .workspace .panel { padding: 22px; }
+  .workspace .bottomNav { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 0; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); backdrop-filter: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; z-index: 30; }
+  .workspace .bottomNavItem { padding: 6px 0; min-width: 0; color: var(--muted); gap: 5px; font-size: 9px; }
+  .workspace .bottomNavItem.active { color: var(--accent-text); background: var(--accent-soft); border-radius: 6px; }
+  .workspace .walletAccess { margin: 8px auto; }
+  .workspace .walletAccessGrid { grid-template-columns: 1fr; gap: 18px; }
+  .workspace .walletAccessIntro h1 { font-size: 28px; }
+  .workspace .walletAccessCard { padding: 24px; }
+  .workspace .gateCard { padding: 24px; margin: 8px auto; }
+  .workspace .gateCard h1 { font-size: 24px; }
+  .workspace .recoveryGrid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 8px; padding: 12px 8px; }
+  .workspace .recoveryGrid li { gap: 6px; }
+  .workspace .recoveryChecks { grid-template-columns: 1fr; }
+  .workspace .recordPanel { padding: 0; }
+  .workspace .recordPanel > .panelHeading, .workspace .recordToolbar { padding: 20px; flex-wrap: wrap; }
+  .workspace .panelHeading h2 { font-size: 17px; }
+  .workspace .activityRecord summary { padding: 18px; gap: 10px; }
+  .workspace .recordIcon { width: 30px; height: 30px; }
+  .workspace .recordMain strong, .workspace .recordAmount strong { font-size: 12px; }
+  .workspace .recordMain small { font-size: 12px; }
+  .workspace .recordDetails { padding: 0 18px 18px; }
+  .workspace .compactEmpty { flex-direction: column; align-items: flex-start; padding: 24px 20px; }
+  .workspace .requestPreview { align-items: flex-start; flex-direction: column; }
+  .workspace .requestRow { padding: 20px 0; gap: 12px; }
+  .workspace .requestRowMain { min-width: 0; padding: 0; }
+  .workspace .requestActions { margin: 0; }
+  .workspace .requestRowTitle { flex-wrap: wrap; }
+  .workspace .settingRow { padding: 20px; flex-wrap: wrap; gap: 16px; }
+  .workspace .settingRow > div:first-child { flex: 1; min-width: 180px; }
+  .workspace .reviewAmount { font-size: 30px; }
+  .workspace .reviewDetails > div { gap: 12px; font-size: 12px; }
+  .workspace .paymentReceipt { padding: 36px 22px; }
+  .workspace .fundingWallet { flex-wrap: wrap; }
+  .workspace .recoveryNotice { align-items: flex-start; flex-direction: column; gap: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace *, .workspace *::before, .workspace *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+.workspace .contactLayout { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 40px; align-items: start; }
+.workspace .contactsPanel { min-width: 0; }
+.workspace .contactRow { padding: 20px 0; gap: 12px; border-bottom: 1px solid var(--line); }
+.workspace .contactRow > div:nth-child(2) { min-width: 0; flex: 1; }
+.workspace .contactRow strong { font-size: 13px; overflow-wrap: anywhere; }
+.workspace .contactRow small { font-size: 11px; overflow-wrap: anywhere; }
+.workspace .contactMonogram { width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); font-size: 14px; }
+.workspace .contactActions { display: flex; gap: 6px; }
+.workspace .backupCheck { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.7; }
+.workspace .backupCheck input { margin-top: 5px; }
+.workspace .qrPlaceholder { width: min(100%,280px); aspect-ratio: 1; margin: 0 auto; border: 1px solid var(--line); border-radius: 12px; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+@media (max-width: 1150px) { .workspace .contactLayout { grid-template-columns: 1fr; max-width: 720px; } }
+
+.workspace .walletAccessCard.private p:not(.errorText) { color: var(--muted-strong); }
+.workspace .walletAccessCard.private .button.primary { border-color: var(--surface-inverse); background: var(--surface-inverse); color: var(--inverse); }
+.workspace .walletAccessCard.private .button.secondary { border-color: var(--line); background: var(--surface-raised); color: var(--text); }
+.workspace .walletAccessCard:last-child { border: 1px solid var(--line); }
+.workspace .field small a { text-decoration: underline; text-underline-offset: 3px; }
+.workspace .fieldHeading .textButton, .workspace .expiryField legend { font-family: var(--font-sans), sans-serif; font-size: 13px; text-transform: none; letter-spacing: 0; }
+.workspace .expiryOptions { border: 0; gap: 8px; }
+.workspace .expiryOptions button { border: 1px solid var(--line); }
+.workspace .requestManager { border: 0; }
+.workspace .amountAsset { text-transform: none; letter-spacing: 0; }
+
+.workspace :is(button, input, textarea, select, summary, a, [tabindex]) { scroll-margin-top: 84px; scroll-margin-bottom: 110px; }
+html:has(.workspace) { scroll-padding-top: 84px; scroll-padding-bottom: 110px; }
+
+.workspace .receiptSummary { width: 100%; display: grid; gap: 12px; font-size: 13px; margin: 0; text-align: left; }
+.workspace .receiptSummary > div { display: grid; grid-template-columns: 80px minmax(0,1fr); gap: 16px; }
+.workspace .receiptSummary dt { color: var(--muted); }
+.workspace .receiptSummary dd { margin: 0; text-align: right; }
+
+.workspace .themeToggle { width: 40px; height: 40px; border-radius: 7px; background: transparent; border: 1px solid var(--line); }
+.workspace .balanceAmount, .workspace .publicAmount, .workspace .reviewDetails, .workspace .recordAmount, .workspace .requestRowAmount { font-variant-numeric: tabular-nums; }
+.workspace .receivePanel { width: 100%; max-width: 560px; }
+.workspace .receiveIdentity { margin: 0; text-align: center; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.workspace .receiveActions { display: grid; grid-template-columns: 1fr 1fr; }
+.workspace .receivePanel .paymentHelp, .workspace .createdRequest .paymentHelp { border-top: 1px solid var(--line); padding-top: 20px; }
+.workspace .requestWorkspace { display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); align-items: start; gap: 40px; }
+.workspace .requestEmpty { padding: 32px 0; border-top: 1px solid var(--line); }
+.workspace .requestEmpty p { margin: 0 0 8px; font-size: 14px; font-weight: 500; }
+.workspace .requestEmpty span { color: var(--muted); font-size: 13px; }
+.workspace .requestRowMain { min-width: 0; padding: 0; }
+.workspace .requestRowTitle strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.workspace .requestRowMeta { font: 12px/1.6 var(--font-sans), sans-serif; margin-top: 6px; color: var(--muted); }
+.workspace .requestRowAmount { text-align: right; display: grid; gap: 6px; }
+.workspace .requestRowAmount strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.workspace .requestRowAmount > span { font-size: 12px; color: var(--muted); }
+.workspace .requestActions { grid-column: 1 / -1; justify-content: flex-end; display: flex; gap: 8px; padding: 0; }
+.workspace .advancedSettings > summary { font-size: 16px; font-weight: 500; color: var(--text); }
+.workspace .advancedSettings[open] > .formStack { padding-top: 20px; }
+.workspace .settingsPage { max-width: 880px; }
+.workspace .settingsPage .settingRow > div { min-width: 0; }
+.workspace .settingRow small { overflow-wrap: anywhere; }
+@media (max-width: 1150px) {
+  .workspace .requestWorkspace { grid-template-columns: minmax(0, 1fr); max-width: 680px; gap: 32px; }
+  .workspace .overviewBalances { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+  .workspace .balanceActions { gap: 8px; }
+}
+@media (max-width: 900px) {
+  .workspace .overviewBalances { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .workspace .pageHeader p { font-size: 14px; }
+  .workspace .field { font-size: 14px; }
+  .workspace .button { min-height: 44px; }
+  .workspace .iconButton, .workspace .themeToggle { width: 44px; height: 44px; min-width: 44px; }
+  .workspace .bottomNavItem { min-height: 48px; font-size: 10px; }
+  .workspace .panel { padding: 20px; }
+  .workspace .recordPanel { padding: 0; }
+  .workspace .recordPanel .requestList { padding: 0 20px; }
+  .workspace .settingsPage .settingRow > div:first-child { min-width: min(180px,100%); }
+}
+
+.workspace .overviewRecords { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(0,1fr); gap: 24px; align-items: start; }
+.workspace .recordChevron { color: var(--muted); flex-shrink: 0; transition: transform 160ms; }
+.workspace .activityRecord[open] .recordChevron { transform: rotate(180deg); }
+.workspace .contactSelect { width: 160px; max-width: 48%; min-width: 0; border: 0; border-radius: 4px; background: transparent; color: var(--accent-text); font: 13px var(--font-sans), sans-serif; padding: 6px 4px; text-overflow: ellipsis; }
+.workspace .field .contactSelect { min-height: 32px; }
+.workspace .walletAccess, .workspace .gateCard { animation: none; }
+.workspace .amountAsset { font: 13px var(--font-sans), sans-serif; }
+.workspace .themeChoices { border-radius: 7px; overflow: hidden; }
+.workspace .requestRowTitle strong { white-space: normal; }
+.workspace .contactRow strong, .workspace .contactRow small { white-space: normal; }
+.workspace .contactRow { border-top: 0; }
+.workspace .contactRow small { font: 12px/1.5 var(--font-sans), sans-serif; letter-spacing: 0; }
+@media (max-width: 1250px) { .workspace .overviewRecords { grid-template-columns: minmax(0,1fr); } }

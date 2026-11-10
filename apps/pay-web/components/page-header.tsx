@@ -1,9 +1,5 @@
-export function PageHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
-  return (
-    <header className="pageHeader">
-      <p className="sectionLabel"><span />{eyebrow}</p>
-      <h1>{title}</h1>
-      <p className="muted">{description}</p>
-    </header>
-  );
+import { StepHeading } from "./step-heading";
+
+export function PageHeader({ title, description }: { title: string; description?: string }) {
+  return <header className="pageHeader"><StepHeading>{title}</StepHeading>{description && <p className="muted">{description}</p>}</header>;
 }

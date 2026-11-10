@@ -1,184 +1,117 @@
 "use client";
 
-import { getAddress, getNetworkDetails, isAllowed, requestAccess } from "@stellar/freighter-api";
+import { getAddress, getNetworkDetails, isAllowed, isConnected, requestAccess } from "@stellar/freighter-api";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { paymentDeployment } from "@/lib/deployment";
 import { loadPublicUsdcBalance } from "@/lib/public-usdc";
 
 type PublicWalletStatus = "disconnected" | "connecting" | "loading" | "ready" | "wrong_network" | "error";
-
-interface StellarWalletContextValue {
+interface WalletState {
   status: PublicWalletStatus;
   address: string | null;
   balanceAtomic: bigint | null;
   accountActive: boolean | null;
   hasTrustline: boolean | null;
   error: string | null;
+}
+interface StellarWalletContextValue extends WalletState {
   connect(): Promise<void>;
   disconnect(): void;
   refresh(): Promise<void>;
 }
-
 const StellarWalletContext = createContext<StellarWalletContextValue | null>(null);
 const DISCONNECTED_KEY = "moros-pay-public-wallet-disconnected";
-
-function errorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-  return error instanceof Error ? error.message : "The Stellar wallet connection failed.";
-}
+const empty: WalletState = { status: "disconnected", address: null, balanceAtomic: null, accountActive: null, hasTrustline: null, error: null };
 
 export function StellarWalletProvider({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<PublicWalletStatus>("disconnected");
-  const [address, setAddress] = useState<string | null>(null);
-  const [balanceAtomic, setBalanceAtomic] = useState<bigint | null>(null);
-  const [accountActive, setAccountActive] = useState<boolean | null>(null);
-  const [hasTrustline, setHasTrustline] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const addressRef = useRef<string | null>(null);
-  const requestRef = useRef<AbortController | null>(null);
-  const lastRefreshRef = useRef(0);
-  const refreshPendingRef = useRef<Promise<void> | null>(null);
+  const [state, setState] = useState<WalletState>(empty);
+  const request = useRef<AbortController | null>(null);
+  const address = useRef<string | null>(null);
+  const lastRefresh = useRef(0);
 
-  const clearBalance = useCallback(() => {
-    setBalanceAtomic(null);
-    setAccountActive(null);
-    setHasTrustline(null);
+  const read = useCallback(async (controller: AbortController, account: string) => {
+    if (!paymentDeployment.ready) throw new Error(paymentDeployment.reason);
+    const network = await getNetworkDetails();
+    if (controller.signal.aborted) return;
+    if (network.error) throw new Error(network.error.message);
+    address.current = account;
+    if (network.networkPassphrase !== paymentDeployment.deployment.networkPassphrase) {
+      setState({ ...empty, status: "wrong_network", address: account, error: `Switch Freighter to ${paymentDeployment.deployment.environment}, then refresh.` });
+      return;
+    }
+    setState({ ...empty, status: "loading", address: account });
+    const balance = await loadPublicUsdcBalance({ horizonUrl: paymentDeployment.deployment.horizonUrl, address: account, issuer: paymentDeployment.deployment.usdcIssuer, signal: controller.signal });
+    if (controller.signal.aborted) return;
+    lastRefresh.current = Date.now();
+    setState({ status: "ready", address: account, ...balance, error: null });
   }, []);
 
-  const readWallet = useCallback(async (nextAddress: string) => {
-    if (!paymentDeployment.ready) {
-      setStatus("error");
-      setError(paymentDeployment.reason);
-      clearBalance();
-      return;
-    }
-    const network = await getNetworkDetails();
-    if (network.error) throw network.error;
-    if (network.networkPassphrase !== paymentDeployment.deployment.networkPassphrase) {
-      setStatus("wrong_network");
-      setError(`Switch Freighter to ${paymentDeployment.deployment.environment}.`);
-      clearBalance();
-      return;
-    }
-    requestRef.current?.abort();
+  const run = useCallback(async (choose: () => Promise<string | null>, status: PublicWalletStatus) => {
+    request.current?.abort();
     const controller = new AbortController();
-    requestRef.current = controller;
-    setStatus("loading");
-    setError(null);
-    const balance = await loadPublicUsdcBalance({
-      horizonUrl: paymentDeployment.deployment.horizonUrl,
-      address: nextAddress,
-      issuer: paymentDeployment.deployment.usdcIssuer,
-      signal: controller.signal,
-    });
-    if (controller.signal.aborted) return;
-    setBalanceAtomic(balance.balanceAtomic);
-    setAccountActive(balance.accountActive);
-    setHasTrustline(balance.hasTrustline);
-    lastRefreshRef.current = Date.now();
-    setStatus("ready");
-  }, [clearBalance]);
-
-  const applyAddress = useCallback(async (nextAddress: string) => {
-    addressRef.current = nextAddress;
-    setAddress(nextAddress);
-    await readWallet(nextAddress);
-  }, [readWallet]);
-
-  const connect = useCallback(async () => {
-    if (!paymentDeployment.ready) {
-      setStatus("error");
-      setError(paymentDeployment.reason);
-      return;
-    }
-    setStatus("connecting");
-    setError(null);
+    request.current = controller;
+    if (status !== "disconnected") setState((current) => ({ ...current, status, error: null }));
     try {
-      const access = await requestAccess();
-      if (access.error) throw access.error;
-      if (!access.address) throw new Error("Freighter did not return an account.");
-      localStorage.removeItem(DISCONNECTED_KEY);
-      await applyAddress(access.address);
+      const account = await choose();
+      if (controller.signal.aborted) return;
+      if (account) await read(controller, account);
+      else { address.current = null; setState(empty); }
     } catch (cause) {
-      setStatus("error");
-      setError(errorMessage(cause));
-      clearBalance();
+      if (!controller.signal.aborted) setState({ ...empty, address: address.current, status: "error", error: cause instanceof Error ? cause.message : "Could not connect to Freighter. Try again." });
+    } finally {
+      if (request.current === controller) request.current = null;
     }
-  }, [applyAddress, clearBalance]);
+  }, [read]);
+
+  const connect = useCallback(async () => run(async () => {
+    const installed = await isConnected();
+    if (!installed.isConnected) throw new Error("Install and unlock the Freighter browser extension, then connect again.");
+    const access = await requestAccess();
+    if (access.error) throw new Error(access.error.message);
+    if (!access.address) throw new Error("Freighter did not return an account. Unlock the extension and try again.");
+    try { localStorage.removeItem(DISCONNECTED_KEY); } catch {}
+    return access.address;
+  }, "connecting"), [run]);
 
   const disconnect = useCallback(() => {
-    requestRef.current?.abort();
-    localStorage.setItem(DISCONNECTED_KEY, "1");
-    addressRef.current = null;
-    setAddress(null);
-    clearBalance();
-    setError(null);
-    setStatus("disconnected");
-  }, [clearBalance]);
+    request.current?.abort();
+    request.current = null;
+    address.current = null;
+    try { localStorage.setItem(DISCONNECTED_KEY, "1"); } catch {}
+    setState(empty);
+  }, []);
 
   const refresh = useCallback(async () => {
-    const current = addressRef.current;
-    if (!current) return;
-    if (refreshPendingRef.current) return refreshPendingRef.current;
-    const pending = (async () => {
-      try {
-        const selected = await getAddress();
-        if (selected.error) throw selected.error;
-        await applyAddress(selected.address || current);
-      } catch (cause) {
-        setStatus("error");
-        setError(errorMessage(cause));
-        clearBalance();
-      }
-    })();
-    refreshPendingRef.current = pending;
-    try {
-      await pending;
-    } finally {
-      if (refreshPendingRef.current === pending) refreshPendingRef.current = null;
-    }
-  }, [applyAddress, clearBalance]);
+    if (!address.current || request.current) return;
+    await run(async () => {
+      const selected = await getAddress();
+      if (selected.error) throw new Error(selected.error.message);
+      return selected.address || null;
+    }, "loading");
+  }, [run]);
 
   useEffect(() => {
-    let active = true;
-    async function restoreConnection() {
-      if (!paymentDeployment.ready || localStorage.getItem(DISCONNECTED_KEY) === "1") return;
-      try {
-        const permission = await isAllowed();
-        if (!active || permission.error || !permission.isAllowed) return;
+    let disconnected = false;
+    try { disconnected = localStorage.getItem(DISCONNECTED_KEY) === "1"; } catch {}
+    const controller = new AbortController();
+    if (!disconnected && paymentDeployment.ready) {
+      request.current = controller;
+      void (async () => {
+        const allowed = await isAllowed();
+        if (controller.signal.aborted || allowed.error || !allowed.isAllowed) return;
         const selected = await getAddress();
-        if (!active || selected.error || !selected.address) return;
-        await applyAddress(selected.address);
-      } catch {
-        return;
-      }
+        if (controller.signal.aborted || selected.error || !selected.address) return;
+        await read(controller, selected.address);
+      })().catch((cause) => {
+        if (!controller.signal.aborted) setState({ ...empty, status: "error", error: cause instanceof Error ? cause.message : "Could not restore the wallet connection." });
+      }).finally(() => { if (request.current === controller) request.current = null; });
     }
-    void restoreConnection();
-    const onFocus = () => {
-      if (addressRef.current && Date.now() - lastRefreshRef.current >= 15_000) void refresh();
-    };
+    const onFocus = () => { if (Date.now() - lastRefresh.current >= 15_000) void refresh(); };
     window.addEventListener("focus", onFocus);
-    return () => {
-      active = false;
-      requestRef.current?.abort();
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [applyAddress, refresh]);
+    return () => { request.current?.abort(); window.removeEventListener("focus", onFocus); };
+  }, [read, refresh]);
 
-  const value = useMemo<StellarWalletContextValue>(() => ({
-    status,
-    address,
-    balanceAtomic,
-    accountActive,
-    hasTrustline,
-    error,
-    connect,
-    disconnect,
-    refresh,
-  }), [status, address, balanceAtomic, accountActive, hasTrustline, error, connect, disconnect, refresh]);
-
+  const value = useMemo(() => ({ ...state, connect, disconnect, refresh }), [state, connect, disconnect, refresh]);
   return <StellarWalletContext.Provider value={value}>{children}</StellarWalletContext.Provider>;
 }
 

@@ -1,10 +1,11 @@
 "use client";
 
-import { Ban, Check, Copy, Link2, Share2, X } from "lucide-react";
+import { Ban, Check, Copy, Share2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { copyBrowserText, shareBrowserText } from "@/lib/browser-share";
+import { formatUsdcDisplay } from "@/lib/public-usdc";
 import type { PrivatePaymentRequest } from "@/lib/private-profile";
-import { paymentRequestAmount, paymentRequestDisplayStatus } from "@/lib/payment-request";
+import { paymentRequestDisplayStatus } from "@/lib/payment-request";
 
 interface PaymentRequestListProps {
   requests: PrivatePaymentRequest[];
@@ -70,23 +71,19 @@ export function PaymentRequestList({ requests, compact = false, onCancel }: Paym
 
   return (
     <div className={compact ? "requestList compact" : "requestList"}>
-      {requests.map((request, index) => {
+      {requests.map((request) => {
         const status = paymentRequestDisplayStatus(request, now);
         return (
           <article className="requestRow" key={request.requestId}>
-            <span className="activityIndex">{String(index + 1).padStart(3, "0")}</span>
-            <span className={`requestStatusMark ${status}`} aria-hidden="true"><Link2 size={16} /></span>
             <div className="requestRowMain">
               <div className="requestRowTitle">
                 <strong>{request.label || "Private USDC request"}</strong>
-                <span className={`statusChip ${status}`}><span />{STATUS_LABELS[status]}</span>
               </div>
               <div className="requestRowMeta">
-                <span>{paymentRequestAmount(request)}</span>
                 <span>{status === "active" ? `Expires ${new Date(request.expiresAt * 1000).toLocaleString()}` : new Date(request.createdAt * 1000).toLocaleString()}</span>
-                <span className="mono">{request.recipientFingerprint}</span>
               </div>
             </div>
+            <div className="requestRowAmount"><strong>{request.amountAtomic ? `${formatUsdcDisplay(BigInt(request.amountAtomic))} USDC` : "Open amount"}</strong><span>{STATUS_LABELS[status]}</span></div>
             {!compact && (
               <div className="requestActions">
                 <button className="iconButton" type="button" onClick={() => void copy(request)} aria-label="Copy payment request">

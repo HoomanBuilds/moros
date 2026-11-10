@@ -29,6 +29,7 @@ import {
   transferPrivateUsdc,
   withdrawPrivateUsdc,
   type PaymentActionProgress,
+  type PaymentFeeQuote,
 } from "@/lib/payment-actions";
 
 type WalletStatus = "loading" | "empty" | "locked" | "backup" | "unlocked";
@@ -38,6 +39,9 @@ interface PaymentWalletContext {
   identity: PaymentIdentityView | null;
   recoveryPhrase: string | null;
   error: string | null;
+  operationPending: boolean;
+  notice: string | null;
+  refreshAll(): Promise<void>;
   balance: {
     status: "locked" | "unavailable" | "syncing" | "ready" | "error";
     spendableAtomic: bigint | null;
@@ -67,8 +71,9 @@ interface PaymentWalletContext {
     amountAtomic: bigint;
     memo: string;
     payloadHash?: bigint;
+    fees: PaymentFeeQuote;
   }, progress?: (value: PaymentActionProgress) => void): Promise<string>;
-  withdraw(destination: string, amountAtomic: bigint, progress?: (value: PaymentActionProgress) => void): Promise<string>;
+  withdraw(destination: string, amountAtomic: bigint, fees: PaymentFeeQuote, progress?: (value: PaymentActionProgress) => void): Promise<string>;
   rotateReceiveIdentity(): Promise<void>;
   reserveRequestIdentity(): Promise<number>;
   saveContact(recipient: PrivateRecipient): Promise<void>;
@@ -115,20 +120,28 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
   const lastBalanceRefreshRef = useRef(0);
   const refreshBalanceRef = useRef<(() => Promise<void>) | null>(null);
   const operationRef = useRef(false);
+  const refreshTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const sessionVersion = useRef(0);
+  const [operationPending, setOperationPending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     const syncControllers = profileSyncControllersRef.current;
+    const timers = refreshTimers.current;
     loadEncryptedWallet()
       .then((record) => active && setStatus(record ? "locked" : "empty"))
       .catch((cause) => {
         if (active) {
           setError(message(cause));
-          setStatus("empty");
+          setStatus("locked");
         }
       });
     return () => {
       active = false;
+      sessionVersion.current += 1;
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
       balanceRequestRef.current?.abort();
       balanceSessionRef.current?.dispose();
       balanceSessionRef.current = null;
@@ -154,12 +167,13 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
       setProfile({ status: "ready", value: result.profile, error: null });
       await balanceSessionRef.current?.expand(result.profile.nextChildIndex - 1);
       if (!paymentDeployment.ready) throw new Error("Payment deployment is unavailable.");
-      setIdentity(await derivePaymentIdentity(
-        phraseRef.current,
-        paymentDeployment.deployment,
-        BigInt(result.profile.activeReceiveIndex),
-      ));
+      const nextIdentity = await derivePaymentIdentity(
+        phraseRef.current, paymentDeployment.deployment, BigInt(result.profile.activeReceiveIndex),
+      );
+      if (controller.signal.aborted || profileSyncSessionRef.current !== session) return;
+      setIdentity(nextIdentity);
       await refreshBalanceRef.current?.();
+      if (controller.signal.aborted || profileSyncSessionRef.current !== session) return;
       setRecoverySync({ status: "synced", error: null });
     } catch (cause) {
       if (!controller.signal.aborted && profileSyncSessionRef.current === session) {
@@ -226,7 +240,7 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
     };
   }, [refreshBalance]);
 
-  const setUnlocked = useCallback(async (phrase: string) => {
+  const setUnlocked = useCallback(async (phrase: string, version = sessionVersion.current) => {
     let nextIdentity: PaymentIdentityView | null = null;
     let nextProfile: PrivateProfile | null = null;
     let nextSession: PrivateBalanceSession | null = null;
@@ -245,6 +259,9 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
         maximumChildIndex: nextProfile.nextChildIndex - 1,
       });
     }
+    if (sessionVersion.current !== version) { nextSession?.dispose(); return; }
+    balanceRequestRef.current?.abort();
+    balancePendingRef.current = null;
     balanceSessionRef.current?.dispose();
     balanceSessionRef.current = nextSession;
     phraseRef.current = phrase;
@@ -268,7 +285,7 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
     if (paymentDeployment.ready && nextProfile) {
       void createPrivateProfileSyncSession({ phrase, deployment: paymentDeployment.deployment })
         .then((session) => {
-          if (phraseRef.current !== phrase) {
+          if (phraseRef.current !== phrase || sessionVersion.current !== version) {
             session.dispose();
             return;
           }
@@ -276,7 +293,7 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
           return synchronizeProfile(session, profileValueRef.current ?? nextProfile);
         })
         .catch((cause) => {
-          if (phraseRef.current === phrase) setRecoverySync({ status: "error", error: message(cause) });
+          if (phraseRef.current === phrase && sessionVersion.current === version) setRecoverySync({ status: "error", error: message(cause) });
         });
     } else {
       setRecoverySync({
@@ -289,16 +306,18 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
   useEffect(() => {
     const onFocus = () => {
       if (
-        phraseRef.current &&
+        !operationRef.current && phraseRef.current &&
         document.visibilityState === "visible" &&
         Date.now() - lastBalanceRefreshRef.current >= 15_000
       ) {
         void refreshBalance();
       }
     };
+    const timer = window.setInterval(onFocus, 30_000);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
     return () => {
+      window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
@@ -310,6 +329,9 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
       const phrase = await createRecoveryPhrase();
       const record = await encryptRecoveryPhrase(phrase, password);
       await saveEncryptedWallet(record);
+      phraseRef.current = phrase;
+      setRecoveryPhrase(phrase);
+      setStatus("backup");
       return phrase;
     } catch (cause) {
       setError(message(cause));
@@ -321,7 +343,7 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
     setError(null);
     try {
       const record = await loadEncryptedWallet();
-      if (!record) throw new Error("No private wallet exists in this browser.");
+      if (!record || phraseRef.current !== phrase) throw new Error("Unlock this wallet before confirming its backup.");
       await saveEncryptedWallet({ ...record, backupVerified: true });
       await setUnlocked(phrase);
     } catch (cause) {
@@ -334,7 +356,10 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
     setError(null);
     try {
       const normalized = phrase.trim().toLowerCase().replace(/\s+/g, " ");
-      if (paymentDeployment.ready) await derivePaymentIdentity(normalized, paymentDeployment.deployment);
+      if (paymentDeployment.ready) {
+        await derivePaymentIdentity(normalized, paymentDeployment.deployment);
+        await loadPrivateProfile(normalized, paymentDeployment.deployment);
+      }
       const record = await encryptRecoveryPhrase(normalized, password, Date.now(), true);
       await saveEncryptedWallet(record);
       await setUnlocked(normalized);
@@ -345,11 +370,13 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
   }, [setUnlocked]);
 
   const unlock = useCallback(async (password: string) => {
+    const version = ++sessionVersion.current;
     setError(null);
     try {
       const record = await loadEncryptedWallet();
       if (!record) throw new Error("No private wallet exists in this browser.");
       const phrase = await decryptRecoveryPhrase(record, password);
+      if (sessionVersion.current !== version) return;
       if (record.backupVerified) {
         await setUnlocked(phrase);
       } else {
@@ -364,6 +391,11 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
   }, [setUnlocked]);
 
   const lock = useCallback(() => {
+    if (operationRef.current) return;
+    sessionVersion.current += 1;
+    for (const timer of refreshTimers.current) clearTimeout(timer);
+    refreshTimers.current.clear();
+    setNotice(null);
     balanceRequestRef.current?.abort();
     balanceSessionRef.current?.dispose();
     balanceSessionRef.current = null;
@@ -384,40 +416,28 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
   }, []);
 
   const erase = useCallback(async () => {
-    balanceRequestRef.current?.abort();
-    balanceSessionRef.current?.dispose();
-    balanceSessionRef.current = null;
-    balancePendingRef.current = null;
-    for (const controller of profileSyncControllersRef.current) controller.abort();
-    profileSyncControllersRef.current.clear();
-    profileSyncSessionRef.current?.dispose();
-    profileSyncSessionRef.current = null;
+    if (operationRef.current) throw new Error("Wait for the current payment to finish.");
     await deleteEncryptedWallet();
-    phraseRef.current = null;
-    profileValueRef.current = null;
-    setRecoveryPhrase(null);
-    setIdentity(null);
-    setError(null);
-    setBalance({ status: "unavailable", spendableAtomic: null, pendingAtomic: null, error: null });
-    setProfile({ status: "locked", value: null, error: null });
-    setRecoverySync({ status: "locked", error: null });
+    lock();
     setStatus("empty");
-  }, []);
+  }, [lock]);
 
   const changeProfile = useCallback(async (
     update: (current: PrivateProfile) => PrivateProfile,
   ): Promise<PrivateProfile> => {
     const phrase = phraseRef.current;
+    const version = sessionVersion.current;
     if (!phrase || !paymentDeployment.ready) throw new Error("Unlock the private wallet first.");
     try {
       const next = await updatePrivateProfile(phrase, paymentDeployment.deployment, update);
+      if (sessionVersion.current !== version || phraseRef.current !== phrase) throw new Error("The wallet session changed. Unlock it again.");
       profileValueRef.current = next;
       setProfile({ status: "ready", value: next, error: null });
       const syncSession = profileSyncSessionRef.current;
       if (syncSession) void synchronizeProfile(syncSession, next);
       return next;
     } catch (cause) {
-      setProfile((current) => ({ ...current, status: "error", error: message(cause) }));
+      if (sessionVersion.current === version) setProfile((current) => ({ ...current, error: message(cause) }));
       throw cause;
     }
   }, [synchronizeProfile]);
@@ -436,7 +456,8 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
       };
     });
     await balanceSessionRef.current?.expand(next.activeReceiveIndex);
-    setIdentity(await derivePaymentIdentity(phrase, paymentDeployment.deployment, BigInt(next.activeReceiveIndex)));
+    const nextIdentity = await derivePaymentIdentity(phrase, paymentDeployment.deployment, BigInt(next.activeReceiveIndex));
+    if (phraseRef.current === phrase) setIdentity(nextIdentity);
   }, [changeProfile]);
 
   const reserveRequestIdentity = useCallback(async (): Promise<number> => {
@@ -476,13 +497,23 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
   const runOperation = useCallback(async (operation: () => Promise<string>) => {
     if (operationRef.current) throw new Error("Another private payment is already in progress.");
     operationRef.current = true;
+    setOperationPending(true);
+    setNotice(null);
     try {
       const hash = await operation();
-      await refreshBalance();
-      window.setTimeout(() => void refreshBalance(), 5_000);
+      const version = sessionVersion.current;
+      void refreshBalance();
+      for (const delay of [4_000, 10_000]) {
+        const timer = setTimeout(() => {
+          refreshTimers.current.delete(timer);
+          if (sessionVersion.current === version && phraseRef.current) void refreshBalance();
+        }, delay);
+        refreshTimers.current.add(timer);
+      }
       return hash;
     } finally {
       operationRef.current = false;
+      setOperationPending(false);
     }
   }, [refreshBalance]);
 
@@ -507,12 +538,12 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
         amountAtomic: amountAtomic.toString(),
         createdAt: Date.now(),
       }));
-    } catch {}
+    } catch { setNotice("Payment confirmed. Its local activity record could not be saved. Keep the transaction ID on your receipt."); }
     return hash;
   }, [changeProfile, identity, runOperation]);
 
   const transfer = useCallback(async (
-    input: { recipientCode: string; recipientFingerprint: string; amountAtomic: bigint; memo: string; payloadHash?: bigint },
+    input: { recipientCode: string; recipientFingerprint: string; amountAtomic: bigint; memo: string; payloadHash?: bigint; fees: PaymentFeeQuote },
     progress?: (value: PaymentActionProgress) => void,
   ) => {
     if (!paymentDeployment.ready || !identity || !balanceSessionRef.current) {
@@ -527,6 +558,7 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
       amountAtomic: input.amountAtomic,
       memo: input.memo,
       payloadHash: input.payloadHash,
+      fees: input.fees,
       prepareSpend: (requiredAtomic, signal) => session.prepareSpend(requiredAtomic, signal),
       progress,
     }));
@@ -538,13 +570,14 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
         recipientFingerprint: input.recipientFingerprint,
         createdAt: Date.now(),
       }));
-    } catch {}
+    } catch { setNotice("Payment confirmed. Its local activity record could not be saved. Keep the transaction ID on your receipt."); }
     return hash;
   }, [changeProfile, identity, runOperation]);
 
   const withdraw = useCallback(async (
     destination: string,
     amountAtomic: bigint,
+    fees: PaymentFeeQuote,
     progress?: (value: PaymentActionProgress) => void,
   ) => {
     if (!paymentDeployment.ready || !identity || !balanceSessionRef.current) {
@@ -557,6 +590,7 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
       senderCode: identity.paymentCode,
       destination,
       amountAtomic,
+      fees,
       prepareSpend: (requiredAtomic, signal) => session.prepareSpend(requiredAtomic, signal),
       progress,
     }));
@@ -568,9 +602,27 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
         publicAccount: destination,
         createdAt: Date.now(),
       }));
-    } catch {}
+    } catch { setNotice("Payment confirmed. Its local activity record could not be saved. Keep the transaction ID on your receipt."); }
     return hash;
   }, [changeProfile, identity, runOperation]);
+
+  const refreshAll = useCallback(async () => {
+    await refreshBalance();
+    const phrase = phraseRef.current;
+    const version = sessionVersion.current;
+    if (!phrase || !paymentDeployment.ready || !profileValueRef.current) return;
+    try {
+      let session = profileSyncSessionRef.current;
+      if (!session) {
+        session = await createPrivateProfileSyncSession({ phrase, deployment: paymentDeployment.deployment });
+        if (sessionVersion.current !== version) { session.dispose(); return; }
+        profileSyncSessionRef.current = session;
+      }
+      await synchronizeProfile(session, profileValueRef.current);
+    } catch (cause) {
+      if (sessionVersion.current === version) setRecoverySync({ status: "error", error: message(cause) });
+    }
+  }, [refreshBalance, synchronizeProfile]);
 
   const value = useMemo<PaymentWalletContext>(() => ({
     status,
@@ -580,6 +632,9 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
     balance,
     profile,
     recoverySync,
+    operationPending,
+    notice,
+    refreshAll,
     create,
     activate,
     restore,
@@ -598,7 +653,7 @@ export function PaymentWalletProvider({ children }: { children: React.ReactNode 
     savePaymentRequest,
     updatePaymentRequestStatus,
     clearError: () => setError(null),
-  }), [status, identity, recoveryPhrase, error, balance, profile, recoverySync, create, activate, restore, unlock, lock, erase, refreshBalance, deposit, transfer, withdraw, rotateReceiveIdentity, reserveRequestIdentity, saveContact, removeContact, rememberRecipient, savePaymentRequest, updatePaymentRequestStatus]);
+  }), [status, identity, recoveryPhrase, error, balance, profile, recoverySync, operationPending, notice, refreshAll, create, activate, restore, unlock, lock, erase, refreshBalance, deposit, transfer, withdraw, rotateReceiveIdentity, reserveRequestIdentity, saveContact, removeContact, rememberRecipient, savePaymentRequest, updatePaymentRequestStatus]);
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
 }

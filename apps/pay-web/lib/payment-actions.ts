@@ -1,6 +1,5 @@
 "use client";
 
-import { getNetworkDetails, signTransaction } from "@stellar/freighter-api";
 import {
   TransactionBuilder,
   contract,
@@ -9,6 +8,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { type MorosPaymentClient, type PaymentDeployment } from "@moros/payments-client";
+import { checkPaymentExpiry, confirmedDepositHash, paymentTransactionHash } from "./payment-review";
 import { createPaymentClient } from "./payment-client";
 import type { PreparedPrivateSpend } from "./private-balance";
 import {
@@ -35,7 +35,7 @@ type DynamicContractClient = {
 
 type ContractMethodResult<T> = {
   result: T;
-  signAndSend(): Promise<{ sendTransactionResponse?: { hash?: string }; hash?: string }>;
+  signAndSend(): Promise<{ sendTransactionResponse?: { hash?: string }; getTransactionResponse?: { status: string }; hash?: string }>;
 };
 
 type VaultInfo = {
@@ -147,7 +147,7 @@ function relayHash(result: unknown): string {
   if (!result || typeof result !== "object" || !("hash" in result) || typeof result.hash !== "string") {
     throw new Error("Payment relay did not return a transaction hash.");
   }
-  return result.hash;
+  return paymentTransactionHash(result.hash);
 }
 
 async function quoteFor(
@@ -162,6 +162,46 @@ async function quoteFor(
     throw new Error("Payment relay fee exceeds the configured limit.");
   }
   return { client, quote };
+}
+
+export type PaymentFeeQuote = {
+  relayFee: bigint;
+  protocolFee: bigint;
+  expiresAt: number;
+};
+
+type PreparedFeeContext = {
+  vault: DynamicContractClient;
+  info: VaultInfo;
+  api: MorosPaymentClient;
+  quote: RelayQuote;
+  id: Uint8Array;
+  expiry: number;
+  deployment: PaymentDeployment;
+};
+const feeContexts = new WeakMap<PaymentFeeQuote, PreparedFeeContext>();
+
+export async function preparePaymentFees(deployment: PaymentDeployment, requestExpiry?: number): Promise<PaymentFeeQuote> {
+  const expiry = Math.min(Math.floor(Date.now() / 1000) + 600, requestExpiry ?? Infinity);
+  checkPaymentExpiry(expiry);
+  const id = actionId();
+  const [{ client: vault, info }, { client: api, quote }] = await Promise.all([
+    readVault(deployment), quoteFor(deployment, id, expiry),
+  ]);
+  const fees = { relayFee: BigInt(quote.fee), protocolFee: BigInt(info.fee.protocol_fee), expiresAt: Math.min(expiry, Number(quote.expiry)) };
+  if (fees.protocolFee < 0n) throw new Error("The protocol returned an invalid fee.");
+  checkPaymentExpiry(fees.expiresAt);
+  feeContexts.set(fees, { vault, info, api, quote, id, expiry, deployment });
+  return fees;
+}
+
+function consumePaymentFees(fees: PaymentFeeQuote, deployment: PaymentDeployment): PreparedFeeContext {
+  checkPaymentExpiry(fees.expiresAt);
+  const context = feeContexts.get(fees);
+  if (!context || context.deployment !== deployment) throw new Error("Review this payment to get a new fee quote.");
+  if (fees.relayFee !== BigInt(context.quote.fee) || fees.protocolFee !== BigInt(context.info.fee.protocol_fee)) throw new Error("The fee quote changed. Review this payment again.");
+  feeContexts.delete(fees);
+  return context;
 }
 
 async function relayTransition(input: {
@@ -188,6 +228,9 @@ export async function depositPrivateUsdc(input: {
 }): Promise<string> {
   if (input.amountAtomic <= 0n) throw new Error("Deposit amount must be positive.");
   input.progress?.("preparing");
+  const { getAddress, getNetworkDetails, signTransaction } = await import("@stellar/freighter-api");
+  const selected = await getAddress();
+  if (selected.error || selected.address !== input.source) throw new Error("The Freighter account changed. Review the deposit again.");
   const network = await getNetworkDetails();
   if (network.error) throw network.error;
   if (network.networkPassphrase !== input.deployment.networkPassphrase) {
@@ -254,7 +297,9 @@ export async function depositPrivateUsdc(input: {
           const passphrase = options.networkPassphrase || input.deployment.networkPassphrase;
           const signed = await signTransaction(transactionXdr, { networkPassphrase: passphrase, address: input.source });
           if (signed.error || !signed.signedTxXdr) throw signed.error || new Error("Freighter did not sign the deposit.");
-          TransactionBuilder.fromXDR(signed.signedTxXdr, passphrase);
+          const expected = TransactionBuilder.fromXDR(transactionXdr, passphrase);
+          const returned = TransactionBuilder.fromXDR(signed.signedTxXdr, passphrase);
+          if (!returned.hash().equals(expected.hash())) throw new Error("The wallet changed the deposit transaction. Review it again.");
           input.progress?.("submitting");
           return { signedTxXdr: signed.signedTxXdr, signerAddress: input.source };
         },
@@ -277,9 +322,7 @@ export async function depositPrivateUsdc(input: {
   }
   const sent = await preparedTransaction.signAndSend();
   input.progress?.("confirming");
-  const hash = sent.sendTransactionResponse?.hash || sent.hash;
-  if (!hash) throw new Error("Deposit did not return a transaction hash.");
-  return hash;
+  return confirmedDepositHash(sent);
 }
 
 export async function transferPrivateUsdc(input: {
@@ -289,15 +332,13 @@ export async function transferPrivateUsdc(input: {
   amountAtomic: bigint;
   memo: string;
   payloadHash?: bigint;
+  fees: PaymentFeeQuote;
   prepareSpend(requiredAtomic: bigint, signal?: AbortSignal): Promise<PreparedPrivateSpend>;
   progress?: (value: PaymentActionProgress) => void;
 }): Promise<string> {
   if (input.amountAtomic <= 0n) throw new Error("Payment amount must be positive.");
   input.progress?.("preparing");
-  const { client: vault, info } = await readVault(input.deployment);
-  const id = actionId();
-  const expiry = Math.floor(Date.now() / 1_000) + 600;
-  const { client: api, quote } = await quoteFor(input.deployment, id, expiry);
+  const { vault, info, id, expiry, api, quote } = consumePaymentFees(input.fees, input.deployment);
   const relayIdentity = identity(quote.paymentIdentity);
   const protocolIdentity = identity(info.fee.protocol_identity);
   const relayFee = BigInt(quote.fee);
@@ -386,6 +427,7 @@ export async function transferPrivateUsdc(input: {
     outputs,
     attachment: attachment.bytes,
   });
+  checkPaymentExpiry(input.fees.expiresAt);
   return relayTransition({
     api,
     contractClient: vault,
@@ -406,15 +448,13 @@ export async function withdrawPrivateUsdc(input: {
   senderCode: string;
   destination: string;
   amountAtomic: bigint;
+  fees: PaymentFeeQuote;
   prepareSpend(requiredAtomic: bigint, signal?: AbortSignal): Promise<PreparedPrivateSpend>;
   progress?: (value: PaymentActionProgress) => void;
 }): Promise<string> {
   if (input.amountAtomic <= 0n) throw new Error("Withdrawal amount must be positive.");
   input.progress?.("preparing");
-  const { client: vault, info } = await readVault(input.deployment);
-  const id = actionId();
-  const expiry = Math.floor(Date.now() / 1_000) + 600;
-  const { client: api, quote } = await quoteFor(input.deployment, id, expiry);
+  const { vault, info, id, expiry, api, quote } = consumePaymentFees(input.fees, input.deployment);
   const relayIdentity = identity(quote.paymentIdentity);
   const protocolIdentity = identity(info.fee.protocol_identity);
   const relayFee = BigInt(quote.fee);
@@ -482,6 +522,7 @@ export async function withdrawPrivateUsdc(input: {
     expected: fields,
   });
   const preparedTransition = transition({ action: 2, circuit: selectedCircuit.tag, fields, proof, outputs });
+  checkPaymentExpiry(input.fees.expiresAt);
   return relayTransition({
     api,
     contractClient: vault,
