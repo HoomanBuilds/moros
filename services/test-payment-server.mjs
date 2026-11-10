@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { nativeToScVal } from "@stellar/stellar-sdk";
-import { StellarPaymentEventSource, normalizePaymentRpcEvent } from "./payment-server.mjs";
+import { StellarPaymentEventSource, allowedOrigins, normalizePaymentRpcEvent } from "./payment-server.mjs";
+
+for (const origin of ["https://moros.fun", "https://www.moros.fun", "https://pay.moros.fun"]) {
+  assert.equal(allowedOrigins().includes(origin), true);
+}
+assert.deepEqual(allowedOrigins("https://moros.fun/, https://moros.fun/path"), ["https://moros.fun"]);
+assert.deepEqual(allowedOrigins("https://custom.example"), ["https://custom.example"]);
+assert.equal(allowedOrigins().includes("https://untrusted.example"), false);
+assert.throws(() => allowedOrigins("not a URL"));
 
 const vault = "CCC5ZSQ46ACU2R2HY7IBDUY6TJNNYLUCRNOU3CV75ZNRQT2JBJ2KRRP5";
 const actionId = Buffer.alloc(32, 7);

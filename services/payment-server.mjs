@@ -184,8 +184,8 @@ export class StellarPaymentEventSource {
   }
 }
 
-function allowedOrigins(raw) {
-  const values = (raw || "https://pay.moros.fun,http://localhost:3001,http://127.0.0.1:3001")
+export function allowedOrigins(raw) {
+  const values = (raw || "https://moros.fun,https://www.moros.fun,https://pay.moros.fun,http://localhost:3001,http://127.0.0.1:3001")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
@@ -358,7 +358,7 @@ async function main() {
       if ((request.method === "GET" || request.method === "HEAD") && staticPath) {
         const info = statSync(staticPath);
         response.writeHead(200, {
-          "access-control-allow-origin": origin && origins.includes(origin) ? origin : "https://pay.moros.fun",
+          "access-control-allow-origin": origin && origins.includes(origin) ? origin : "https://moros.fun",
           "cache-control": url.pathname.endsWith("manifest.json")
             ? "public, max-age=60"
             : "public, max-age=31536000, immutable",
