@@ -10,7 +10,6 @@ doctest = false
 
 [dependencies]
 payment-types = { path = "../payment-types" }
-privacy-types = { path = "../privacy-types" }
 soroban-sdk = { workspace = true }
 
 [dev-dependencies]

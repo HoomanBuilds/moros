@@ -9,7 +9,6 @@ crate-type = ["rlib"]
 doctest = false
 
 [dependencies]
-privacy-types = { path = "../privacy-types" }
 soroban-poseidon = "26.0.0"
 soroban-sdk = { workspace = true }
 

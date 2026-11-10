@@ -23,7 +23,7 @@ import {
   publicFields,
 } from "../circuits/payments/fixture-lib.mjs";
 import { PAYMENT_PUBLIC_SIGNALS } from "../circuits/payments/artifacts.mjs";
-import { proofBytes } from "../circuits/private/artifacts.mjs";
+import { proofBytes } from "../circuits/common/groth16.mjs";
 import { cfg } from "./config.mjs";
 import { configuredSecret } from "./key-config.mjs";
 import { PaymentRelayService } from "./payment-relay.mjs";

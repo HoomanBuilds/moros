@@ -24,12 +24,12 @@ import {
 } from "@stellar/stellar-sdk";
 import { poseidon2Hash } from "@zkpassport/poseidon2";
 import { cfg } from "./config.mjs";
-import { publicKey } from "./committee/bn254-babyjub.mjs";
+import { publicKey } from "./crypto/babyjub.mjs";
 import {
   canonicalJson,
   keyPayloadJson,
   keyPayloadFromJson,
-} from "../circuits/private/artifacts.mjs";
+} from "../circuits/common/groth16.mjs";
 import { PAYMENT_CIRCUITS } from "../circuits/payments/artifacts.mjs";
 import {
   deriveContractId,

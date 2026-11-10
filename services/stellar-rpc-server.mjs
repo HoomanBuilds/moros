@@ -1,13 +1,13 @@
 import http from "node:http";
 import { fileURLToPath } from "node:url";
-import { privateAllowedOrigins, privateResponseHeaders } from "./private-cors.mjs";
+import { allowedWebOrigins, responseCorsHeaders } from "./http-cors.mjs";
 import { FixedWindowRateLimiter } from "./rate-limit.mjs";
 import { rpcFetch } from "./rpc-failover.mjs";
 import { isAllowedStellarRpcRequest } from "./stellar-rpc-proxy.mjs";
 
 export function createStellarRpcServer({
   rpcUrls,
-  origins = privateAllowedOrigins(process.env.PUBLIC_ORIGINS),
+  origins = allowedWebOrigins(process.env.PUBLIC_ORIGINS),
   clientLimit = 600,
   globalLimit = 1200,
   fetchImpl = globalThis.fetch,
@@ -17,7 +17,7 @@ export function createStellarRpcServer({
   const global = new FixedWindowRateLimiter({ limit: globalLimit, windowMs: 60_000 });
 
   return http.createServer(async (request, response) => {
-    const headers = privateResponseHeaders(request, origins);
+    const headers = responseCorsHeaders(request, origins);
     function json(status, value, extra = {}) {
       const body = JSON.stringify(value);
       response.writeHead(status, {

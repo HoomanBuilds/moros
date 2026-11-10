@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import { cfg } from "./config.mjs";
-import { canonicalJson, sha256 } from "../circuits/private/artifacts.mjs";
+import { canonicalJson, sha256 } from "../circuits/common/groth16.mjs";
 import { PAYMENT_CIRCUITS } from "../circuits/payments/artifacts.mjs";
 
 const ARTIFACT_ROOT = resolve(cfg.repo, "apps/pay-web/public/zk/payments");

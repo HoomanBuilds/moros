@@ -1,20 +1,12 @@
 {
-  "name": "prediction-market-circuits",
+  "name": "moros-payment-circuits",
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "build:private": "node private/build.mjs compile",
-    "fetch:private-ptau": "node private/fetch-ptau.mjs",
-    "setup:private": "node private/build.mjs all",
-    "package:private": "node private/build.mjs package",
-    "prepare:mainnet": "node private/prepare-mainnet.mjs",
     "build:payments": "node payments/build.mjs compile",
     "setup:payments": "node payments/build.mjs all",
     "package:payments": "node payments/build.mjs package",
-    "test:payments": "node payments/test.mjs && node payments/witness-test.mjs",
-    "test:prepare-mainnet": "node private/test-prepare-mainnet.mjs",
-    "test:private-artifacts": "node private/test.mjs",
-    "test:shielded-vault": "node ../contracts/shielded-collateral-vault/circuits/test/run.mjs"
+    "test:payments": "node common/groth16.test.mjs && node payments/test.mjs && node payments/witness-test.mjs"
   },
   "overrides": {
     "bfj": "7.0.2"

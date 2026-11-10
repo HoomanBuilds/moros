@@ -1,6 +1,6 @@
 pragma circom 2.2.3;
 
-include "../shielded-collateral-vault/circuits/privacy_primitives.circom";
+include "./primitives.circom";
 
 template PaymentNoteDomain() {
     signal input network[2];

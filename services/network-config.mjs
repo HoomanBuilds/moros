@@ -7,8 +7,8 @@ const PROFILES = {
     passphrase: Networks.TESTNET,
     rpcUrl: "https://soroban-testnet.stellar.org",
     horizonUrl: "https://horizon-testnet.stellar.org",
-    deploymentPath: "deployments/private-testnet.json",
-    artifactPath: "circuits/private-build/public",
+    deploymentPath: "deployments/payments-testnet.json",
+    artifactPath: "apps/pay-web/public/zk/payments",
     collateralContract:
       "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
     mainnetReady: false,
@@ -19,8 +19,8 @@ const PROFILES = {
     passphrase: Networks.PUBLIC,
     rpcUrl: "https://mainnet.sorobanrpc.com",
     horizonUrl: "https://horizon.stellar.org",
-    deploymentPath: "deployments/private-mainnet.json",
-    artifactPath: "circuits/private-mainnet-build/public",
+    deploymentPath: "deployments/payments-mainnet.json",
+    artifactPath: "apps/pay-web/public/zk/payments",
     collateralContract:
       "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
     mainnetReady: true,
@@ -59,46 +59,14 @@ export function networkConfig(env = process.env) {
       profile.horizonUrl,
     deploymentPath:
       scoped(env, id, "DEPLOYMENT") ||
-      (allowLegacy ? env.MOROS_PUBLIC_DEPLOYMENT : "") ||
+      (allowLegacy ? env.MOROS_PAYMENT_DEPLOYMENT : "") ||
       profile.deploymentPath,
     artifactPath:
       scoped(env, id, "ZK_PUBLIC_DIR") ||
-      (allowLegacy ? env.MOROS_ZK_PUBLIC_DIR : "") ||
+      (allowLegacy ? env.MOROS_PAYMENT_ZK_PUBLIC_DIR : "") ||
       profile.artifactPath,
-    deployerSecret:
-      scoped(env, id, "DEPLOYER_SK") ||
-      (allowLegacy ? env.DEPLOYER_SK : "") ||
-      "",
-    deployerIdentity: scoped(env, id, "DEPLOYER_IDENTITY"),
-    funderSecret:
-      scoped(env, id, "FUNDER_SK") ||
-      (allowLegacy ? env.FUNDER_SK : "") ||
-      "",
-    funderIdentity: scoped(env, id, "FUNDER_IDENTITY"),
-    roundingFunderSecret:
-      scoped(env, id, "ROUNDING_FUNDER_SK") ||
-      (allowLegacy ? env.ROUNDING_FUNDER_SK : "") ||
-      "",
-    roundingFunderIdentity: scoped(env, id, "ROUNDING_FUNDER_IDENTITY"),
-    privacySecret:
-      scoped(env, id, "PRIVACY_SK") ||
-      (allowLegacy ? env.MOROS_PRIVACY_SK : "") ||
-      "",
-    privacyIdentity: scoped(env, id, "PRIVACY_IDENTITY"),
-  };
-}
 
-export function assertDeploymentNetwork(deployment, network) {
-  if (
-    !deployment ||
-    deployment.network !== network.id ||
-    deployment.mainnetReady !== network.mainnetReady
-  ) {
-    throw new Error(
-      `deployment manifest is not ready for ${network.id}`,
-    );
-  }
-  return deployment;
+  };
 }
 
 export async function assertRpcNetwork(server, network) {

@@ -1,13 +1,13 @@
 #![no_std]
 
+use payment_types::crypto::{
+    is_canonical_field, is_valid_babyjub_encryption_point, merkle_node, output_envelope_hash,
+};
 use payment_types::{
     payment_attachment_hash, payment_context_digest, relay_quote_digest, relay_quote_message,
     unsigned_relay_quote, PaymentAction, PaymentContext, PaymentFeeConfig, PaymentIdentity,
     PaymentProofStatement, PaymentTransition, RelayQuote, MAX_PAYMENT_AMOUNT,
     PAYMENT_OUTPUT_ENVELOPE_LENGTH,
-};
-use privacy_types::{
-    is_canonical_field, is_valid_babyjub_encryption_point, merkle_node, output_envelope_hash,
 };
 use soroban_sdk::{
     contract, contractclient, contracterror, contractevent, contractimpl, contracttype,

@@ -1,49 +1,25 @@
-# Operations runbook
+# Moros payment operations
 
-Production hardening beyond the contracts/circuits. Testnet demos skip most of this; a
-real deployment needs all of it.
+## Configuration and identity continuity
 
-## Committee (t-of-n threshold decryption)
-- Run each member (`committee/member.mjs`) on an INDEPENDENTLY operated host. Three members
-  on one VM proves the architecture only; the no-leak trust claim holds solely if fewer than
-  `t` operators can collude.
-- Env per member: `PORT`, `INDEX`, `MEMBER_TOKEN` (shared bearer), `MEMBER_SK` (its own
-  Stellar key), `ATTEST_TARGET`/`ATTEST_METHOD`/`ATTEST_DQ_OFFSET` (pool + submit_batch_committee),
-  `SHARE_FILE` (persisted share, mode 0600, gitignored, backed up securely).
-- DKG is commit-reveal (Gennaro): members publish a hash of their Feldman commitments before
-  any reveal, so a member cannot bias the joint key after seeing others'. Shares travel
-  member-to-member; the coordinator relays only public commitments and never holds a share.
-- Persistence: a restarted member restores its share from `SHARE_FILE` and refuses to re-key;
-  the server reuses the existing epoch (no orphaned ciphertexts). Rotating the key = new epoch:
-  delete share files, re-run DKG, publish the new `pk`; orders encrypted to the old `pk` must
-  be drained first.
-- Put TLS in front of every member and the intake server (token auth is transport-level only).
+Keep `services/.env`, any service-specific environment files, `deployments/*.local.json`, Stellar CLI identity files, recovery secrets, and Supabase credentials outside Git. Restrict private files to their owner. Back up the exact bytes and verify checksums before moving or replacing an installation.
 
-## Admin -> Stellar multisig
-The market/pool admin (set_committee, set_batcher, set_resolver, fund, VK setters) must be a
-Stellar account with multisig thresholds, not a single hot key:
-- `stellar tx new set-options --master-weight 0 --low-threshold 2 --med-threshold 2 \
-   --high-threshold 2 --signer <A>:1 --signer <B>:1 --signer <C>:1` (2-of-3 example).
-- Author admin invocations, collect signatures out of band, submit. Never keep the admin seed
-  on the intake server. Consider a timelock contract between admin intents and execution.
+The service installer reads the configured identity names and deployment paths. Moving repositories does not require generating replacement Stellar accounts, treasury identities, relay signing seeds, or payment recovery keys.
 
-## Resolution (oracle-driven)
-- Deploy the resolver with the approved Reflector contracts and an explicit source quorum.
-- Set the market resolver once, then run `resolve-keeper.mjs` as a managed service.
-- Monitor GET `/health` and `/status`. A stale keeper heartbeat or overdue resolution is a release-blocking failure.
-- The keeper resolves only after `finalize_after`. It invokes the resolver timeout void path only after the configured oracle recovery window has elapsed.
-- The keeper submits `extend_ttl` for every registered market and pool. Testnet caps one extension at about 30 days, so the default weekly refresh keeps long-running markets and later claims available without relying on user traffic.
-- Set the market expiry to the real observation time. Do not resolve by admin in production.
+## Services
 
-## Trusted setup
-- The deployed Groth16 zkeys are single-contributor demo entropy. Before mainnet, run
-  `circuits/ceremony/` with independent participants, then redeploy the on-chain VKs
-  (`set_redeem_vk`, encrypt-order VK consumers) to match the ceremony output.
+- `moros-stellar-rpc`: shared Stellar RPC, provider failover, CORS, and client/global limits.
+- `zkmarket-payments-mainnet`: existing mainnet payment API, relay, output indexing, and encrypted recovery.
+- `zkmarket-payments-testnet`: optional testnet payment service with separate state.
 
-## Money / solvency
-- Legacy XLM pool deployments used an operator subsidy and separate pool accounting. Do not apply that model to new private USDC markets.
-- New private markets raise their isolated activation target permissionlessly from LPs. Market creators do not supply USDC.
-- Activation transfers the exact target to the market and fixes `b`. Active LP withdrawal does not reduce backing. It requires a full-fill replacement offer or terminal settlement.
-- Monitor shared-vault assets against shielded liabilities, each market's scenario equity, unvested fee escrow, locked LP shares, unresolved exit offers, and terminal assets.
-- A direct token donation never mints shares and must not enter accounted assets.
-- After resolution or void, users still need a submitted proof-bound claim or refund transaction. Keep the permissionless keeper and user recovery paths available.
+The existing payment unit names are retained for operational continuity. The source workspace, runtime installer, and tests contain payment functionality only.
+
+## Monitoring
+
+Watch payment health, indexed ledger progress, RPC errors and failover, relay balances, request failures, proof artifact availability, and encrypted sync failures. Investigate a stalled output index before suggesting that users replace or recreate payment identities.
+
+## Recovery
+
+Restore the corresponding public deployment record, private local deployment state, environment configuration, and original Stellar identity files together. Verify network, vault, verifier, token, and artifact hashes before starting the service. Keep mainnet and testnet state separate.
+
+Use the same payment identity and encrypted recovery data on a new browser origin. Browser-local encrypted wallet storage is scoped to its origin; the existing payment hostname remains available for continuity.

@@ -1,27 +1,10 @@
 [workspace]
 resolver = "2"
-members = [
-    "event-resolver",
-    "lmsr-market",
-    "market-factory",
-    "market-liquidity-vault",
-    "payment-types",
-    "payment-vault",
-    "payment-verifier",
-    "pooled-liquidity-vault",
-    "privacy-types",
-    "resolver",
-    "resolver-registry",
-    "shielded-collateral-vault",
-    "zk-verifier",
-]
-exclude = ["shielded-pool"]
+members = ["payment-types", "payment-vault", "payment-verifier"]
 
 [workspace.dependencies]
 soroban-sdk = "26.1.0"
 
-# Soroban release profile. NOTE: overflow-checks = true is a deliberate solvency
-# fix because a silent i128 wrap on the money path could mis-price a trade. Keep it on.
 [profile.release]
 opt-level = "z"
 overflow-checks = true

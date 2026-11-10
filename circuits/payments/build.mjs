@@ -19,7 +19,7 @@ import {
   parseR1csInfo,
   sha256,
   sha256File,
-} from "../private/artifacts.mjs";
+} from "../common/groth16.mjs";
 import { PAYMENT_CIRCUITS, PAYMENT_PUBLIC_SIGNALS } from "./artifacts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));

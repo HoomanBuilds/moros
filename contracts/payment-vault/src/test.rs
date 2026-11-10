@@ -3,13 +3,13 @@ extern crate std;
 
 use crate::{PaymentVault, PaymentVaultClient};
 use ed25519_dalek::{Signer, SigningKey};
+use payment_types::crypto::output_envelope_hash;
 use payment_types::{
     payment_attachment_hash, payment_context_digest, payment_public_inputs, relay_quote_digest,
     relay_quote_message, unsigned_relay_quote, PaymentAction, PaymentCircuit, PaymentContext,
     PaymentFeeConfig, PaymentIdentity, PaymentProofStatement, PaymentTransition, RelayQuote,
     PAYMENT_ATTACHMENT_LENGTH, PAYMENT_OUTPUT_ENVELOPE_LENGTH,
 };
-use privacy_types::output_envelope_hash;
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, Vec, U256};

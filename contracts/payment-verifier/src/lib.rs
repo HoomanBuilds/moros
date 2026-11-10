@@ -1,11 +1,11 @@
 #![no_std]
 
 use core::convert::TryInto;
+use payment_types::crypto::VerificationKeyBytes;
 use payment_types::{
     payment_keyset_domain_step, payment_public_inputs, PaymentCircuit, PaymentCircuitKey,
     PaymentProofStatement, PAYMENT_PROOF_SIZE, PAYMENT_PUBLIC_INPUTS, PAYMENT_REQUIRED_CIRCUITS,
 };
-use privacy_types::VerificationKeyBytes;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype,
     crypto::bn254::{Bn254Fr, Bn254G1Affine, Bn254G2Affine},

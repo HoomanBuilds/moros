@@ -15,20 +15,7 @@ function loadEnv() {
 }
 loadEnv();
 
-const fork = resolve(repo, "inspiration/zk/soroban-privacy-pools");
-const circuits = resolve(repo, "contracts/shielded-pool/circuits");
-
 export const cfg = {
   repo,
-  network: process.env.MOROS_NETWORK || process.env.NETWORK || "testnet",
-  source: process.env.SOURCE || "deployer",
-  poolId: process.env.POOL_ID || "",
-  batchBin: resolve(fork, "target/release/batch"),
-  circom2soroban: resolve(fork, "target/release/stellar-circom2soroban"),
-  snarkjs: resolve(repo, "circuits/node_modules/.bin/snarkjs"),
-  batchWasm: resolve(circuits, "build/batch_js/batch.wasm"),
-  batchWitnessGen: resolve(circuits, "build/batch_js/generate_witness.js"),
-  batchZkey: resolve(circuits, "output/batch_final.zkey"),
-  redeemZkey: resolve(circuits, "output/position_redeem_final.zkey"),
-  work: process.env.WORK || "/tmp/batcher",
+  network: process.env.MOROS_PAYMENT_NETWORK || process.env.MOROS_NETWORK || "testnet",
 };

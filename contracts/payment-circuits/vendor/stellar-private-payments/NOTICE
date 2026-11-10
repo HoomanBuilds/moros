@@ -1,0 +1,9 @@
+Poseidon2 Circom source in this directory is adapted from Stellar Private
+Payments v0.1.0 at commit 9521494be1792003b4fd441404ff971b52dfdda2.
+
+Upstream repository:
+https://github.com/NethermindEth/stellar-private-payments
+
+The copied Poseidon2 files are distributed under the Apache License 2.0.
+The upstream project contains other components under different licenses.
+Only the files present in this vendor directory are covered by this notice.
