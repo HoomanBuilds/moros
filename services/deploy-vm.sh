@@ -58,6 +58,8 @@ RUNTIME_FILES=(
   "services/prepare-payments-mainnet.mjs"
   "services/resolve-keeper.mjs"
   "services/rpc-failover.mjs"
+  "services/rate-limit.mjs"
+  "services/stellar-rpc-server.mjs"
   "services/soroban-runtime.mjs"
 )
 
