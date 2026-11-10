@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { NetworkStellar } from "@web3icons/react";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Code2, Link2, LockKeyhole, Plus } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Code2, Plus } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { LandingMotion } from "@/components/landing-motion";
+import { LandingHeroVideo, LandingMotion } from "@/components/landing-motion";
 import { UsdcIcon } from "@/components/payment-icons";
 import styles from "./landing.module.css";
 
@@ -26,26 +26,15 @@ function OpenApp({ children = "Open Moros", className = "" }: { children?: React
 
 function PaymentPreview() {
   return (
-    <figure className={styles.preview}>
-      <div className={styles.previewSurface}>
-        <div className={styles.previewHeader}><span>Moros Pay</span><span><LockKeyhole size={13} aria-hidden="true" /> Your private space</span></div>
-        <div className={styles.previewBody}>
-          <div className={styles.previewWallet}>
-            <span className={styles.smallLabel}>Available privately</span>
-            <div className={styles.previewBalance}><UsdcIcon size={36} /><strong>250<span>.00</span></strong><span>USDC</span></div>
-            <p>A balance that stays between you and your wallet.</p>
-            <div className={styles.previewActions} aria-hidden="true"><span><ArrowUpRight size={16} /> Send</span><span><ArrowDownLeft size={16} /> Receive</span><span><Plus size={16} /> Add USDC</span></div>
-            <div className={styles.previewActivity}><div><span className={styles.recipientAvatar}>M</span><div><strong>Payment request</strong><span>Shared with a private link</span></div><Link2 size={18} aria-hidden="true" /></div></div>
-          </div>
-          <div className={styles.previewPayment}>
-            <div className={styles.previewPaymentTop}><span>Private payment</span><ArrowUpRight size={19} aria-hidden="true" /></div>
-            <span className={styles.smallLabel}>You send</span><div className={styles.previewAmount}>25.00 <span>USDC</span></div>
-            <dl><div><dt>To</dt><dd>Your verified recipient</dd></div><div><dt>Payment details</dt><dd><LockKeyhole size={12} aria-hidden="true" /> Encrypted</dd></div><div><dt>Settlement</dt><dd><NetworkStellar size={15} variant="mono" aria-hidden="true" /> Stellar</dd></div></dl>
-            <span className={styles.previewReview}>Review payment <ArrowRight size={16} aria-hidden="true" /></span>
-          </div>
+    <figure className={styles.preview} data-landing-ambient>
+      <div className={styles.paymentScene} aria-hidden="true">
+        <div className={styles.paymentStage}>
+          <svg className={styles.pocketMask} width="0" height="0" aria-hidden="true"><defs><clipPath id="payment-pocket" clipPathUnits="objectBoundingBox"><path d="M0 0H1V.495H.809L.55 .654C.54 .647 .529 .645 .508 .645H.421C.405 .645 .394 .648 .387 .653L.159 .508H0Z" /></clipPath></defs></svg>
+          <Image className={styles.paymentEnvelope} src="/landing/payment-envelope.webp" alt="" fill sizes="(max-width: 800px) 90vw, (min-width: 1800px) 730px, 44vw" />
+          <div className={styles.paymentPocket}><div className={styles.paymentNote}><UsdcIcon size={28} /><span>Private payment</span><strong>25<span>.00</span></strong><small>USDC</small></div></div>
         </div>
       </div>
-      <figcaption>Product preview. Example amounts.</figcaption>
+      <figcaption className={styles.visuallyHidden}>Illustration of a private USDC payment, using an example amount.</figcaption>
     </figure>
   );
 }
@@ -77,29 +66,32 @@ export default function LandingPage() {
       <main id="main" tabIndex={-1}>
         <section className={`${styles.hero} ${styles.container}`} aria-labelledby="hero-title">
           <div className={styles.heroHeading}><h1 id="hero-title">Money moves.<br /><em>On your terms.</em></h1><div className={styles.heroAside}><span className={styles.stellarLabel}>Built on <NetworkStellar size={20} variant="mono" aria-hidden="true" /><strong>Stellar</strong></span><p>Send and request private Circle USDC on Stellar. Keep a reusable balance, with INR and UPI payments coming next.</p><OpenApp>Start with Moros</OpenApp></div></div>
-          <figure className={styles.heroScene}><Image data-hero-image src="/landing/moros-river.webp" alt="A sunlit stream flowing beneath a pale stone footbridge, surrounded by greenery and soft pink flowers" fill priority sizes="(min-width: 1600px) 1440px, 90vw" /></figure>
+          <figure className={styles.heroScene}><Image src="/landing/garden-hero-v2-poster.webp" alt="Pink flowering trees surrounding an open meadow beneath a bright blue sky" fill priority sizes="(min-width: 1800px) 1544px, (min-width: 1600px) 1424px, 90vw" /><LandingHeroVideo /></figure>
 
         </section>
 
         <section className={`${styles.payments} ${styles.container}`} id="payments" aria-labelledby="payments-title">
-          <div className={styles.sectionHeading} data-landing-reveal><div><h2 id="payments-title">A payment is personal.<br /><em>Keep it that way.</em></h2></div><p>A reusable private USDC balance for the people you pay and the work you get paid for.</p></div>
+          <div className={styles.paymentsCopy}>
+            <div className={styles.sectionHeading} data-landing-reveal><h2 id="payments-title">A payment is personal.<br /><em>Keep it that way.</em></h2><p>A reusable private USDC balance for the people you pay and the work you get paid for.</p></div>
+            <div className={styles.capabilities}>{capabilities.map(({ title, body, href, action }) => <article key={title} data-landing-reveal><h3>{title}</h3><p>{body}</p><Link href={href} className={styles.textLink}>{action}<ArrowUpRight size={16} aria-hidden="true" /></Link></article>)}</div>
+          </div>
           <div data-landing-reveal><PaymentPreview /></div>
-          <div className={styles.capabilities}>{capabilities.map(({ title, body, href, action }) => <article key={title} data-landing-reveal><h3>{title}</h3><p>{body}</p><Link href={href} className={styles.textLink}>{action}<ArrowUpRight size={16} aria-hidden="true" /></Link></article>)}</div>
         </section>
 
         <section className={styles.nextSection} id="next" aria-labelledby="next-title">
           <div className={`${styles.nextInner} ${styles.container}`}>
             <div className={styles.nextCopy} data-landing-reveal><span className={styles.upcoming}>Upcoming / USDC to INR</span><h2 id="next-title">USDC for<br /><em>everyday payments.</em></h2><p>Scan a UPI QR and pay with USDC.</p><a href="https://x.com/morosxyz" className={styles.textLink} target="_blank" rel="noopener noreferrer">Follow the build<ArrowUpRight size={16} aria-hidden="true" /></a></div>
-            <figure className={styles.inrVisual} data-landing-reveal><div className={styles.checkoutScene}><Image src="/landing/moros-checkout.webp" alt="An illustrated future checkout experience: a phone held near a merchant payment stand at a cafe" fill sizes="(max-width: 560px) 90vw, 45vw" /></div><div className={styles.currencyPair}><span><UsdcIcon size={24} />USDC</span><ArrowRight size={21} strokeWidth={1} aria-hidden="true" /><span className={styles.rupee}>₹<span>INR</span></span></div></figure>
+            <figure className={styles.inrVisual} data-landing-reveal data-landing-ambient><div className={styles.checkoutScene}><Image src="/landing/moros-checkout.webp" alt="An illustrated future checkout experience: a phone held near a merchant payment stand at a cafe" fill sizes="(max-width: 560px) 90vw, 45vw" /></div><div className={styles.currencyPair}><span><UsdcIcon size={24} />USDC</span><ArrowRight size={21} strokeWidth={1} aria-hidden="true" /><span className={styles.rupee}>₹<span>INR</span></span></div></figure>
           </div>
         </section>
 
         <section className={`${styles.infrastructure} ${styles.container}`} id="infrastructure" aria-labelledby="infrastructure-title">
           <div className={styles.sectionHeading} data-landing-reveal><h2 id="infrastructure-title">Private payments.<br /><em>Shared infrastructure.</em></h2><a className={styles.textLink} href="https://github.com/HoomanBuilds/moros" target="_blank" rel="noopener noreferrer">Explore the infrastructure<ArrowUpRight size={16} aria-hidden="true" /></a></div>
-          <div className={styles.network} data-landing-reveal>
+          <div className={styles.network} data-landing-reveal data-landing-ambient>
             <div className={styles.mapCanvas}>
               <svg className={styles.mapLines} viewBox="0 0 1000 640" preserveAspectRatio="none" aria-hidden="true">
-                <path d="M500 100V320M115 180H300Q330 180 330 210V290Q330 320 370 320H500M115 450H300Q330 450 330 420V350Q330 320 370 320H500M500 320V590" />
+                <path d="M500 77V320M115 180H300Q330 180 330 210V290Q330 320 370 320H500M115 450H300Q330 450 330 420V350Q330 320 370 320H500M500 320V563" />
+                <path className={styles.mapFlow} d="M500 77V320M115 180H300Q330 180 330 210V290Q330 320 370 320H500M115 450H300Q330 450 330 420V350Q330 320 370 320H500M500 320V563" />
                 <path className={styles.futureLine} d="M885 180H700Q670 180 670 210V290Q670 320 630 320H500M885 450H700Q670 450 670 420V350Q670 320 630 320H500" />
               </svg>
               <div className={`${styles.mapNode} ${styles.mapWallet}`}><div className={styles.mapBrand}><NetworkStellar size={26} variant="mono" aria-hidden="true" /><strong>Your Stellar wallet</strong></div><span>Add or withdraw Circle USDC</span></div>
